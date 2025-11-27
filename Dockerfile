@@ -2,6 +2,8 @@
 FROM composer:2 AS vendor
 COPY composer.json composer.json
 # COPY composer.lock composer.lock # No lock file yet
+COPY auth_keycloak.php auth_keycloak.php
+COPY s3_client.php s3_client.php
 RUN composer install --no-dev --ignore-platform-reqs --no-scripts --prefer-dist
 
 # Stage 2: Final image
