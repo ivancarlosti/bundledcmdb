@@ -1,0 +1,31 @@
+name: bundledcmdb
+
+services:
+  ddnsonroute53:
+    image: ghcr.io/ivancarlosti/bundledcmdb:latest
+    env_file: .env
+    container_name: bundledcmdb
+    restart: unless-stopped
+    # BEGIN remove comment for testing using custom PHP
+    #    volumes:
+    #      - ./www:/var/www/html
+    # END remove comment for testing using custom PHP
+    ports:
+      - "5678:80" # expose port 5678 to host
+    environment:
+      - DB_SERVER=${DB_SERVER}
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - S3_REGION=${S3_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - KEYCLOAK_BASE_URL=${KEYCLOAK_BASE_URL}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+      - KEYCLOAK_REDIRECT_URI=${KEYCLOAK_REDIRECT_URI}
+    extra_hosts:
+      - host.docker.internal:host-gateway

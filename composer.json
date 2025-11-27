@@ -1,0 +1,18 @@
+{
+    "name": "ivancarlosti/bundledcmdb",
+    "description": "CMDB Application",
+    "type": "project",
+    "require": {
+        "php": "^8.2",
+        "aws/aws-sdk-php": "^3.300",
+        "ext-pdo": "*",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "classmap": [
+            "auth_keycloak.php",
+            "s3_client.php"
+        ]
+    }
+}

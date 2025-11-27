@@ -1,0 +1,248 @@
+/* ===== Global ===== */
+body {
+    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif;
+    background-color: #fafafa;
+    color: #333;
+    margin: 20px;
+}
+h2 { font-weight: 600; color: #222; }
+
+a {
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 600;
+}
+a:hover { text-decoration: underline; }
+
+/* ===== Buttons ===== */
+button {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+button:hover { background-color: #2563eb; }
+.header-links form button { background-color: #ef4444; }
+.header-links form button:hover { background-color: #b91c1c; }
+
+/* ===== Search area (main.php) ===== */
+.search-container { margin-bottom: 15px; }
+.search-container select,
+.search-container input[type=text] {
+    padding: 6px 8px;
+    font-size: 14px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-family: inherit;
+}
+.search-container form {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    max-width: 600px;
+    text-wrap: nowrap;
+}
+.record-info {
+    margin-bottom: 15px;
+    font-size: 14px;
+    color: #555;
+}
+
+/* ===== Tables (shared for grid + asset details) ===== */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgb(0 0 0 / 0.1);
+    border-radius: 5px;
+    overflow: hidden;
+    font-size: 13px;
+}
+th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+    vertical-align: middle;
+}
+th {
+    background-color: #f5f7fa;
+    font-weight: 600;
+    color: #555;
+    white-space: nowrap;
+}
+tr:nth-child(even) { background-color: #f9f9f9; }
+th a { color: inherit; text-decoration: none; }
+th .arrow { font-size: 11px; color: #888; margin-left: 6px; }
+
+/* ===== Inputs in cells ===== */
+input[type=text],
+input[type=email],
+input[type=date],
+select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.2s ease-in-out;
+}
+input[type=text]:focus,
+input[type=email]:focus,
+input[type=date]:focus,
+select:focus {
+    border-color: #3b82f6;
+    outline: none;
+    box-shadow: 0 0 2px rgba(59,130,246,0.6);
+}
+
+/* ===== Pagination (main.php) ===== */
+.pagination { margin-top: 20px; font-size: 14px; }
+.pagination a, .pagination span {
+    margin: 0 6px;
+    text-decoration: none;
+    color: #3b82f6;
+    font-weight: 600;
+}
+.pagination .current { color: #111827; font-weight: 700; }
+
+/* ===== Header links (main.php) ===== */
+.header-container { margin-bottom: 20px; }
+.header-links a, .header-links form {
+    margin-right: 15px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* ===== Asset page layout ===== */
+.asset-page .form-section,
+.asset-page .upload-box,
+.asset-page .existing-files {
+    max-width: 900px;
+    margin: 0 auto 30px;
+    background: #fff;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    padding: 20px;
+}
+.asset-page .save-section {
+    margin: 20px 0 30px;
+    text-align: center;
+}
+
+/* File list items */
+.asset-page .file-item {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.asset-page .file-item button {
+    background: #ef4444;
+    color: #fff;
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 3px;
+}
+.asset-page .file-item button:hover { background: #b91c1c; }
+.asset-page .upload-box button.upload { margin-left: 10px; }
+
+/* ===== Login page ===== */
+.login-page {
+    background-color: #fafafa;
+    color: #333;
+    margin: 20px;
+    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif;
+}
+.login-form {
+    max-width: 360px;
+    margin-top: 20px;
+}
+.login-form label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+.login-form input[type=email],
+.login-form input[type=password] {
+    width: 100%;
+    padding: 8px 10px;
+    margin: 8px 0 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+.error-msg {
+    color: #ef4444;
+    font-weight: 600;
+    margin-top: 8px;
+}
+
+/* ==== Change Password Page ==== */
+.change-password-form {
+    max-width: 360px;
+    margin-top: 20px;
+}
+.change-password-form label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+.change-password-form input[type=password] {
+    width: 100%;
+    padding: 8px 10px;
+    margin: 8px 0 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+.success-msg {
+    color: #22c55e;
+    font-weight: 600;
+    margin-top: 8px;
+}
+
+/* ==== Password Hasher Page ==== */
+.password-hasher-form {
+    max-width: 420px;
+    margin-top: 20px;
+}
+.password-hasher-form label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+.password-hasher-form input[type=password],
+.password-hasher-form select {
+    width: 100%;
+    padding: 8px 10px;
+    margin: 8px 0 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+/* Feedback */
+.error-msg { color: #ef4444; font-weight: 600; margin-top: 8px; }
+.success-msg { color: #22c55e; font-weight: 600; margin-top: 8px; }
+
+/* Code block + meta info */
+.code-block {
+    background: #e5e7eb;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.meta-text { color: #555; font-size: 13px; margin-top: 6px; }
