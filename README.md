@@ -2,15 +2,15 @@
 Small CMDB project that uses ESET data sent to database for asset management, uses Keycloak as SSO provider for user authentication, S3 for file submission and access related to each asset
 
 <!-- buttons -->
-[![Stars](https://img.shields.io/github/stars/ivancarlosti/ddnsonroute53?label=⭐%20Stars&color=gold&style=flat)](https://github.com/ivancarlosti/ddnsonroute53/stargazers)
-[![Watchers](https://img.shields.io/github/watchers/ivancarlosti/ddnsonroute53?label=Watchers&style=flat&color=red)](https://github.com/sponsors/ivancarlosti)
-[![Forks](https://img.shields.io/github/forks/ivancarlosti/ddnsonroute53?label=Forks&style=flat&color=ff69b4)](https://github.com/sponsors/ivancarlosti)
-[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ivancarlosti/ddnsonroute53?label=Activity)](https://github.com/ivancarlosti/ddnsonroute53/pulse)
-[![GitHub Issues](https://img.shields.io/github/issues/ivancarlosti/ddnsonroute53?label=Issues&color=orange)](https://github.com/ivancarlosti/ddnsonroute53/issues)
-[![License](https://img.shields.io/github/license/ivancarlosti/ddnsonroute53?label=License)](LICENSE)  
-[![GitHub last commit](https://img.shields.io/github/last-commit/ivancarlosti/ddnsonroute53?label=Last%20Commit)](https://github.com/ivancarlosti/ddnsonroute53/commits)
-[![Security](https://img.shields.io/badge/Security-View%20Here-purple)](https://github.com/ivancarlosti/ddnsonroute53/security)
-[![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-2.1-4baaaa)](https://github.com/ivancarlosti/ddnsonroute53?tab=coc-ov-file)
+[![Stars](https://img.shields.io/github/stars/ivancarlosti/bundledcmdb?label=⭐%20Stars&color=gold&style=flat)](https://github.com/ivancarlosti/bundledcmdb/stargazers)
+[![Watchers](https://img.shields.io/github/watchers/ivancarlosti/bundledcmdb?label=Watchers&style=flat&color=red)](https://github.com/sponsors/ivancarlosti)
+[![Forks](https://img.shields.io/github/forks/ivancarlosti/bundledcmdb?label=Forks&style=flat&color=ff69b4)](https://github.com/sponsors/ivancarlosti)
+[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ivancarlosti/bundledcmdb?label=Activity)](https://github.com/ivancarlosti/bundledcmdb/pulse)
+[![GitHub Issues](https://img.shields.io/github/issues/ivancarlosti/bundledcmdb?label=Issues&color=orange)](https://github.com/ivancarlosti/bundledcmdb/issues)
+[![License](https://img.shields.io/github/license/ivancarlosti/bundledcmdb?label=License)](LICENSE)  
+[![GitHub last commit](https://img.shields.io/github/last-commit/ivancarlosti/bundledcmdb?label=Last%20Commit)](https://github.com/ivancarlosti/bundledcmdb/commits)
+[![Security](https://img.shields.io/badge/Security-View%20Here-purple)](https://github.com/ivancarlosti/bundledcmdb/security)
+[![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-2.1-4baaaa)](https://github.com/ivancarlosti/bundledcmdb?tab=coc-ov-file)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/ivancarlosti?label=GitHub%20Sponsors&color=ffc0cb)][sponsor]
 <!-- endbuttons -->
 
