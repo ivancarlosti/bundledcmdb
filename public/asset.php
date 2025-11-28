@@ -29,8 +29,9 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 $recordId = (int) $_GET['id'];
 
 // --- Admin check from session ---
-$isAdmin = $_SESSION['is_admin'] ?? false;
-$role = $_SESSION['role'] ?? ($isAdmin ? 'admin' : 'manager');
+$role = $_SESSION['role'] ?? 'user';
+$isAdmin = ($role === 'admin');
+$currentUserEmail = $_SESSION['user_email'] ?? '';
 $currentUserEmail = $_SESSION['user_email'] ?? '';
 
 // --- Helper functions ---
@@ -153,6 +154,14 @@ if ($role === 'user' && ($row['UserEmail'] ?? '') !== $currentUserEmail) {
     die('Access Denied: You do not own this asset.');
 }
 $files = get_files($pdo, $table, $recordId);
+
+$companyUsers = [];
+if ($role === 'admin' || $role === 'manager') {
+    // Fetch all users for this company (user_table) to populate the dropdown
+    $uStmt = $pdo->prepare("SELECT email FROM users WHERE user_table = :ut ORDER BY email ASC");
+    $uStmt->execute([':ut' => $table]);
+    $companyUsers = $uStmt->fetchAll(PDO::FETCH_COLUMN);
+}
 function escape($v)
 {
     return htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
@@ -295,10 +304,14 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                                         <?php endforeach; ?>
                                     </select>
                                 <?php } elseif ($col === 'UserEmail') { ?>
-                                    <input type="email" name="row[UserEmail]" value="<?php echo escape($value); ?>"
-                                        pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-                                        oninput="this.setCustomValidity('')"
-                                        title="Please enter a valid email address or leave empty" class="track-change">
+                                    <select name="row[UserEmail]">
+                                        <option value="" <?php echo ($value === '') ? 'selected' : ''; ?>></option>
+                                        <?php foreach ($companyUsers as $uEmail): ?>
+                                            <option value="<?php echo escape($uEmail); ?>" <?php echo ($value === $uEmail) ? 'selected' : ''; ?>>
+                                                <?php echo escape($uEmail); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 <?php } elseif ($col === 'Warranty' || $col === 'PurchaseDate') { ?>
                                     <input type="date" name="row[<?php echo escape($col); ?>]"
                                         value="<?php echo escape($value); ?>">

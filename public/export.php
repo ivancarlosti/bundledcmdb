@@ -15,7 +15,8 @@ if ($userTableName === '') {
 }
 
 // Check admin status from session
-$isAdmin = $_SESSION['is_admin'] ?? false;
+$role = $_SESSION['role'] ?? 'user';
+$isAdmin = ($role === 'admin');
 
 // Base columns matching your main.php + asset.php (all visible for export)
 $base_columns = [

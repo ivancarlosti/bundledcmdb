@@ -43,13 +43,11 @@ if (isset($_GET['code'])) {
 
             if ($user) {
                 $userTable = $user['user_table'] ?? '';
-                // Role support with backward compatibility
-                $role = $user['role'] ?? (($user['is_admin'] ?? false) ? 'admin' : 'manager');
+                $role = $user['role'] ?? 'user';
 
                 $_SESSION['user_email'] = $email;
                 $_SESSION['user_table'] = $userTable;
                 $_SESSION['role'] = $role;
-                $_SESSION['is_admin'] = ($role === 'admin');
 
                 header('Location: main.php');
                 exit();

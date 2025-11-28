@@ -11,7 +11,7 @@ $userTableName = $_SESSION['user_table'] ?? '';
 if ($userTableName === '') {
     die('No user table assigned in session.');
 }
-$role = $_SESSION['role'] ?? (($_SESSION['is_admin'] ?? false) ? 'admin' : 'manager');
+$role = $_SESSION['role'] ?? 'user';
 $currentUserEmail = $_SESSION['user_email'] ?? '';
 $perPage = 25;
 $page = (isset($_GET['page']) && is_numeric($_GET['page']) && $_GET['page'] > 0) ? intval($_GET['page']) : 1;
