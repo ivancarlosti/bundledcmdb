@@ -11,6 +11,8 @@ $userTableName = $_SESSION['user_table'] ?? '';
 if ($userTableName === '') {
     die('No user table assigned in session.');
 }
+$role = $_SESSION['role'] ?? (($_SESSION['is_admin'] ?? false) ? 'admin' : 'manager');
+$currentUserEmail = $_SESSION['user_email'] ?? '';
 $perPage = 25;
 $page = (isset($_GET['page']) && is_numeric($_GET['page']) && $_GET['page'] > 0) ? intval($_GET['page']) : 1;
 // Sorting
@@ -27,6 +29,11 @@ $columns_to_show = [
 $columns_editable = ['UserEmail','Status','Warranty','Asset','PurchaseDate','BYOD'];
 // Columns read-only in this grid
 $columns_readonly = ['Hostname'];
+
+if ($role === 'user') {
+    $columns_editable = [];
+    $columns_readonly = $columns_visible;
+}
 // Columns hidden in this grid (but still fetched)
 $columns_hidden   = ['Id','UUID','CypherID','CypherKey','OSVersion','Mobile'];
 // Visible columns in this grid (Term will appear before UserEmail here)
@@ -60,6 +67,11 @@ $params = [];
 if ($search_field !== '' && $search_text !== '') {
     $whereClauses[] = "`$search_field` LIKE :searchText";
     $params[':searchText'] = '%' . $search_text . '%';
+}
+
+if ($role === 'user') {
+    $whereClauses[] = "`UserEmail` = :currentUserEmail";
+    $params[':currentUserEmail'] = $currentUserEmail;
 }
 
 $whereSql = '';
@@ -97,6 +109,16 @@ $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
 $stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$companyUsers = [];
+if ($role === 'admin' || $role === 'manager') {
+    // Fetch all users for this company (user_table) to populate the dropdown
+    // We need to query the 'users' table.
+    // Note: This assumes the current DB user has access to 'users' table.
+    $uStmt = $pdo->prepare("SELECT email FROM users WHERE user_table = :ut ORDER BY email ASC");
+    $uStmt->execute([':ut' => $userTableName]);
+    $companyUsers = $uStmt->fetchAll(PDO::FETCH_COLUMN);
+}
 
 function escape($text) {
     return htmlspecialchars((string)$text, ENT_QUOTES, 'UTF-8');
@@ -238,15 +260,14 @@ function sort_arrow($col, $current_by, $current_dir) {
                                     </select>
                                 <?php
                                 } elseif ($col === 'UserEmail') { ?>
-                                    <input
-                                        type="email"
-                                        name="rows[<?php echo (int)$index; ?>][UserEmail]"
-                                        value="<?php echo escape($value); ?>"
-                                        pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-                                        oninput="this.setCustomValidity('')"
-                                        title="Please enter a valid email address or leave empty"
-                                        class="track-change"
-                                    >
+                                    <select name="rows[<?php echo (int)$index; ?>][UserEmail]" class="track-change">
+                                        <option value="" <?php echo ($value === '') ? 'selected' : ''; ?>></option>
+                                        <?php foreach ($companyUsers as $uEmail): ?>
+                                            <option value="<?php echo escape($uEmail); ?>" <?php echo ($value === $uEmail) ? 'selected' : ''; ?>>
+                                                <?php echo escape($uEmail); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 <?php
                                 } elseif ($col === 'Warranty' || $col === 'PurchaseDate') { ?>
                                     <input

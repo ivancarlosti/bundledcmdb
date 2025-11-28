@@ -30,6 +30,8 @@ $recordId = (int) $_GET['id'];
 
 // --- Admin check from session ---
 $isAdmin = $_SESSION['is_admin'] ?? false;
+$role = $_SESSION['role'] ?? ($isAdmin ? 'admin' : 'manager');
+$currentUserEmail = $_SESSION['user_email'] ?? '';
 
 // --- Helper functions ---
 // --- DB Connection ---
@@ -122,6 +124,9 @@ function delete_file($pdo, $s3, $fileId)
 
 // --- Handle file actions ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($role === 'user') {
+        die('Access Denied: Read-only user.');
+    }
     if (isset($_FILES['new_file'])) {
         $file = $_FILES['new_file'];
         if ($file['error'] === UPLOAD_ERR_OK) {
@@ -144,6 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // --- Row data ---
 $row = get_row($pdo, $table, $recordId);
+if ($role === 'user' && ($row['UserEmail'] ?? '') !== $currentUserEmail) {
+    die('Access Denied: You do not own this asset.');
+}
 $files = get_files($pdo, $table, $recordId);
 function escape($v)
 {
@@ -201,6 +209,9 @@ if ($idx !== false) {
 
 $hidden = ['Id'];
 $editable = ['UserEmail', 'Status', 'Warranty', 'Asset', 'PurchaseDate', 'BYOD'];
+if ($role === 'user') {
+    $editable = [];
+}
 if ($isAdmin) {
     $editable[] = 'CypherID';
     $editable[] = 'CypherKey';
@@ -310,11 +321,14 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
         </table>
 
         <div class="save-section">
+            <?php if ($role !== 'user'): ?>
             <button type="submit">Save Changes</button>
+            <?php endif; ?>
         </div>
     </form>
 
     <!-- Files Upload -->
+    <?php if ($role !== 'user'): ?>
     <div class="upload-box">
         <h3>Upload New File</h3>
         <form method="post" enctype="multipart/form-data">
@@ -322,6 +336,7 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
             <button type="submit" class="upload">Upload</button>
         </form>
     </div>
+    <?php endif; ?>
 
     <!-- Existing Files -->
     <div class="existing-files">
@@ -335,10 +350,12 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                     ?>
                     <div class="file-item">
                         <a href="<?php echo escape($url); ?>" target="_blank"><?php echo escape($title); ?></a>
+                        <?php if ($role !== 'user'): ?>
                         <form method="post" style="display:inline;">
                             <input type="hidden" name="delete_file" value="<?php echo escape($delete); ?>">
                             <button type="submit" onclick="return confirm('Delete this file?');">Delete</button>
                         </form>
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; else: ?>
                 <div>No files found.</div>
