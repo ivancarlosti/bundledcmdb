@@ -30,14 +30,16 @@ $columns_editable = ['UserEmail','Status','Warranty','Asset','PurchaseDate','BYO
 // Columns read-only in this grid
 $columns_readonly = ['Hostname'];
 
-if ($role === 'user') {
-    $columns_editable = [];
-    $columns_readonly = $columns_visible;
-}
+
 // Columns hidden in this grid (but still fetched)
 $columns_hidden   = ['Id','UUID','CypherID','CypherKey','OSVersion','Mobile'];
 // Visible columns in this grid (Term will appear before UserEmail here)
 $columns_visible = array_values(array_diff($columns_to_show, $columns_hidden));
+
+if ($role === 'user') {
+    $columns_editable = [];
+    $columns_readonly = $columns_visible;
+}
 $fields_param = implode(',', $columns_to_show);
 // Hardcoded Status options
 $status_options = ["In Use","In Stock","In Repair","Replaced","Decommissioned","Lost or Stolen"];
