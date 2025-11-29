@@ -31,7 +31,7 @@ $recordId = (int) $_GET['id'];
 
 // --- Admin check from session ---
 $role = $_SESSION['role'] ?? 'user';
-$isAdmin = ($role === 'admin');
+$isAdmin = ($role === 'admin' || $role === 'superadmin');
 $currentUserEmail = $_SESSION['user_email'] ?? '';
 $currentUserEmail = $_SESSION['user_email'] ?? '';
 
@@ -190,12 +190,11 @@ $columns = [
     'Status',
     'Warranty',
     'Asset',
-    'PurchaseDate'
+    'PurchaseDate',
+    'CypherID',
+    'CypherKey',
+    'Notes'
 ];
-if ($isAdmin) {
-    $columns[] = 'CypherID';
-    $columns[] = 'CypherKey';
-}
 
 // Insert the new read-only, view-only columns immediately after CypherKey (or append if not present)
 $newReadOnlyCols = [
@@ -219,12 +218,20 @@ if ($idx !== false) {
 
 $hidden = ['Id'];
 $editable = ['UserEmail', 'Status', 'Warranty', 'Asset', 'PurchaseDate', 'BYOD'];
+
+// Role-based editability
 if ($role === 'user') {
     $editable = [];
-}
-if ($isAdmin) {
-    $editable[] = 'CypherID';
-    $editable[] = 'CypherKey';
+} else {
+    // Manager, Admin, Superadmin can edit Notes
+    if (in_array($role, ['manager', 'admin', 'superadmin'])) {
+        $editable[] = 'Notes';
+    }
+    // Admin, Superadmin can edit Cypher fields
+    if (in_array($role, ['admin', 'superadmin'])) {
+        $editable[] = 'CypherID';
+        $editable[] = 'CypherKey';
+    }
 }
 // Mark the requested fields as read-only (view-only)
 $readonly = array_merge(
@@ -313,9 +320,10 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
-                                <?php } elseif ($col === 'Warranty' || $col === 'PurchaseDate') { ?>
                                     <input type="date" name="row[<?php echo escape($col); ?>]"
                                         value="<?php echo escape($value); ?>">
+                                <?php } elseif ($col === 'Notes') { ?>
+                                    <textarea name="row[<?php echo escape($col); ?>]" rows="5" style="width: 100%;"><?php echo escape($value); ?></textarea>
                                 <?php } else { ?>
                                     <input type="text" name="row[<?php echo escape($col); ?>]"
                                         value="<?php echo escape($value); ?>">

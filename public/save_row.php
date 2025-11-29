@@ -151,9 +151,17 @@ function values_equal($a, $b): bool
 // Compute which fields are allowed to be edited on this page
 $editable = ['UserEmail', 'Status', 'Warranty', 'Asset', 'PurchaseDate', 'BYOD'];
 $role = $_SESSION['role'] ?? 'user';
-if ($role === 'admin') {
-    $editable[] = 'CypherID';
-    $editable[] = 'CypherKey';
+
+if ($role !== 'user') {
+    // Manager, Admin, Superadmin can edit Notes
+    if (in_array($role, ['manager', 'admin', 'superadmin'])) {
+        $editable[] = 'Notes';
+    }
+    // Admin, Superadmin can edit Cypher fields
+    if (in_array($role, ['admin', 'superadmin'])) {
+        $editable[] = 'CypherID';
+        $editable[] = 'CypherKey';
+    }
 }
 
 // Start from posted row; keep only editable keys
