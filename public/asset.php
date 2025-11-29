@@ -320,6 +320,7 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
+                                <?php } elseif ($col === 'Warranty' || $col === 'PurchaseDate') { ?>
                                     <input type="date" name="row[<?php echo escape($col); ?>]"
                                         value="<?php echo escape($value); ?>">
                                 <?php } elseif ($col === 'Notes') { ?>
