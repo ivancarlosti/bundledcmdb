@@ -300,12 +300,12 @@ function sort_arrow($col, $current_by, $current_dir) {
                                     >
                                 <?php
                                 }
-                            } elseif (in_array($col, $columns_readonly, true)) {
-                                echo escape($value);
                             } elseif ($col === 'BYOD') {
                                 $v = strtolower(trim((string)$value));
                                 $isTrue = in_array($v, ['true','1','yes','on'], true);
                                 echo $isTrue ? 'True' : 'False';
+                            } elseif (in_array($col, $columns_readonly, true)) {
+                                echo escape($value);
                             } else {
                                 echo escape($value);
                             }
