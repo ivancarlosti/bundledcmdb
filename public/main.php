@@ -302,6 +302,10 @@ function sort_arrow($col, $current_by, $current_dir) {
                                 }
                             } elseif (in_array($col, $columns_readonly, true)) {
                                 echo escape($value);
+                            } elseif ($col === 'BYOD') {
+                                $v = strtolower(trim((string)$value));
+                                $isTrue = in_array($v, ['true','1','yes','on'], true);
+                                echo $isTrue ? 'True' : 'False';
                             } else {
                                 echo escape($value);
                             }

@@ -324,6 +324,11 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                             } elseif (in_array($col, $readonly, true)) {
                                 echo is_array($value) ? escape(json_encode($value)) : escape($value);
 
+                            } elseif ($col === 'BYOD') {
+                                $v = strtolower(trim((string) $value));
+                                $isTrue = in_array($v, ['true', '1', 'yes', 'on'], true);
+                                echo $isTrue ? 'True' : 'False';
+
                             } else {
                                 echo is_array($value) ? escape(json_encode($value)) : escape($value);
                             }
