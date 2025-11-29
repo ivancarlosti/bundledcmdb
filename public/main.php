@@ -7,9 +7,41 @@ if (!isset($_SESSION['user_email'])) {
     header('Location: index.php');
     exit();
 }
+$role = $_SESSION['role'] ?? 'user';
+
+// Superadmin: Handle company switch
+if ($role === 'superadmin') {
+    // Fetch all available companies
+    try {
+        $pdo = new PDO(
+            "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+            DB_USER,
+            DB_PASS,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $stmt = $pdo->query("SELECT DISTINCT company FROM assets ORDER BY company ASC");
+        $allCompanies = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException $e) {
+        die("DB Connection failed: " . $e->getMessage());
+    }
+
+    // Handle switch action
+    if (isset($_POST['switch_company']) && in_array($_POST['switch_company'], $allCompanies)) {
+        $_SESSION['company'] = $_POST['switch_company'];
+        header("Location: main.php");
+        exit();
+    }
+}
+
 $company = $_SESSION['company'] ?? '';
 if ($company === '') {
-    die('No company assigned in session.');
+    if ($role === 'superadmin' && !empty($allCompanies)) {
+        // Auto-select first company if none selected
+        $company = $allCompanies[0];
+        $_SESSION['company'] = $company;
+    } else {
+        die('No company assigned in session.');
+    }
 }
 $userTableName = 'assets'; // Fixed table name
 $role = $_SESSION['role'] ?? 'user';
@@ -167,7 +199,23 @@ function sort_arrow($col, $current_by, $current_dir) {
 </head>
 <body>
 <h2>CMDB Company: <?php echo escape($company); ?></h2>
-<p>Signed in as: <?php echo escape($_SESSION['user_email']); ?></p>
+<p>Signed in as: <?php echo escape($_SESSION['user_email']); ?> (<?php echo escape($role); ?>)</p>
+
+<?php if ($role === 'superadmin'): ?>
+<div class="superadmin-controls" style="background: #f0f0f0; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc;">
+    <form method="post" style="display:inline;">
+        <label for="switch_company"><strong>Superadmin - Switch Company:</strong></label>
+        <select name="switch_company" id="switch_company" onchange="this.form.submit()">
+            <?php foreach ($allCompanies as $comp): ?>
+                <option value="<?php echo escape($comp); ?>" <?php echo ($company === $comp) ? 'selected' : ''; ?>>
+                    <?php echo escape($comp); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <noscript><button type="submit">Switch</button></noscript>
+    </form>
+</div>
+<?php endif; ?>
 <div class="search-container" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
     <form method="get" action="main.php" style="flex-grow:1; min-width: 300px; max-width: 600px;">
         <label for="search_field">Search Field:</label>
