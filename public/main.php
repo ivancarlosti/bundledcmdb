@@ -7,10 +7,11 @@ if (!isset($_SESSION['user_email'])) {
     header('Location: index.php');
     exit();
 }
-$userTableName = $_SESSION['user_table'] ?? '';
-if ($userTableName === '') {
-    die('No user table assigned in session.');
+$company = $_SESSION['company'] ?? '';
+if ($company === '') {
+    die('No company assigned in session.');
 }
+$userTableName = 'assets'; // Fixed table name
 $role = $_SESSION['role'] ?? 'user';
 $currentUserEmail = $_SESSION['user_email'] ?? '';
 $perPage = 25;
@@ -76,6 +77,10 @@ if ($role === 'user') {
     $params[':currentUserEmail'] = $currentUserEmail;
 }
 
+// Always filter by company
+$whereClauses[] = "`company` = :company";
+$params[':company'] = $company;
+
 $whereSql = '';
 if (!empty($whereClauses)) {
     $whereSql = 'WHERE ' . implode(' AND ', $whereClauses);
@@ -114,11 +119,10 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $companyUsers = [];
 if ($role === 'admin' || $role === 'manager') {
-    // Fetch all users for this company (user_table) to populate the dropdown
+    // Fetch all users for this company to populate the dropdown
     // We need to query the 'users' table.
-    // Note: This assumes the current DB user has access to 'users' table.
-    $uStmt = $pdo->prepare("SELECT email FROM users WHERE user_table = :ut ORDER BY email ASC");
-    $uStmt->execute([':ut' => $userTableName]);
+    $uStmt = $pdo->prepare("SELECT email FROM users WHERE company = :comp ORDER BY email ASC");
+    $uStmt->execute([':comp' => $company]);
     $companyUsers = $uStmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
@@ -128,8 +132,8 @@ function escape($text) {
 
 function count_files_in_term($row, $pdo, $tableName) {
     $id = $row['Id'] ?? 0;
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM device_files WHERE device_id = :id AND device_table = :table");
-    $stmt->execute([':id' => $id, ':table' => $tableName]);
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM device_files WHERE device_id = :id AND device_table = 'assets'");
+    $stmt->execute([':id' => $id]);
     return $stmt->fetchColumn();
 }
 
@@ -157,12 +161,12 @@ function sort_arrow($col, $current_by, $current_dir) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CMDB Table: <?php echo escape($userTableName); ?></title>
+    <title>CMDB Company: <?php echo escape($company); ?></title>
     <meta charset="utf-8">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h2>CMDB Table: <?php echo escape($userTableName); ?></h2>
+<h2>CMDB Company: <?php echo escape($company); ?></h2>
 <p>Signed in as: <?php echo escape($_SESSION['user_email']); ?></p>
 <div class="search-container" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
     <form method="get" action="main.php" style="flex-grow:1; min-width: 300px; max-width: 600px;">

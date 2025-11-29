@@ -10,11 +10,12 @@ if (!isset($_SESSION['user_email'])) {
 }
 
 $userEmail = $_SESSION['user_email'];
-$userTableName = $_SESSION['user_table'] ?? '';
-if ($userTableName === '') {
+$company = $_SESSION['company'] ?? '';
+if ($company === '') {
     http_response_code(400);
-    exit('Missing user table from session.');
+    exit('Missing company from session.');
 }
+$userTableName = 'assets';
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     exit('Method Not Allowed');
@@ -37,25 +38,25 @@ try {
 }
 
 // GET a single row by Id to compare before/after
-function get_row($pdo, $table, $pk)
+function get_row($pdo, $table, $pk, $company)
 {
-    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id");
-    $stmt->execute([':id' => $pk]);
+    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id AND company = :company");
+    $stmt->execute([':id' => $pk, ':company' => $company]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 }
 
 // PATCH a single row by Id
-function update_row($pdo, $table, $pk, $data)
+function update_row($pdo, $table, $pk, $data, $company)
 {
     if (empty($data))
         return ['ok' => true];
     $set = [];
-    $params = [':id' => $pk];
+    $params = [':id' => $pk, ':company' => $company];
     foreach ($data as $col => $val) {
         $set[] = "`$col` = :$col";
         $params[":$col"] = $val;
     }
-    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id";
+    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id AND company = :company";
     try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
@@ -181,7 +182,7 @@ foreach ($rows as $index => $row) {
     }
 
     // Fetch current row (Before) to compare
-    $before = get_row($pdo, $userTableName, $pk);
+    $before = get_row($pdo, $userTableName, $pk, $company);
     if (isset($before['error'])) {
         $errors[] = "Error fetching current row Id $pk: " . $before['error'];
         continue;
@@ -207,7 +208,7 @@ foreach ($rows as $index => $row) {
     }
 
     // Patch only changed fields
-    $result = update_row($pdo, $userTableName, $pk, $changedPayload);
+    $result = update_row($pdo, $userTableName, $pk, $changedPayload, $company);
     if (isset($result['error'])) {
         $errors[] = "Error updating Id $pk: " . $result['error'];
         continue;

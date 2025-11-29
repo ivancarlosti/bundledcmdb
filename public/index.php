@@ -42,11 +42,11 @@ if (isset($_GET['code'])) {
             $user = $keycloak->verifyUser($email, $pdo);
 
             if ($user) {
-                $userTable = $user['user_table'] ?? '';
+                $company = $user['company'] ?? '';
                 $role = $user['role'] ?? 'user';
 
                 $_SESSION['user_email'] = $email;
-                $_SESSION['user_table'] = $userTable;
+                $_SESSION['company'] = $company;
                 $_SESSION['role'] = $role;
 
                 header('Location: main.php');

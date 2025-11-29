@@ -14,12 +14,13 @@ if (!isset($_SESSION['user_email'])) {
     exit();
 }
 
-// --- Table from session ---
-$table = $_SESSION['user_table'] ?? '';
-if ($table === '') {
+// --- Company from session ---
+$company = $_SESSION['company'] ?? '';
+if ($company === '') {
     http_response_code(400);
-    exit('No user table assigned in session.');
+    exit('No company assigned in session.');
 }
+$table = 'assets'; // Fixed table name
 
 // --- Row id ---
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
@@ -51,32 +52,32 @@ require_once '../s3_client.php';
 $s3 = new S3Client();
 
 // --- Helper functions (Local DB & S3) ---
-function get_row($pdo, $table, $id)
+function get_row($pdo, $table, $id, $company)
 {
-    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id");
-    $stmt->execute([':id' => $id]);
+    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id AND company = :company");
+    $stmt->execute([':id' => $id, ':company' => $company]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 }
 
-function update_row($pdo, $table, $id, $data)
+function update_row($pdo, $table, $id, $data, $company)
 {
     if (empty($data))
         return;
     $set = [];
-    $params = [':id' => $id];
+    $params = [':id' => $id, ':company' => $company];
     foreach ($data as $col => $val) {
         $set[] = "`$col` = :$col";
         $params[":$col"] = $val;
     }
-    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id";
+    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id AND company = :company";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 }
 
 function get_files($pdo, $table, $id)
 {
-    $stmt = $pdo->prepare("SELECT * FROM device_files WHERE device_id = :id AND device_table = :table");
-    $stmt->execute([':id' => $id, ':table' => $table]);
+    $stmt = $pdo->prepare("SELECT * FROM device_files WHERE device_id = :id AND device_table = 'assets'");
+    $stmt->execute([':id' => $id]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -96,7 +97,7 @@ function upload_file($pdo, $s3, $table, $id, $file)
         $stmt = $pdo->prepare("INSERT INTO device_files (device_id, device_table, file_path, file_name, mime_type, size) VALUES (:did, :dtab, :path, :name, :mime, :size)");
         $stmt->execute([
             ':did' => $id,
-            ':dtab' => $table,
+            ':dtab' => 'assets',
             ':path' => $key,
             ':name' => $fileName,
             ':mime' => $mime,
@@ -149,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // --- Row data ---
-$row = get_row($pdo, $table, $recordId);
+$row = get_row($pdo, $table, $recordId, $company);
 if ($role === 'user' && ($row['UserEmail'] ?? '') !== $currentUserEmail) {
     die('Access Denied: You do not own this asset.');
 }
@@ -157,9 +158,9 @@ $files = get_files($pdo, $table, $recordId);
 
 $companyUsers = [];
 if ($role === 'admin' || $role === 'manager') {
-    // Fetch all users for this company (user_table) to populate the dropdown
-    $uStmt = $pdo->prepare("SELECT email FROM users WHERE user_table = :ut ORDER BY email ASC");
-    $uStmt->execute([':ut' => $table]);
+    // Fetch all users for this company to populate the dropdown
+    $uStmt = $pdo->prepare("SELECT email FROM users WHERE company = :comp ORDER BY email ASC");
+    $uStmt->execute([':comp' => $company]);
     $companyUsers = $uStmt->fetchAll(PDO::FETCH_COLUMN);
 }
 function escape($v)
@@ -255,7 +256,7 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
 </head>
 
 <body class="asset-page">
-    <a href="main.php" class="back-link">&larr; Back to CMDB Table: <?php echo escape($table); ?></a>
+    <a href="main.php" class="back-link">&larr; Back to CMDB Company: <?php echo escape($company); ?></a>
     <h2>CMDB Row Details (SN #<?php echo escape($serialForTitle); ?>)</h2>
 
     <form method="post" action="save_row.php" class="form-section">

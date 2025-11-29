@@ -9,10 +9,11 @@ if (!isset($_SESSION['user_email'])) {
     exit();
 }
 
-$userTableName = $_SESSION['user_table'] ?? '';
-if ($userTableName === '') {
-    die('No user table assigned in session.');
+$company = $_SESSION['company'] ?? '';
+if ($company === '') {
+    die('No company assigned in session.');
 }
+$userTableName = 'assets';
 
 // Check admin status from session
 $role = $_SESSION['role'] ?? 'user';
@@ -102,6 +103,10 @@ if ($search_field !== '' && $search_text !== '') {
     $whereClauses[] = "`$search_field` LIKE :searchText";
     $params[':searchText'] = '%' . $search_text . '%';
 }
+
+// Always filter by company
+$whereClauses[] = "`company` = :company";
+$params[':company'] = $company;
 
 $whereSql = '';
 if (!empty($whereClauses)) {

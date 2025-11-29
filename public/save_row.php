@@ -14,11 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['row'])) {
 }
 
 $userEmail = $_SESSION['user_email'];
-$userTableName = $_SESSION['user_table'] ?? '';
-if ($userTableName === '') {
+$company = $_SESSION['company'] ?? '';
+if ($company === '') {
     http_response_code(400);
-    exit('No user table assigned in session.');
+    exit('No company assigned in session.');
 }
+$userTableName = 'assets';
 
 $row = $_POST['row'];
 $rowId = $row['Id'] ?? null;
@@ -44,25 +45,25 @@ try {
 }
 
 // GET current row (before) to compare
-function get_row($pdo, $table, $pk)
+function get_row($pdo, $table, $pk, $company)
 {
-    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id");
-    $stmt->execute([':id' => $pk]);
+    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id AND company = :company");
+    $stmt->execute([':id' => $pk, ':company' => $company]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 }
 
 // PATCH only certain fields
-function update_row($pdo, $table, $pk, $data)
+function update_row($pdo, $table, $pk, $data, $company)
 {
     if (empty($data))
         return ['ok' => true];
     $set = [];
-    $params = [':id' => $pk];
+    $params = [':id' => $pk, ':company' => $company];
     foreach ($data as $col => $val) {
         $set[] = "`$col` = :$col";
         $params[":$col"] = $val;
     }
-    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id";
+    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id AND company = :company";
     try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
@@ -179,7 +180,7 @@ if (empty($updateData)) {
 }
 
 // Fetch current state
-$before = get_row($pdo, $userTableName, $rowId);
+$before = get_row($pdo, $userTableName, $rowId, $company);
 if (empty($before)) {
     // On fetch error, just return to the page (or render an error if preferred)
     header("Location: asset.php?id=" . urlencode((string) $rowId));
@@ -204,7 +205,7 @@ if (empty($changedPayload)) {
 }
 
 // Apply PATCH with only changed fields
-$result = update_row($pdo, $userTableName, $rowId, $changedPayload);
+$result = update_row($pdo, $userTableName, $rowId, $changedPayload, $company);
 if (isset($result['error'])) {
     // If update failed, just go back; you can improve UX with a query param or flash
     header("Location: asset.php?id=" . urlencode((string) $rowId));
