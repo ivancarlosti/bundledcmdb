@@ -157,7 +157,7 @@ if ($role === 'user' && ($row['UserEmail'] ?? '') !== $currentUserEmail) {
 $files = get_files($pdo, $table, $recordId);
 
 $companyUsers = [];
-if ($role === 'admin' || $role === 'manager') {
+if ($role === 'admin' || $role === 'manager' || $role === 'superadmin') {
     // Fetch all users for this company to populate the dropdown
     $uStmt = $pdo->prepare("SELECT email FROM users WHERE company = :comp ORDER BY email ASC");
     $uStmt->execute([':comp' => $company]);

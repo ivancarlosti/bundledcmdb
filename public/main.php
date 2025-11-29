@@ -150,7 +150,7 @@ $stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $companyUsers = [];
-if ($role === 'admin' || $role === 'manager') {
+if ($role === 'admin' || $role === 'manager' || $role === 'superadmin') {
     // Fetch all users for this company to populate the dropdown
     // We need to query the 'users' table.
     $uStmt = $pdo->prepare("SELECT email FROM users WHERE company = :comp ORDER BY email ASC");
