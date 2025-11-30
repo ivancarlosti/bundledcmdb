@@ -17,8 +17,8 @@ Small CMDB project that uses ESET data sent to database for asset management, us
 ## Requirement:
 
 * [Docker Compose](https://docs.docker.com/engine/install/)
+* MySQL/MariaDB
 * Keycloak for SSO
-* MariaDB for database
 * S3-like for object storage
 * ESET data to populate
 
