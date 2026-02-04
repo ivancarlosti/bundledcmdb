@@ -1,6 +1,10 @@
 # Bundled CMDB
 Small CMDB project that uses ESET data sent to database for asset management, uses Keycloak as SSO provider for user authentication, S3 for file submission and access related to each asset
 
+<!-- buttons -->
+
+<!-- endbuttons -->
+
 ## Requirement:
 
 * [Docker Compose](https://docs.docker.com/engine/install/)
