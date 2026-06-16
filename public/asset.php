@@ -251,14 +251,8 @@ $readonly = array_merge(
 
 $display = array_filter($columns, fn($c) => !in_array($c, $hidden, true));
 
-// Status options (Replaced removed)
-$status_options = [
-    lang('status_in_use'),
-    lang('status_stock'),
-    lang('status_repair'),
-    lang('status_decomm'),
-    lang('status_lost')
-];
+// Status options (Replaced removed) — keys are DB English values, values are translated labels
+$status_options = lang_status_options();
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo escape($_SESSION['lang'] ?? 'pt_BR'); ?>">
@@ -319,9 +313,9 @@ $status_options = [
                                 <?php } elseif ($col === 'Status') { ?>
                                     <select name="row[Status]">
                                         <option value="" <?php echo ($value === '' || is_null($value)) ? 'selected' : ''; ?>></option>
-                                        <?php foreach ($status_options as $opt): ?>
-                                            <option value="<?php echo escape($opt); ?>" <?php echo ($value === $opt) ? 'selected' : ''; ?>>
-                                                <?php echo escape($opt); ?>
+                                        <?php foreach ($status_options as $db_val => $label): ?>
+                                            <option value="<?php echo escape($db_val); ?>" <?php echo ($value === $db_val) ? 'selected' : ''; ?>>
+                                                <?php echo escape($label); ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -345,7 +339,11 @@ $status_options = [
                                 <?php }
 
                             } elseif (in_array($col, $readonly, true)) {
-                                echo is_array($value) ? escape(json_encode($value)) : escape($value);
+                                if ($col === 'Status') {
+                                    echo isset($status_options[$value]) ? escape($status_options[$value]) : escape($value);
+                                } else {
+                                    echo is_array($value) ? escape(json_encode($value)) : escape($value);
+                                }
 
                             } elseif ($col === 'BYOD') {
                                 $v = strtolower(trim((string) $value));
@@ -353,7 +351,11 @@ $status_options = [
                                 echo $isTrue ? lang('true_label') : lang('false_label');
 
                             } else {
-                                echo is_array($value) ? escape(json_encode($value)) : escape($value);
+                                if ($col === 'Status') {
+                                    echo isset($status_options[$value]) ? escape($status_options[$value]) : escape($value);
+                                } else {
+                                    echo is_array($value) ? escape(json_encode($value)) : escape($value);
+                                }
                             }
                             ?>
                         </td>

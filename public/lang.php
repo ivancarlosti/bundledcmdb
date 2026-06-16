@@ -6,6 +6,15 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// DB values for Status column (always English, stored in MySQL)
+define('STATUS_DB_VALUES', [
+    'In Use',
+    'In Stock',
+    'In Repair',
+    'Decommissioned',
+    'Lost or Stolen'
+]);
+
 // All supported languages
 define('LANG_SUPPORTED', ['pt_BR', 'es_MX', 'en_US']);
 define('LANG_DEFAULT', 'pt_BR');
@@ -337,4 +346,22 @@ function theme_toggle_button() {
     $html .= '</button>';
     $html .= '</div>';
     return $html;
+}
+
+// Returns a map of [db_value => translated_label] for Status dropdowns.
+// The DB always stores English values; the display label depends on the current language.
+function lang_status_options() {
+    $keys = [
+        'status_in_use',
+        'status_stock',
+        'status_repair',
+        'status_decomm',
+        'status_lost'
+    ];
+    $db_values = STATUS_DB_VALUES;
+    $result = [];
+    foreach ($keys as $i => $k) {
+        $result[$db_values[$i]] = lang($k);
+    }
+    return $result;
 }

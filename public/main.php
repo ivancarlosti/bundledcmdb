@@ -77,14 +77,8 @@ if ($role === 'user') {
     $columns_readonly = $columns_visible;
 }
 $fields_param = implode(',', $columns_to_show);
-// Status options (Replaced removed)
-$status_options = [
-    lang('status_in_use'),
-    lang('status_stock'),
-    lang('status_repair'),
-    lang('status_decomm'),
-    lang('status_lost')
-];
+// Status options (Replaced removed) — keys are DB English values, values are translated labels
+$status_options = lang_status_options();
 // Search/filter
 $search_field = $_GET['search_field'] ?? '';
 $search_text  = $_GET['search_text'] ?? '';
@@ -345,9 +339,9 @@ function sort_arrow($col, $current_by, $current_dir) {
                                 } elseif ($col === 'Status') { ?>
                                     <select name="rows[<?php echo (int)$index; ?>][Status]" class="track-change">
                                         <option value="" <?php echo ($value === '' || is_null($value)) ? 'selected' : ''; ?>></option>
-                                        <?php foreach ($status_options as $option): ?>
-                                            <option value="<?php echo escape($option); ?>" <?php echo ($value === $option) ? 'selected' : ''; ?>>
-                                                <?php echo escape($option); ?>
+                                        <?php foreach ($status_options as $db_val => $label): ?>
+                                            <option value="<?php echo escape($db_val); ?>" <?php echo ($value === $db_val) ? 'selected' : ''; ?>>
+                                                <?php echo escape($label); ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -391,6 +385,8 @@ function sort_arrow($col, $current_by, $current_dir) {
                                 $v = strtolower(trim((string)$value));
                                 $isTrue = in_array($v, ['true','1','yes','on'], true);
                                 echo $isTrue ? lang('true_label') : lang('false_label');
+                            } elseif ($col === 'Status') {
+                                echo isset($status_options[$value]) ? escape($status_options[$value]) : escape($value);
                             } elseif (in_array($col, $columns_readonly, true)) {
                                 echo escape($value);
                             } else {
