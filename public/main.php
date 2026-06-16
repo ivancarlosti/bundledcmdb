@@ -3,6 +3,9 @@
 session_start();
 require_once '../config.php';
 require_once '../auth_keycloak.php';
+require_once 'lang.php';
+lang_init();
+
 if (!isset($_SESSION['user_email'])) {
     header('Location: index.php');
     exit();
@@ -74,8 +77,14 @@ if ($role === 'user') {
     $columns_readonly = $columns_visible;
 }
 $fields_param = implode(',', $columns_to_show);
-// Hardcoded Status options
-$status_options = ["In Use","In Stock","In Repair","Replaced","Decommissioned","Lost or Stolen"];
+// Status options (Replaced removed)
+$status_options = [
+    lang('status_in_use'),
+    lang('status_stock'),
+    lang('status_repair'),
+    lang('status_decomm'),
+    lang('status_lost')
+];
 // Search/filter
 $search_field = $_GET['search_field'] ?? '';
 $search_text  = $_GET['search_text'] ?? '';
@@ -118,8 +127,12 @@ if (!empty($whereClauses)) {
     $whereSql = 'WHERE ' . implode(' AND ', $whereClauses);
 }
 
-// Count Total
-$countSql = "SELECT COUNT(*) FROM `$userTableName` $whereSql";
+// Count Total — use JOIN when sorting by Term
+if ($sort_by === 'Term') {
+    $countSql = "SELECT COUNT(*) FROM `$userTableName` a LEFT JOIN device_files df ON df.device_id = a.Id AND df.device_table = 'assets' $whereSql";
+} else {
+    $countSql = "SELECT COUNT(*) FROM `$userTableName` $whereSql";
+}
 $stmt = $pdo->prepare($countSql);
 $stmt->execute($params);
 $totalRows = $stmt->fetchColumn();
@@ -127,19 +140,32 @@ $totalPages = $perPage > 0 ? (int)ceil($totalRows / $perPage) : 1;
 
 // Sorting
 $orderSql = '';
-if ($sort_by !== '' && in_array($sort_by, $columns_to_show, true)) {
+$sortingByTerm = false;
+if ($sort_by === 'Term') {
+    $sortingByTerm = true;
+} elseif ($sort_by !== '' && in_array($sort_by, $columns_to_show, true)) {
     $orderSql = "ORDER BY `$sort_by` " . ($sort_dir === 'desc' ? 'DESC' : 'ASC');
 } else {
     // Default sort
-    $orderSql = "ORDER BY Id DESC"; 
+    $orderSql = "ORDER BY Id DESC";
 }
 
 // Pagination
 $offset = ($page - 1) * $perPage;
 $limitSql = "LIMIT :offset, :limit";
 
-// Fetch Rows
-$sql = "SELECT * FROM `$userTableName` $whereSql $orderSql $limitSql";
+// Fetch Rows — use LEFT JOIN for Term sort
+if ($sortingByTerm) {
+    $sql = "SELECT a.*, COUNT(df.id) AS file_count 
+            FROM `$userTableName` a 
+            LEFT JOIN device_files df ON df.device_id = a.Id AND df.device_table = 'assets'
+            $whereSql 
+            GROUP BY a.Id 
+            ORDER BY file_count " . ($sort_dir === 'desc' ? 'DESC' : 'ASC') . " 
+            $limitSql";
+} else {
+    $sql = "SELECT * FROM `$userTableName` $whereSql $orderSql $limitSql";
+}
 $stmt = $pdo->prepare($sql);
 foreach ($params as $k => $v) {
     $stmt->bindValue($k, $v);
@@ -172,6 +198,7 @@ function count_files_in_term($row, $pdo, $tableName) {
 // Preserve query params for pagination links
 $queryParams = $_GET;
 unset($queryParams['page']);
+// Also preserve lang param
 $queryFilterStr = http_build_query($queryParams);
 $paginationSuffix = $queryFilterStr ? '&' . $queryFilterStr : '';
 $startRecord = $totalRows > 0 ? (($page - 1) * $perPage) + 1 : 0;
@@ -191,20 +218,27 @@ function sort_arrow($col, $current_by, $current_dir) {
 }
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="<?php echo escape($_SESSION['lang'] ?? 'pt_BR'); ?>">
 <head>
-    <title>CMDB Company: <?php echo escape($company); ?></title>
+    <title>CMDB <?php echo lang('title_cmdb'); ?> <?php echo escape($company); ?></title>
     <meta charset="utf-8">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h2>CMDB Company: <?php echo escape($company); ?></h2>
-<p>Signed in as: <?php echo escape($_SESSION['user_email']); ?> (<?php echo escape($role); ?>)</p>
+<div class="page-wrapper">
+<!-- Top-Right Toolbar: Language Flags + Theme Toggle -->
+<div class="top-toolbar">
+    <?php echo lang_flag_buttons('main.php'); ?>
+    <?php echo theme_toggle_button(); ?>
+</div>
+
+<h2><?php echo lang('title_cmdb'); ?> <?php echo escape($company); ?></h2>
+<p><?php echo lang('signed_in_as'); ?> <?php echo escape($_SESSION['user_email']); ?> (<?php echo escape($role); ?>)</p>
 
 <?php if ($role === 'superadmin'): ?>
-<div class="superadmin-controls" style="background: #f0f0f0; padding: 10px; margin-bottom: 20px; border: 1px solid #ccc;">
+<div class="superadmin-controls">
     <form method="post" style="display:inline;">
-        <label for="switch_company"><strong>Superadmin - Switch Company:</strong></label>
+        <label for="switch_company"><strong><?php echo lang('switch_company'); ?></strong></label>
         <select name="switch_company" id="switch_company" onchange="this.form.submit()">
             <?php foreach ($allCompanies as $comp): ?>
                 <option value="<?php echo escape($comp); ?>" <?php echo ($company === $comp) ? 'selected' : ''; ?>>
@@ -218,19 +252,19 @@ function sort_arrow($col, $current_by, $current_dir) {
 <?php endif; ?>
 <div class="search-container" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
     <form method="get" action="main.php" style="flex-grow:1; min-width: 300px; max-width: 600px;">
-        <label for="search_field">Search Field:</label>
+        <label for="search_field"><?php echo lang('search_field'); ?>:</label>
         <select name="search_field" id="search_field" required>
-            <option value="" disabled <?php echo $search_field === '' ? 'selected' : ''; ?>>Select field</option>
+            <option value="" disabled <?php echo $search_field === '' ? 'selected' : ''; ?>><?php echo lang('select_field'); ?></option>
             <?php foreach ($columns_visible as $col): ?>
                 <option value="<?php echo escape($col); ?>" <?php echo ($search_field === $col) ? 'selected' : ''; ?>>
                     <?php echo escape($col); ?>
                 </option>
             <?php endforeach; ?>
         </select>
-        <label for="search_text">Search Text:</label>
+        <label for="search_text"><?php echo lang('search_text'); ?>:</label>
         <input type="text" id="search_text" name="search_text" value="<?php echo escape($search_text); ?>" required>
-        <button type="submit">Search</button>
-        <a href="main.php" style="margin-left:10px;">Clear</a>
+        <button type="submit"><?php echo lang('search_btn'); ?></button>
+        <a href="main.php" style="margin-left:10px;"><?php echo lang('clear'); ?></a>
     </form>
     <form method="get" action="export.php" style="margin: 0;">
         <?php if ($search_field !== ''): ?>
@@ -245,21 +279,21 @@ function sort_arrow($col, $current_by, $current_dir) {
         <?php if ($sort_dir !== ''): ?>
             <input type="hidden" name="sort_dir" value="<?php echo escape($sort_dir); ?>">
         <?php endif; ?>
-        <button type="submit" class="export-btn">Export to Excel</button>
+        <button type="submit" class="export-btn"><?php echo lang('export_btn'); ?></button>
     </form>
     <?php if ($role === 'superadmin'): ?>
         <form method="get" action="manage_permissions.php" style="margin: 0;">
-            <button type="submit" class="export-btn" style="background-color: #2196F3;">Manage Permissions</button>
+            <button type="submit" class="export-btn" style="background-color: var(--btn-info) !important;"><?php echo lang('manage_perm'); ?></button>
         </form>
     <?php endif; ?>
     <div class="header-links">
         <form method="post" action="logout.php" style="display:inline;">
-            <button type="submit">Logout</button>
+            <button type="submit"><?php echo lang('logout'); ?></button>
         </form>
     </div>
 </div>
 <div class="record-info">
-    Showing <?php echo (int)$startRecord; ?> to <?php echo (int)$endRecord; ?> of <?php echo (int)$totalRows; ?> records
+    <?php echo lang('showing'); ?> <?php echo (int)$startRecord; ?> <?php echo lang('to'); ?> <?php echo (int)$endRecord; ?> <?php echo lang('of'); ?> <?php echo (int)$totalRows; ?> <?php echo lang('records'); ?>
 </div>
 <form method="post" action="save_rows.php" id="editForm">
     <table>
@@ -291,12 +325,12 @@ function sort_arrow($col, $current_by, $current_dir) {
                             <?php
                             $value = $row[$col] ?? '';
                             if ($col === 'SN') {
-                                $label = ($value !== '') ? escape($value) : 'Open files';
+                                $label = ($value !== '') ? escape($value) : lang('no_files');
                                 echo '<a href="asset.php?id=' . urlencode($rowId) . '">' . $label . '</a>';
                             } elseif ($col === 'Term') {
                                 $fileCount = count_files_in_term($row, $pdo, $userTableName);
                                 echo '<a href="asset.php?id=' . urlencode($rowId) . '">';
-                                echo $fileCount > 0 ? ($fileCount . ' file' . ($fileCount > 1 ? 's' : '')) : 'No files';
+                                echo $fileCount > 0 ? ($fileCount . ' ' . ($fileCount > 1 ? lang('file_plural') : lang('file_singular'))) : lang('no_files');
                                 echo '</a>';
                             } elseif (in_array($col, $columns_editable, true)) {
                                 if ($col === 'BYOD') {
@@ -304,8 +338,8 @@ function sort_arrow($col, $current_by, $current_dir) {
                                     $isTrue = in_array($v, ['true','1','yes','on'], true);
                                     ?>
                                     <select name="rows[<?php echo (int)$index; ?>][BYOD]" class="track-change">
-                                        <option value="true"  <?php echo $isTrue ? 'selected' : ''; ?>>True</option>
-                                        <option value="false" <?php echo !$isTrue ? 'selected' : ''; ?>>False</option>
+                                        <option value="true"  <?php echo $isTrue ? 'selected' : ''; ?>><?php echo lang('true_label'); ?></option>
+                                        <option value="false" <?php echo !$isTrue ? 'selected' : ''; ?>><?php echo lang('false_label'); ?></option>
                                     </select>
                                     <?php
                                 } elseif ($col === 'Status') { ?>
@@ -356,7 +390,7 @@ function sort_arrow($col, $current_by, $current_dir) {
                             } elseif ($col === 'BYOD') {
                                 $v = strtolower(trim((string)$value));
                                 $isTrue = in_array($v, ['true','1','yes','on'], true);
-                                echo $isTrue ? 'True' : 'False';
+                                echo $isTrue ? lang('true_label') : lang('false_label');
                             } elseif (in_array($col, $columns_readonly, true)) {
                                 echo escape($value);
                             } else {
@@ -370,19 +404,19 @@ function sort_arrow($col, $current_by, $current_dir) {
         </tbody>
     </table>
     <br>
-    <button type="submit">Save Changes</button>
+    <button type="submit"><?php echo lang('save_changes'); ?></button>
 </form>
 <div class="pagination">
     <?php if ($page > 1): ?>
-        <a href="?page=<?php echo ($page - 1) . $paginationSuffix; ?>">&laquo; Previous</a>
+        <a href="?page=<?php echo ($page - 1) . $paginationSuffix; ?>">&laquo; <?php echo lang('previous'); ?></a>
     <?php else: ?>
-        <span>&laquo; Previous</span>
+        <span>&laquo; <?php echo lang('previous'); ?></span>
     <?php endif; ?>
-    <span class="current">Page <?php echo (int)$page; ?> of <?php echo (int)max(1, $totalPages); ?></span>
+    <span class="current"><?php echo lang('page'); ?> <?php echo (int)$page; ?> <?php echo lang('of'); ?> <?php echo (int)max(1, $totalPages); ?></span>
     <?php if ($page < $totalPages): ?>
-        <a href="?page=<?php echo ($page + 1) . $paginationSuffix; ?>">Next &raquo;</a>
+        <a href="?page=<?php echo ($page + 1) . $paginationSuffix; ?>"><?php echo lang('next'); ?> &raquo;</a>
     <?php else: ?>
-        <span>Next &raquo;</span>
+        <span><?php echo lang('next'); ?> &raquo;</span>
     <?php endif; ?>
 </div>
 <script>
@@ -427,5 +461,7 @@ document.getElementById('editForm').addEventListener('submit', function(e) {
     }
 });
 </script>
+</div><!-- .page-wrapper -->
+<script src="theme.js"></script>
 </body>
 </html>

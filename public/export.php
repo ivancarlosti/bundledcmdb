@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once 'lang.php';
+lang_init();
 
 // Only allow logged-in users to export
 if (!isset($_SESSION['user_email'])) {
@@ -42,7 +44,7 @@ $base_columns = [
 // Admin-only columns
 $admin_columns = ['CypherID', 'CypherKey'];
 
-// Read-only additional columns included for everyone (some admin-only?), from asset.php insertion logic
+// Read-only additional columns included for everyone
 $additional_read_only = [
     'CPUs',
     'HDs',
@@ -58,7 +60,7 @@ $additional_read_only = [
 // Build columns for export respecting admin rights
 $columns_to_export = $base_columns;
 if ($isAdmin) {
-    // Insert admin columns after 'Asset' (somewhere in middle, here after base)
+    // Insert admin columns after 'Asset'
     $columns_to_export = array_merge($columns_to_export, $admin_columns);
 }
 $columns_to_export = array_merge($columns_to_export, $additional_read_only);
@@ -78,7 +80,7 @@ if ($search_field !== '' && $search_text !== '') {
 }
 
 $sortParamStr = '';
-if ($sort_by !== '' && in_array($sort_by, $columns_to_export, true)) {
+if ($sort_by !== '' && $sort_by !== 'Term' && in_array($sort_by, $columns_to_export, true)) {
     $prefix = ($sort_dir === 'desc') ? '-' : '+';
     $sortParamStr = '&sort=' . rawurlencode($prefix . $sort_by);
 }
@@ -113,16 +115,27 @@ if (!empty($whereClauses)) {
     $whereSql = 'WHERE ' . implode(' AND ', $whereClauses);
 }
 
-// Sorting
+// Sorting — use LEFT JOIN for Term
 $orderSql = '';
-if ($sort_by !== '' && in_array($sort_by, $columns_to_export, true)) {
+if ($sort_by === 'Term') {
+    // ORDER BY is embedded in the JOIN query below
+} elseif ($sort_by !== '' && in_array($sort_by, $columns_to_export, true)) {
     $orderSql = "ORDER BY `$sort_by` " . ($sort_dir === 'desc' ? 'DESC' : 'ASC');
 } else {
     $orderSql = "ORDER BY Id DESC";
 }
 
-// Fetch All Rows
-$sql = "SELECT * FROM `$userTableName` $whereSql $orderSql";
+// Fetch All Rows — use LEFT JOIN for Term sort
+if ($sort_by === 'Term') {
+    $sql = "SELECT a.*, COUNT(df.id) AS file_count 
+            FROM `$userTableName` a 
+            LEFT JOIN device_files df ON df.device_id = a.Id AND df.device_table = 'assets'
+            $whereSql 
+            GROUP BY a.Id 
+            ORDER BY file_count " . ($sort_dir === 'desc' ? 'DESC' : 'ASC');
+} else {
+    $sql = "SELECT * FROM `$userTableName` $whereSql $orderSql";
+}
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $allRows = $stmt->fetchAll(PDO::FETCH_ASSOC);

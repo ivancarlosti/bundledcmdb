@@ -3,6 +3,8 @@
 session_start();
 require_once '../config.php';
 require_once '../auth_keycloak.php';
+require_once 'lang.php';
+lang_init();
 
 $debug = false;
 $message = '';
@@ -69,55 +71,36 @@ if (isset($_SESSION['user_email'])) {
 }
 
 // If no code and not logged in, show login page or redirect
-// For better UX, we can show a "Login with SSO" button or auto-redirect.
-// Let's show a simple page with a button to avoid infinite loops if configuration is wrong.
 $loginUrl = $keycloak->getLoginUrl();
 
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="<?php echo htmlspecialchars($_SESSION['lang'] ?? 'pt_BR', ENT_QUOTES, 'UTF-8'); ?>">
 
 <head>
-    <title>CMDB - Login</title>
+    <title><?php echo lang('login_title'); ?></title>
     <meta charset="utf-8">
     <link rel="stylesheet" href="style.css">
-    <style>
-        .login-container {
-            text-align: center;
-            margin-top: 100px;
-        }
-
-        .sso-btn {
-            display: inline-block;
-            padding: 10px 20px;
-            background-color: #4CAF50;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-
-        .sso-btn:hover {
-            background-color: #45a049;
-        }
-
-        .error-msg {
-            color: red;
-            margin-bottom: 20px;
-        }
-    </style>
 </head>
 
 <body class="login-page">
+    <!-- Top-Right Toolbar: Language Flags + Theme Toggle -->
+    <div class="top-toolbar">
+        <?php echo lang_flag_buttons('index.php'); ?>
+        <?php echo theme_toggle_button(); ?>
+    </div>
+
     <div class="login-container">
-        <h2>CMDB - Login</h2>
+        <h2><?php echo lang('login_title'); ?></h2>
         <?php if ($message): ?>
             <p class="error-msg"><?php echo htmlspecialchars($message); ?></p>
         <?php endif; ?>
 
-        <p>Please sign in using your company account.</p>
-        <a href="<?php echo htmlspecialchars($loginUrl); ?>" class="sso-btn">Sign in with SSO</a>
+        <p><?php echo lang('login_prompt'); ?></p>
+        <a href="<?php echo htmlspecialchars($loginUrl); ?>" class="sso-btn"><?php echo lang('sso_btn'); ?></a>
     </div>
+
+    <script src="theme.js"></script>
 </body>
 
 </html>

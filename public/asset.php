@@ -2,6 +2,8 @@
 // asset.php
 session_start();
 require_once '../config.php';
+require_once 'lang.php';
+lang_init();
 
 // Optional: enable during debugging only (remove or comment in production)
 # ini_set('display_errors', 1);
@@ -33,9 +35,7 @@ $recordId = (int) $_GET['id'];
 $role = $_SESSION['role'] ?? 'user';
 $isAdmin = ($role === 'admin' || $role === 'superadmin');
 $currentUserEmail = $_SESSION['user_email'] ?? '';
-$currentUserEmail = $_SESSION['user_email'] ?? '';
 
-// --- Helper functions ---
 // --- DB Connection ---
 try {
     $pdo = new PDO(
@@ -251,20 +251,34 @@ $readonly = array_merge(
 
 $display = array_filter($columns, fn($c) => !in_array($c, $hidden, true));
 
-$status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissioned", "Lost or Stolen"];
+// Status options (Replaced removed)
+$status_options = [
+    lang('status_in_use'),
+    lang('status_stock'),
+    lang('status_repair'),
+    lang('status_decomm'),
+    lang('status_lost')
+];
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="<?php echo escape($_SESSION['lang'] ?? 'pt_BR'); ?>">
 
 <head>
     <meta charset="utf-8">
-    <title>CMDB Row Details (SN #<?php echo escape($serialForTitle); ?>)</title>
+    <title><?php echo lang('row_details'); ?><?php echo escape($serialForTitle); ?>)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body class="asset-page">
-    <a href="main.php" class="back-link">&larr; Back to CMDB Company: <?php echo escape($company); ?></a>
-    <h2>CMDB Row Details (SN #<?php echo escape($serialForTitle); ?>)</h2>
+    <div class="page-wrapper">
+    <!-- Top-Right Toolbar: Language Flags + Theme Toggle -->
+    <div class="top-toolbar">
+        <?php echo lang_flag_buttons('asset.php'); ?>
+        <?php echo theme_toggle_button(); ?>
+    </div>
+
+    <a href="main.php" class="back-link">&larr; <?php echo lang('back_to_cmdb'); ?> <?php echo escape($company); ?></a>
+    <h2><?php echo lang('row_details'); ?><?php echo escape($serialForTitle); ?>)</h2>
 
     <form method="post" action="save_row.php" class="form-section">
         <input type="hidden" name="row[Id]" value="<?php echo escape($row['Id'] ?? $recordId); ?>">
@@ -283,11 +297,11 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                             if ($col === 'Mobile') {
                                 $norm = is_bool($value) ? $value : strtolower(trim((string) $value));
                                 $isMobile = is_bool($norm) ? $norm : in_array($norm, ['true', '1', 'yes', 'on'], true);
-                                echo $isMobile ? 'True' : 'False';
+                                echo $isMobile ? lang('true_label') : lang('false_label');
 
                             } elseif ($col === 'Term') {
                                 $count = is_array($row['Term'] ?? null) ? count($row['Term']) : 0;
-                                echo $count ? "$count file" . ($count > 1 ? 's' : '') : 'No files';
+                                echo $count ? "$count " . ($count > 1 ? lang('file_plural') : lang('file_singular')) : lang('no_files');
 
                             } elseif ($col === 'SN') {
                                 echo escape($value);
@@ -299,8 +313,8 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                                     $isTrue = in_array($v, ['true', '1', 'yes', 'on'], true);
                                     ?>
                                     <select name="row[BYOD]">
-                                        <option value="true" <?php echo $isTrue ? 'selected' : ''; ?>>True</option>
-                                        <option value="false" <?php echo !$isTrue ? 'selected' : ''; ?>>False</option>
+                                        <option value="true" <?php echo $isTrue ? 'selected' : ''; ?>><?php echo lang('true_label'); ?></option>
+                                        <option value="false" <?php echo !$isTrue ? 'selected' : ''; ?>><?php echo lang('false_label'); ?></option>
                                     </select>
                                 <?php } elseif ($col === 'Status') { ?>
                                     <select name="row[Status]">
@@ -336,7 +350,7 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                             } elseif ($col === 'BYOD') {
                                 $v = strtolower(trim((string) $value));
                                 $isTrue = in_array($v, ['true', '1', 'yes', 'on'], true);
-                                echo $isTrue ? 'True' : 'False';
+                                echo $isTrue ? lang('true_label') : lang('false_label');
 
                             } else {
                                 echo is_array($value) ? escape(json_encode($value)) : escape($value);
@@ -350,7 +364,7 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
 
         <div class="save-section">
             <?php if ($role !== 'user'): ?>
-            <button type="submit">Save Changes</button>
+            <button type="submit"><?php echo lang('save_changes'); ?></button>
             <?php endif; ?>
         </div>
     </form>
@@ -358,17 +372,17 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
     <!-- Files Upload -->
     <?php if ($role !== 'user'): ?>
     <div class="upload-box">
-        <h3>Upload New File</h3>
+        <h3><?php echo lang('upload_title'); ?></h3>
         <form method="post" enctype="multipart/form-data">
             <input type="file" name="new_file" required>
-            <button type="submit" class="upload">Upload</button>
+            <button type="submit" class="upload"><?php echo lang('upload_btn'); ?></button>
         </form>
     </div>
     <?php endif; ?>
 
     <!-- Existing Files -->
     <div class="existing-files">
-        <h3>Existing Files</h3>
+        <h3><?php echo lang('existing_files'); ?></h3>
         <div class="file-list">
             <?php if (is_array($files) && count($files)):
                 foreach ($files as $f):
@@ -381,15 +395,17 @@ $status_options = ["In Use", "In Stock", "In Repair", "Replaced", "Decommissione
                         <?php if ($role !== 'user'): ?>
                         <form method="post" style="display:inline;">
                             <input type="hidden" name="delete_file" value="<?php echo escape($delete); ?>">
-                            <button type="submit" onclick="return confirm('Delete this file?');">Delete</button>
+                            <button type="submit" onclick="return confirm('<?php echo lang('confirm_delete'); ?>');"><?php echo lang('delete_btn'); ?></button>
                         </form>
                         <?php endif; ?>
                     </div>
                 <?php endforeach; else: ?>
-                <div>No files found.</div>
+                <div><?php echo lang('no_files_found'); ?></div>
             <?php endif; ?>
         </div>
     </div>
+    </div><!-- .page-wrapper -->
+    <script src="theme.js"></script>
 </body>
 
 </html>
