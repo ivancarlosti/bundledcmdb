@@ -7,7 +7,7 @@ COPY s3_client.php s3_client.php
 RUN export COMPOSER_PROCESS_TIMEOUT=2000 && composer install --no-dev --ignore-platform-reqs --no-scripts --prefer-dist
 
 # Stage 2: Final image
-FROM php:8.4-fpm-alpine
+FROM php:8.5-fpm-alpine
 
 # Install Nginx and MariaDB client; install PHP extensions (mysqli, pdo_mysql) and clean up
 RUN apk add --no-cache --update nginx \

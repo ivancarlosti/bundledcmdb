@@ -53,10 +53,8 @@ class KeycloakAuth {
         $response = curl_exec($ch);
         if ($response === false) {
             error_log('Keycloak Token Error: ' . curl_error($ch));
-            curl_close($ch);
             return null;
         }
-        curl_close($ch);
 
         return json_decode($response, true);
     }
@@ -74,10 +72,8 @@ class KeycloakAuth {
         $response = curl_exec($ch);
         if ($response === false) {
             error_log('Keycloak UserInfo Error: ' . curl_error($ch));
-            curl_close($ch);
             return null;
         }
-        curl_close($ch);
 
         return json_decode($response, true);
     }
