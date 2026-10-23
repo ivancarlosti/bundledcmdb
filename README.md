@@ -35,6 +35,28 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/ivancarlosti/bundle
 docker compose pull && docker compose up -d
 ```
 
+## 📸 Screenshots
+
+Captured from the Docker image with demo data (no production or customer data).
+
+| Asset dashboard — light theme | Asset dashboard — dark theme |
+|---|---|
+| ![Asset dashboard in light theme](docs/screenshots/02-dashboard-light.png) | ![Asset dashboard in dark theme](docs/screenshots/03-dashboard-dark.png) |
+
+<sub>Light/dark/system theme and pt_BR / es_MX / en_US languages are switched from the toolbar in the top-right corner of every page.</sub>
+
+### Login with Keycloak SSO
+![Login screen with the Keycloak SSO button](docs/screenshots/01-login.png)
+
+### Asset detail and file attachments
+![Asset detail page with editable fields and attached files](docs/screenshots/05-asset-detail.png)
+
+### Manage permissions (SuperAdmin)
+![Permission management page listing admins and their roles](docs/screenshots/06-manage-permissions.png)
+
+### Language switcher (es_MX)
+![Asset dashboard displayed in Spanish](docs/screenshots/04-dashboard-es-MX.png)
+
 <!-- footer -->
 ---
 
