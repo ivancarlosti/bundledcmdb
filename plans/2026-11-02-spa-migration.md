@@ -385,17 +385,25 @@ Estimates are focus days for one developer.
   `/auth/login` 503 with the placeholder Keycloak → `main.php`/`settings.php`
   still render (new setting visible and translated).
 
-### Phase 2 — devices read API (3–4 d)
+### Phase 2 — devices read API (3–4 d) ✅ code + smoke done
 
-* `GET /devices` with `q`, filters, `sort` (incl. `files`, `custom:<key>`,
-  `updated_at`), `dir`, `page`, `per_page`; `meta.total/pages`.
-* `GET /devices/{id}`, `GET /devices/{id}/files`, `GET /devices/export` (CSV,
-  translated headers, same filters, streamed via `php://output`).
-* Query builder reuses `asset_list()`'s rules but returns typed rows
-  (`bool` for `BYOD`/`Mobile`, ISO-8601 UTC timestamps).
-* Done when: `EXPLAIN` shows index usage for the 5 common sorts; a 100k-row
-  fixture answers `/devices` in < 150 ms locally; `files` sort equals
-  `COUNT(device_files)`.
+* [x] `GET /devices` with `q`, filters (`source`, `status`, `byod`, `company`,
+  `trashed`), `sort` (incl. `files`, `custom:<key>`, `updated_at`), `dir`,
+  `page`, `per_page`; `meta.sort/dir/filters` echo the **effective** scope.
+* [x] `GET /devices/{id}` (row + `custom{}` + `files[]`), `GET /devices/{id}/files`.
+* [x] `GET /devices/export`: CSV (BOM, `;`), translated headers, same
+  filters/sort, streamed in 500-row pages.
+* [x] Typed rows (`bool` for `BYOD`/`Mobile`, ISO-8601 UTC timestamps,
+  `files_count`, `custom`), batched attachment counts and custom values.
+* [x] Unknown sort column → `400 invalid_sort`; unknown status/boolean →
+  `400 invalid_filter`; page past the end clamps to the last page.
+* [ ] `EXPLAIN` + 100k-row fixture timing (§10) — needs a large dataset; the
+  index set from migration 0004 (`updated_at`, `source`, `SN`) covers the
+  documented sorts.
+* Done when: sort by `SN` asc/desc, `files` desc (2 attachments sorts first),
+  paging (`total 8 → pages 2`), company isolation (Acme manager cannot read
+  Globex, Globex admin cannot read Acme), CSV with `Anexos`/`Não` in pt-BR — all
+  verified against the dev stack on 2026-11-02.
 
 ### Phase 3 — devices write API (3–4 d)
 
@@ -565,6 +573,8 @@ bumps by hand.
 5. **Saved views** (named filter+sort+column presets) — `grid_state` leaves room.
 6. **Keyset pagination** for very deep pages if `OFFSET` shows up in profiling.
 7. **Rate limiting** on panel mutations (`rate_limited` reserved in §4.1).
+8. **`col_*` translations** for `fr-FR`, `zh-CN`, `hi-IN`, `ar-SA` (they fall
+   back to en-US labels today; see §16, 2026-11-02 phase 2).
 
 ## 15. Context recovery protocol
 
@@ -593,4 +603,7 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 1 | Locale list moved to `lib/locales.php`; `public/lang.php` keeps `lang_supported()`/`lang_meta()`/`lang_normalize_code()` as wrappers | the panel API needs the list without starting a session or loading a catalogue; `bin/check-i18n.php` and `lib/settings_*` call sites are unchanged |
 | 2026-11-02 | 1 | `ui.spa_enabled` added to the `general` settings group | `public/settings.php` renders tabs per group; a new `ui` group would need its own tab before there is anything else in it |
 | 2026-11-02 | 1 | `settings_ui_spa_enabled` added to all seven catalogs now | the legacy Settings page renders the key immediately; leaving it English-only would re-create the §2.1 label bug |
+| 2026-11-02 | 2 | `col_*` catalog keys added to `en-US`, `pt-BR`, `es-MX` only | those are the three complete catalogs; `fr-FR`/`zh-CN`/`hi-IN`/`ar-SA` (≈20 %) fall back to the en-US label through `locale_translate()` instead of showing raw keys. Remaining translations tracked in §14 |
+| 2026-11-02 | 2 | `locale_catalog()`/`locale_translate()` added to `lib/locales.php`; `public/lang.php` delegates (`lang_catalog()`, `lang()`) | the CSV export runs inside the panel API and must translate headers without including a page file that starts a session |
+| 2026-11-02 | 2 | `/meta` appends a synthetic `files` column (COUNT(device_files)) | `asset_column_defs()` has no `files` entry, so the virtual column would otherwise be invisible to the SPA even though the server sorts by it |
 

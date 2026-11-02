@@ -94,3 +94,36 @@ function locale_default(): string
     $configured = function_exists('app_default_locale') ? app_default_locale() : 'en-US';
     return locale_normalize($configured) ?? 'en-US';
 }
+
+/**
+ * Catalog for one locale (cached). Catalogs live in `public/lang/<code>.php`
+ * and stay the single source of truth for the CLI tools and the SPA export.
+ *
+ * @return array<string, string>
+ */
+function locale_catalog(string $code): array
+{
+    static $cache = [];
+    if (isset($cache[$code])) {
+        return $cache[$code];
+    }
+    $file = dirname(__DIR__) . '/public/lang/' . $code . '.php';
+    if (!is_file($file)) {
+        return $cache[$code] = [];
+    }
+    $catalog = require $file;
+    return $cache[$code] = is_array($catalog) ? $catalog : [];
+}
+
+/** Translate a key: requested locale → en-US → key. */
+function locale_translate(string $key, ?string $locale = null): string
+{
+    $locale = locale_normalize($locale) ?? 'en-US';
+    $catalog = locale_catalog($locale);
+    if (isset($catalog[$key]) && $catalog[$key] !== '') {
+        return (string) $catalog[$key];
+    }
+    $fallback = locale_catalog('en-US');
+    return isset($fallback[$key]) && $fallback[$key] !== '' ? (string) $fallback[$key] : $key;
+}
+

@@ -127,27 +127,13 @@ function lang_init(): void
 /** @return array<string, string> catalog for one locale (cached) */
 function lang_catalog(string $code): array
 {
-    static $cache = [];
-    if (isset($cache[$code])) {
-        return $cache[$code];
-    }
-    $file = __DIR__ . '/lang/' . $code . '.php';
-    if (!is_file($file)) {
-        return $cache[$code] = [];
-    }
-    $catalog = require $file;
-    return $cache[$code] = is_array($catalog) ? $catalog : [];
+    return locale_catalog($code);
 }
 
 /** Translate a key: active locale → en-US → key. */
 function lang(string $key): string
 {
-    $catalog = lang_catalog(lang_code());
-    if (isset($catalog[$key]) && $catalog[$key] !== '') {
-        return (string) $catalog[$key];
-    }
-    $fallback = lang_catalog('en-US');
-    return isset($fallback[$key]) && $fallback[$key] !== '' ? (string) $fallback[$key] : $key;
+    return locale_translate($key, lang_code());
 }
 
 /** Translation coverage of a locale against en-US (bin/check-i18n.php). */

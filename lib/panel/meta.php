@@ -94,21 +94,34 @@ function panel_status_payload(): array
 function panel_columns_payload(string $role): array
 {
     $editable = asset_grid_editable_columns($role);
+    // Sortable even when hidden: the grid may sort by them without showing them.
+    $alwaysSortable = ['source', 'updated_at'];
     $out = [];
 
     foreach (asset_column_defs() as $column => $def) {
-        $isVirtual = $column === 'files';
         $out[] = [
             'key'       => $column,
             'label_key' => panel_column_label_key($column),
             'label'     => (string) ($def['label'] ?? $column),
             'type'      => (string) ($def['type'] ?? 'text'),
-            'in_grid'   => (bool) ($def['grid'] ?? false) || $isVirtual,
-            'sortable'  => $isVirtual || (bool) ($def['grid'] ?? false),
+            'in_grid'   => (bool) ($def['grid'] ?? false),
+            'sortable'  => (bool) ($def['grid'] ?? false) || in_array($column, $alwaysSortable, true),
             'editable'  => in_array($column, $editable, true),
-            'virtual'   => $isVirtual,
+            'virtual'   => false,
         ];
     }
+
+    // Virtual column: COUNT(device_files), sortable server-side.
+    $out[] = [
+        'key'       => 'files',
+        'label_key' => 'col_files',
+        'label'     => 'Attachments',
+        'type'      => 'int',
+        'in_grid'   => true,
+        'sortable'  => true,
+        'editable'  => false,
+        'virtual'   => true,
+    ];
 
     return $out;
 }
