@@ -63,5 +63,6 @@ return [
     'source' => 'स्रोत',
     'source_filter' => 'स्रोत',
     'validation_failed' => 'चिह्नित फ़ील्ड ठीक करें।',
+    'setting_ui_spa_enabled' => 'React पैनल /app/ पर उपलब्ध करें',
     'yes' => 'हाँ',
 ];

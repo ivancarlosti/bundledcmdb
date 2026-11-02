@@ -63,5 +63,6 @@ return [
     'source' => '来源',
     'source_filter' => '来源',
     'validation_failed' => '请修正高亮字段。',
+    'setting_ui_spa_enabled' => '在 /app/ 提供 React 面板',
     'yes' => '是',
 ];

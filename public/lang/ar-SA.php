@@ -63,5 +63,6 @@ return [
     'source' => 'المصدر',
     'source_filter' => 'المصدر',
     'validation_failed' => 'صحح الحقول المميزة.',
+    'setting_ui_spa_enabled' => 'تقديم لوحة React على /app/',
     'yes' => 'نعم',
 ];

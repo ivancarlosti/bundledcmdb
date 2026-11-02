@@ -19,6 +19,10 @@ define('DB_PASS', getenv('DB_PASSWORD') ?: 'YOURDBPASSWORD');
 
 // --- Application ---
 define('APP_VERSION', getenv('APP_VERSION') ?: '1.1.0');
+// Deployment environment: `production` disables the development login.
+define('APP_ENV', getenv('APP_ENV') ?: 'production');
+// Development-only session login (/auth/dev-login). Ignored in production.
+define('APP_DEV_LOGIN', getenv('APP_DEV_LOGIN') ?: '0');
 // 32-byte key (base64, hex or raw) used to encrypt secrets stored by the
 // Settings page. Generate with: openssl rand -base64 32
 define('APP_ENCRYPTION_KEY', getenv('APP_ENCRYPTION_KEY') ?: '');
@@ -40,3 +44,7 @@ define('KEYCLOAK_REALM', getenv('KEYCLOAK_REALM') ?: 'YOURSSORealm'); // Replace
 define('KEYCLOAK_CLIENT_ID', getenv('KEYCLOAK_CLIENT_ID') ?: 'bundledcmdb'); // Replace with your Client ID
 define('KEYCLOAK_CLIENT_SECRET', getenv('KEYCLOAK_CLIENT_SECRET') ?: 'YOURKEYCLOAKCLIENTSECRET'); // Replace with your Client Secret
 define('KEYCLOAK_REDIRECT_URI', getenv('KEYCLOAK_REDIRECT_URI') ?: 'https://bundledcmdb.example.com/index.php'); // Adjust based on deployment
+// Callback used by the SPA login (/auth/callback). Empty = derive from the
+// request (https://<host>/auth/callback); set it when the panel sits behind a
+// proxy that rewrites the host, and register it in the Keycloak client.
+define('KEYCLOAK_PANEL_REDIRECT_URI', getenv('KEYCLOAK_PANEL_REDIRECT_URI') ?: '');

@@ -1,5 +1,9 @@
 <?php
 // auth_keycloak.php
+//
+// Thin Keycloak OIDC client. The legacy panel (index.php) uses getLoginUrl() /
+// getToken() / getUserInfo(); the SPA login (public/auth.php) passes its own
+// redirect URI and a `state` parameter through the optional arguments.
 
 class KeycloakAuth {
     private $baseUrl;
@@ -16,66 +20,88 @@ class KeycloakAuth {
         $this->redirectUri = KEYCLOAK_REDIRECT_URI;
     }
 
-    public function getLoginUrl() {
-        $params = [
-            'client_id' => $this->clientId,
-            'redirect_uri' => $this->redirectUri,
-            'response_type' => 'code',
-            'scope' => 'openid email profile'
-        ];
-        return $this->baseUrl . '/realms/' . $this->realm . '/protocol/openid-connect/auth?' . http_build_query($params);
+    /** Realm-scoped endpoint, e.g. protocol/openid-connect/token. */
+    private function endpoint($path) {
+        return $this->baseUrl . '/realms/' . $this->realm . '/protocol/openid-connect/' . ltrim($path, '/');
     }
 
-    public function getLogoutUrl() {
-        $params = [
-            'client_id' => $this->clientId,
-            'post_logout_redirect_uri' => $this->redirectUri
-        ];
-        return $this->baseUrl . '/realms/' . $this->realm . '/protocol/openid-connect/logout?' . http_build_query($params);
-    }
-
-    public function getToken($code) {
-        $url = $this->baseUrl . '/realms/' . $this->realm . '/protocol/openid-connect/token';
-        $fields = [
-            'grant_type' => 'authorization_code',
-            'client_id' => $this->clientId,
-            'client_secret' => $this->clientSecret,
-            'code' => $code,
-            'redirect_uri' => $this->redirectUri
-        ];
-
+    /** POST a form body and decode the JSON response (null on failure). */
+    private function post($url, array $fields) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($fields));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         $response = curl_exec($ch);
         if ($response === false) {
-            error_log('Keycloak Token Error: ' . curl_error($ch));
+            error_log('Keycloak request error: ' . curl_error($ch));
+            curl_close($ch);
             return null;
         }
-
+        curl_close($ch);
         return json_decode($response, true);
     }
 
-    public function getUserInfo($accessToken) {
-        $url = $this->baseUrl . '/realms/' . $this->realm . '/protocol/openid-connect/userinfo';
-        
+    /** GET an endpoint, optionally with a bearer token; decodes JSON. */
+    private function get($url, $bearer = null) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $accessToken
-        ]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        if ($bearer !== null) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $bearer]);
+        }
         $response = curl_exec($ch);
         if ($response === false) {
-            error_log('Keycloak UserInfo Error: ' . curl_error($ch));
+            error_log('Keycloak request error: ' . curl_error($ch));
+            curl_close($ch);
             return null;
         }
-
+        curl_close($ch);
         return json_decode($response, true);
+    }
+
+    /**
+     * Authorization (login) URL.
+     *
+     * @param string|null $redirectUri callback registered in the Keycloak client
+     * @param array       $extraParams e.g. ['state' => '…', 'prompt' => 'login']
+     */
+    public function getLoginUrl($redirectUri = null, array $extraParams = []) {
+        $params = array_merge([
+            'client_id' => $this->clientId,
+            'redirect_uri' => $redirectUri ?: $this->redirectUri,
+            'response_type' => 'code',
+            'scope' => 'openid email profile',
+        ], $extraParams);
+        return $this->endpoint('auth') . '?' . http_build_query($params);
+    }
+
+    /**
+     * RP-initiated logout. Without a registered post_logout_redirect_uri
+     * Keycloak shows its own confirmation page, which is the safe default.
+     */
+    public function getLogoutUrl($postLogoutRedirect = null) {
+        $params = ['client_id' => $this->clientId];
+        if ($postLogoutRedirect !== null && $postLogoutRedirect !== '') {
+            $params['post_logout_redirect_uri'] = $postLogoutRedirect;
+        }
+        return $this->endpoint('logout') . '?' . http_build_query($params);
+    }
+
+    public function getToken($code, $redirectUri = null) {
+        return $this->post($this->endpoint('token'), [
+            'grant_type' => 'authorization_code',
+            'client_id' => $this->clientId,
+            'client_secret' => $this->clientSecret,
+            'code' => $code,
+            'redirect_uri' => $redirectUri ?: $this->redirectUri,
+        ]);
+    }
+
+    public function getUserInfo($accessToken) {
+        return $this->get($this->endpoint('userinfo'), $accessToken);
     }
 
     public function verifyUser($email, $pdo) {

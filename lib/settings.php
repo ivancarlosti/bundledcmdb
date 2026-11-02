@@ -44,6 +44,12 @@ function settings_definitions(): array
             'label' => 'Rows per page',
         ],
 
+        // --- User interface ---
+        'ui.spa_enabled' => [
+            'group' => 'general', 'type' => 'bool', 'default' => '0',
+            'label' => 'Serve the React panel at /app/',
+        ],
+
         // --- Assets ---
         'assets.default_source' => [
             'group' => 'assets', 'type' => 'source', 'default' => 'manual',

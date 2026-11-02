@@ -70,6 +70,12 @@ services:
       KEYCLOAK_CLIENT_ID: bundledcmdb
       KEYCLOAK_CLIENT_SECRET: dev-secret
       KEYCLOAK_REDIRECT_URI: http://localhost:5600/index.php
+      # SPA endpoints: register http://localhost:5600/auth/callback in the client
+      # when pointing at a real Keycloak; leave empty to derive it per request.
+      KEYCLOAK_PANEL_REDIRECT_URI: ""
+      # Development login (/auth/dev-login?email=…) — never enable in production.
+      APP_ENV: development
+      APP_DEV_LOGIN: "1"
 
 volumes:
   bcmdb-dev-db:

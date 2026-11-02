@@ -55,6 +55,24 @@ RUN printf '%s\n' \
   '            fastcgi_pass 127.0.0.1:9000;' \
   '        }' \
   '' \
+  '        # Panel API for the SPA (session cookie + CSRF): /panel-api/v1/...' \
+  '        location ~ ^/panel-api(/.*)?$ {' \
+  '            include fastcgi_params;' \
+  '            fastcgi_param SCRIPT_FILENAME $document_root/panel_api.php;' \
+  '            fastcgi_param SCRIPT_NAME /panel_api.php;' \
+  '            fastcgi_param PATH_INFO $1;' \
+  '            fastcgi_pass 127.0.0.1:9000;' \
+  '        }' \
+  '' \
+  '        # SPA authentication: /auth/login, /auth/callback, /auth/logout' \
+  '        location ~ ^/auth(/.*)?$ {' \
+  '            include fastcgi_params;' \
+  '            fastcgi_param SCRIPT_FILENAME $document_root/auth.php;' \
+  '            fastcgi_param SCRIPT_NAME /auth.php;' \
+  '            fastcgi_param PATH_INFO $1;' \
+  '            fastcgi_pass 127.0.0.1:9000;' \
+  '        }' \
+  '' \
   '        location ~ \.php$ {' \
   '            include fastcgi_params;' \
   '            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;' \

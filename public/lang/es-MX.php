@@ -230,5 +230,6 @@ return [
     'upload_btn' => 'Subir',
     'upload_title' => 'Subir Nuevo Archivo',
     'validation_failed' => 'Corrija los campos marcados.',
+    'setting_ui_spa_enabled' => 'Servir el panel React en /app/',
     'yes' => 'Sí',
 ];

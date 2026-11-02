@@ -37,6 +37,10 @@ function migrations(): array
             'description' => 'Create asset_field_defs + asset_custom_values (dynamic fields)',
             'run' => 'migration_0005_asset_fields',
         ],
+        '2026_11_02_0006_user_preferences' => [
+            'description' => 'Create user_preferences (locale, theme, page size, grid layout)',
+            'run' => 'migration_0006_user_preferences',
+        ],
     ];
 }
 
@@ -346,3 +350,20 @@ function migration_0005_asset_fields(PDO $pdo): void
     );
     migrate_note("CREATE TABLE asset_custom_values (asset_id {$idType})");
 }
+
+function migration_0006_user_preferences(PDO $pdo): void
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS user_preferences (
+            email VARCHAR(191) NOT NULL,
+            locale VARCHAR(16) NULL,
+            theme VARCHAR(16) NOT NULL DEFAULT 'system',
+            per_page SMALLINT NOT NULL DEFAULT 25,
+            grid_state LONGTEXT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (email)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    migrate_note('CREATE TABLE user_preferences');
+}
+

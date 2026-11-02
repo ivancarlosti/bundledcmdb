@@ -274,5 +274,6 @@ return [
     'upload_btn' => 'Upload',
     'upload_title' => 'Upload New File',
     'validation_failed' => 'Please fix the highlighted fields.',
+    'setting_ui_spa_enabled' => 'Serve the React panel at /app/',
     'yes' => 'Yes',
 ];

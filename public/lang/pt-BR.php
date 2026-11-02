@@ -261,5 +261,6 @@ return [
     'upload_btn' => 'Enviar',
     'upload_title' => 'Enviar Novo Arquivo',
     'validation_failed' => 'Corrija os campos destacados.',
+    'setting_ui_spa_enabled' => 'Servir o painel React em /app/',
     'yes' => 'Sim',
 ];

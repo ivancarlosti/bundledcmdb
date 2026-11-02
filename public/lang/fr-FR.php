@@ -63,5 +63,6 @@ return [
     'source' => 'Source',
     'source_filter' => 'Source',
     'validation_failed' => 'Corrigez les champs en surbrillance.',
+    'setting_ui_spa_enabled' => 'Servir le panneau React sur /app/',
     'yes' => 'Oui',
 ];

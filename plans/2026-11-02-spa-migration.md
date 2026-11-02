@@ -363,20 +363,27 @@ Estimates are focus days for one developer.
 
 ### Phase 1 — session auth + preferences (2–3 d)
 
-* `lib/session_auth.php`: `session_boot()`, `session_user()`,
-  `session_require()`, `session_require_role()`, `session_csrf_token()`,
-  `session_csrf_require()`, `session_login()`, `session_logout()`.
-* `public/auth.php`: `/auth/login`, `/auth/callback` (with `state`),
+* [x] `lib/session_auth.php`: `session_boot()`, `session_user()`,
+  `session_require()`, `session_require_role()`, `session_csrf_require()`,
+  `session_login()`, `session_logout()`, `session_safe_return_path()`
+* [x] `public/auth.php`: `/auth/login`, `/auth/callback` (with `state`),
   `/auth/logout`, `/auth/dev-login` (only when `APP_DEV_LOGIN=1` and
-  `APP_ENV !== production`).
-* `public/panel_api.php` + `lib/panel/routes.php` (tiny router, method+pattern
-  table, JSON errors, `403`/`419`/`404` mapping) + `lib/panel/session.php` +
-  `lib/panel/meta.php`.
-* Migration `2026_11_02_0006_user_preferences` (`email` PK, `locale`, `theme`,
-  `per_page`, `grid_state` JSON, `updated_at`).
-* Legacy `index.php`/`logout.php` keep working unchanged.
+  `APP_ENV !== production`)
+* [x] `public/panel_api.php` + `lib/panel/routes.php` (method+pattern router,
+  JSON envelope, `401`/`403`/`404`/`405`/`419` mapping) + `lib/panel/session.php`
+  + `lib/panel/meta.php`
+* [x] Migration `2026_11_02_0006_user_preferences` (`email` PK, `locale`, `theme`,
+  `per_page`, `grid_state` JSON, `updated_at`)
+* [x] `lib/locales.php` (locale list/normalisation shared by the panel and the
+  legacy `public/lang.php` wrappers)
+* [x] nginx blocks for `/auth` and `/panel-api` in the Dockerfile
+* [x] Legacy `index.php`/`logout.php` keep working unchanged
 * Done when: the §10 commands pass; `api.php` unchanged; no session data leaks
-  into `/api/v1/*`.
+  into `/api/v1/*`. **Verified 2026-11-02** against the dev stack: 401 → dev-login
+  302 → `/session` 200 → PATCH 419 without CSRF / 200 with it → invalid values
+  422 → `/meta` 200 → logout 200 + `/session` 401 → `/api/v1/devices` still 401 →
+  `/auth/login` 503 with the placeholder Keycloak → `main.php`/`settings.php`
+  still render (new setting visible and translated).
 
 ### Phase 2 — devices read API (3–4 d)
 
@@ -582,4 +589,8 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 0 | TanStack Table pinned to `8.21.3` instead of latest `9.3.1` | v9 is a store-based rewrite; the grid is the riskiest screen (D9) |
 | 2026-11-02 | 0 | TypeScript pinned to `~5.9.3` instead of `7.0.2` | `typescript-eslint@8.72.1` peers `<6.1.0`; lint is a §10 gate |
 | 2026-11-02 | 0 | Radix consumed as individual `@radix-ui/react-*` packages | avoids the `radix-ui` umbrella's coarser versioning |
+| 2026-11-02 | 1 | nginx `/auth` + `/panel-api` blocks landed in phase 1 (plan had them in §8) | the endpoints cannot be smoke-tested otherwise; both are additive and do not touch `/api` |
+| 2026-11-02 | 1 | Locale list moved to `lib/locales.php`; `public/lang.php` keeps `lang_supported()`/`lang_meta()`/`lang_normalize_code()` as wrappers | the panel API needs the list without starting a session or loading a catalogue; `bin/check-i18n.php` and `lib/settings_*` call sites are unchanged |
+| 2026-11-02 | 1 | `ui.spa_enabled` added to the `general` settings group | `public/settings.php` renders tabs per group; a new `ui` group would need its own tab before there is anything else in it |
+| 2026-11-02 | 1 | `settings_ui_spa_enabled` added to all seven catalogs now | the legacy Settings page renders the key immediately; leaving it English-only would re-create the §2.1 label bug |
 

@@ -67,6 +67,9 @@ docker compose exec ddnsonroute53 php bin/migrate.php
 | `APP_DEFAULT_LOCALE` | Optional fallback for the default language |
 | `APP_TIMEZONE` | Optional fallback for the timezone |
 | `APP_VERSION` | Shown by `/api/v1/health` |
+| `APP_ENV` | `production` (default) or `development`; `production` disables the development login |
+| `APP_DEV_LOGIN` | `1` enables `/auth/dev-login?email=…` **outside production only** (local UI work without Keycloak) |
+| `KEYCLOAK_PANEL_REDIRECT_URI` | Callback registered for `/auth/callback`. Empty = derive `https://<host>/auth/callback` from the request |
 | `DB_PORT` | Optional non-default database port |
 
 S3 variables remain supported as fallbacks, but the panel values take

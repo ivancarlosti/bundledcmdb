@@ -12,6 +12,10 @@ declare(strict_types=1);
  * Accept-Language → en-US. Missing keys fall back to en-US, then to the key.
  */
 
+// Locale list/normalisation live in lib/ so the panel API can use them without
+// starting a session or loading a catalogue.
+require_once __DIR__ . '/../lib/locales.php';
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -28,73 +32,36 @@ define('STATUS_DB_VALUES', [
 /** @return list<string> canonical locale codes, English first */
 function lang_supported(): array
 {
-    return ['en-US', 'pt-BR', 'es-MX', 'fr-FR', 'zh-CN', 'hi-IN', 'ar-SA'];
+    return locales_supported();
 }
 
 /** @return array<string, string> legacy or alternate code => canonical code */
 function lang_aliases(): array
 {
-    return [
-        'en'    => 'en-US', 'en_US' => 'en-US', 'en-us' => 'en-US',
-        'pt'    => 'pt-BR', 'pt_BR' => 'pt-BR', 'pt-br' => 'pt-BR',
-        'es'    => 'es-MX', 'es_MX' => 'es-MX', 'es-mx' => 'es-MX',
-        'fr'    => 'fr-FR', 'fr_FR' => 'fr-FR', 'fr-fr' => 'fr-FR',
-        'zh'    => 'zh-CN', 'zh_CN' => 'zh-CN', 'h-CN' => 'zh-CN', 'zh-cn' => 'zh-CN',
-        'hi'    => 'hi-IN', 'hi_IN' => 'hi-IN', 'hi-in' => 'hi-IN',
-        'ar'    => 'ar-SA', 'ar_SA' => 'ar-SA', 'ar-sa' => 'ar-SA',
-    ];
+    return locales_aliases();
 }
 
 /** Normalise any accepted code to a canonical supported one (or null). */
 function lang_normalize_code(?string $code): ?string
 {
-    $code = trim((string) $code);
-    if ($code === '') {
-        return null;
-    }
-    if (in_array($code, lang_supported(), true)) {
-        return $code;
-    }
-    $aliases = lang_aliases();
-    if (isset($aliases[$code])) {
-        return $aliases[$code];
-    }
-    if (isset($aliases[strtolower($code)])) {
-        return $aliases[strtolower($code)];
-    }
-    $prefix = strtolower(substr($code, 0, 2));
-    foreach (lang_supported() as $supported) {
-        if (strtolower(substr($supported, 0, 2)) === $prefix) {
-            return $supported;
-        }
-    }
-    return null;
+    return locale_normalize($code);
 }
 
 /** Native names + writing direction. */
 function lang_meta(): array
 {
-    return [
-        'en-US' => ['native' => 'English (US)', 'label' => 'EN', 'dir' => 'ltr'],
-        'pt-BR' => ['native' => 'Português (Brasil)', 'label' => 'PT', 'dir' => 'ltr'],
-        'es-MX' => ['native' => 'Español (México)', 'label' => 'ES', 'dir' => 'ltr'],
-        'fr-FR' => ['native' => 'Français (France)', 'label' => 'FR', 'dir' => 'ltr'],
-        'zh-CN' => ['native' => '中文（简体）', 'label' => 'ZH', 'dir' => 'ltr'],
-        'hi-IN' => ['native' => 'हिन्दी (भारत)', 'label' => 'HI', 'dir' => 'ltr'],
-        'ar-SA' => ['native' => 'العربية (السعودية)', 'label' => 'AR', 'dir' => 'rtl'],
-    ];
+    return locales_meta();
 }
 
 function lang_native_name(string $code): string
 {
-    return lang_meta()[$code]['native'] ?? $code;
+    return locale_native_name($code);
 }
 
 /** Default UI locale (Settings → General), canonicalised. */
 function lang_default(): string
 {
-    $configured = function_exists('app_default_locale') ? app_default_locale() : 'en-US';
-    return lang_normalize_code($configured) ?? 'en-US';
+    return locale_default();
 }
 
 /** Currently active locale. */
