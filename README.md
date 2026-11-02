@@ -86,6 +86,9 @@ coverage.
   sources, custom fields, migrations.
 * [docs/development.md](docs/development.md) — local stack, CLI tools, layout,
   validation checklist.
+* [docs/frontend.md](docs/frontend.md) — React SPA: structure, `npm` scripts,
+  local `vite` workflow, conventions and i18n rules
+  (migration plan: [`plans/2026-11-02-spa-migration.md`](plans/2026-11-02-spa-migration.md)).
 
 ## 📸 Screenshots
 
