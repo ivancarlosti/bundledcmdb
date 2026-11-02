@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-theme-source="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Bundled CMDB</title>
+    <!--
+      No-flash theme bootstrap: the resolved theme is applied before the first
+      paint. The SPA keeps the same contract (lib/theme.ts) and re-applies the
+      server-side preference once /panel-api/v1/session answers.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('bcmdb.theme');
+          var mode = stored === 'light' || stored === 'dark' ? stored : 'system';
+          var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var root = document.documentElement;
+          root.setAttribute('data-theme', dark ? 'dark' : 'light');
+          root.setAttribute('data-theme-source', stored ? 'user' : 'system');
+        } catch (error) {
+          /* private mode / storage disabled: keep the light default */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

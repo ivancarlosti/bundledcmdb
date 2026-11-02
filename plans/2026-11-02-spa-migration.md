@@ -414,11 +414,23 @@ Estimates are focus days for one developer.
 * Done when: role matrix enforced (user/manager/admin/superadmin) and covered by
   PHP integration tests (`bin/test-panel-api.php` or `tests/` w/ PHPUnit).
 
-### Phase 4 — SPA shell + design system (4–5 d)
+### Phase 4 — SPA shell + design system (4–5 d) 🚧 scaffold done
 
-* Vite scaffold, router (`/`, `/login`, `/devices`, `/devices/:id`,
-  `/settings/*`), `AppShell`, tokens, theme + locale switchers, toasts, error
-  boundary, query client (retry/backoff, `401` → login screen).
+* [x] Vite scaffold with the pinned stack (§13), `base: '/app/'`,
+  `build.outDir: '../public/app'`, dev proxy for `/panel-api`, `/auth`, `/api`;
+  committed lockfile.
+* [x] `index.html` with `viewport` + pre-paint theme bootstrap (no flash).
+* [x] `styles/tokens.css`: Tailwind v4 CSS-first config, `@custom-variant dark`
+  bound to `[data-theme="dark"]`, light/dark token sets, reduced-motion and
+  focus-visible base rules.
+* [x] `lib/theme.ts` (single theme mechanism, unit-tested), `api/client.ts`
+  (envelope unwrapping, CSRF header, typed `PanelApiError`), `api/types.ts`,
+  `features/auth/useSession.ts` + scaffold `App.tsx` that boots from `/session`
+  and shows the sign-in card on `401`.
+* [x] ESLint flat config with the logical-utilities rule (bans `ml-/mr-/pl-/pr-/
+  left-/right-*`), Vitest + Testing Library, Playwright config + smoke spec.
+* [ ] Router (`/devices`, `/devices/:id`, `/settings/*`), `AppShell`, toasts,
+  error boundary, keyboard-only walkthrough — next.
 * Done when: light/dark/system switch with no flash and no reload; all 7 locales
   switch instantly incl. `ar-SA` RTL; shell passes a keyboard-only walkthrough.
 
@@ -606,4 +618,6 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 2 | `col_*` catalog keys added to `en-US`, `pt-BR`, `es-MX` only | those are the three complete catalogs; `fr-FR`/`zh-CN`/`hi-IN`/`ar-SA` (≈20 %) fall back to the en-US label through `locale_translate()` instead of showing raw keys. Remaining translations tracked in §14 |
 | 2026-11-02 | 2 | `locale_catalog()`/`locale_translate()` added to `lib/locales.php`; `public/lang.php` delegates (`lang_catalog()`, `lang()`) | the CSV export runs inside the panel API and must translate headers without including a page file that starts a session |
 | 2026-11-02 | 2 | `/meta` appends a synthetic `files` column (COUNT(device_files)) | `asset_column_defs()` has no `files` entry, so the virtual column would otherwise be invisible to the SPA even though the server sorts by it |
+| 2026-11-02 | 4 | Playwright config + smoke spec added with the scaffold (plan had e2e in phase 8) | the two cheapest assertions (viewport meta, single theme mechanism) guard the exact §2.1 regressions; browsers are not installed in CI yet |
+| 2026-11-02 | 4 | ESLint flat config also warns on `console.*` and bans physical inline-axis utilities | encoded so reviewers stop repeating it; scoped to `src/**` and disabled for tests |
 

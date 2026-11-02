@@ -1,0 +1,14 @@
+# Node / SPA
+ui/node_modules/
+ui/dist/
+ui/coverage/
+ui/playwright-report/
+ui/test-results/
+ui/.vite/
+
+# SPA build output (`npm --prefix ui run build` writes here; shipped in the image)
+public/app/
+
+# Editors / OS
+.DS_Store
+*.local

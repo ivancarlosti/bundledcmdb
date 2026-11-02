@@ -8,3 +8,10 @@ CNAME
 Dockerfile
 README.md
 LICENSE
+# SPA: sources are needed by the Docker build stage, generated output is not.
+ui/node_modules/
+ui/dist/
+ui/coverage/
+ui/playwright-report/
+ui/test-results/
+public/app/
