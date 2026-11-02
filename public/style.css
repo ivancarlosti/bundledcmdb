@@ -588,3 +588,339 @@ textarea:focus {
     display: inline-block;
     margin-bottom: 10px;
 }
+
+/* ===== Flash messages ===== */
+.flash {
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+    border: 1px solid transparent;
+}
+
+.flash-success {
+    background: #e6ffed;
+    border-color: #2f855a;
+    color: #1c4532;
+}
+
+.flash-error {
+    background: #ffecec;
+    border-color: #c53030;
+    color: #742a2a;
+}
+
+.flash-warning {
+    background: #fffbea;
+    border-color: #b7791f;
+    color: #744210;
+}
+
+.field-error {
+    color: #c53030;
+    font-size: 0.85rem;
+    margin-top: 4px;
+}
+
+.muted {
+    color: #718096;
+}
+
+/* ===== Buttons / links used as buttons ===== */
+button,
+.button-link {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    color: #fff;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+button.danger,
+.link-button.danger {
+    background: #c53030;
+    border-color: #9b2c2c;
+    color: #fff;
+}
+
+.link-button {
+    background: none;
+    border: none;
+    color: #2b6cb0;
+    padding: 0 4px;
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: 0.9rem;
+}
+
+.inline-form {
+    display: inline;
+    margin: 0;
+}
+
+.inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-inline-end: 10px;
+    font-size: 0.9rem;
+}
+
+/* ===== Source badges ===== */
+.source-badge {
+    --source-color: #4a5568;
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--source-color);
+    white-space: nowrap;
+}
+
+.source-badge-none {
+    background: #cbd5e0;
+    color: #2d3748;
+}
+
+/* ===== Language selector ===== */
+.lang-selector select {
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+/* ===== Dashboard / grid ===== */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.dashboard-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.search-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 12px 0;
+}
+
+.company-switch {
+    margin: 8px 0;
+}
+
+.table-scroll {
+    overflow-x: auto;
+}
+
+.grid-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.grid-table th,
+.grid-table td {
+    border: 1px solid #cbd5e0;
+    padding: 6px 8px;
+    text-align: start;
+    vertical-align: top;
+}
+
+.grid-table thead th {
+    background: #edf2f7;
+}
+
+.grid-table input[type="text"],
+.grid-table input[type="date"],
+.grid-table select {
+    width: 100%;
+    min-width: 90px;
+}
+
+.grid-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 10px 0;
+}
+
+.section-row th {
+    background: #e2e8f0;
+    font-weight: 600;
+}
+
+.asset-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.delete-form {
+    margin-top: 20px;
+}
+
+
+/* ===== Settings page ===== */
+.settings-tabs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #cbd5e0;
+    margin-bottom: 16px;
+}
+
+.settings-tab {
+    padding: 8px 14px;
+    text-decoration: none;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    color: inherit;
+}
+
+.settings-tab.active {
+    border-color: #cbd5e0;
+    background: #fff;
+    font-weight: 600;
+}
+
+.settings-panel {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 18px;
+}
+
+.settings-form .form-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px dashed #e2e8f0;
+    flex-wrap: wrap;
+}
+
+.settings-form .form-row > label {
+    flex: 0 0 260px;
+    font-weight: 600;
+}
+
+.settings-form .form-control {
+    flex: 1 1 320px;
+}
+
+.settings-form input[type="text"],
+.settings-form input[type="number"],
+.settings-form input[type="password"],
+.settings-form select,
+.settings-form textarea {
+    width: 100%;
+    max-width: 520px;
+    padding: 5px 8px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+}
+
+.form-meta {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.source-tag {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border: 1px solid;
+}
+
+.badge-db { color: #2f855a; border-color: #2f855a; }
+.badge-env { color: #b7791f; border-color: #b7791f; }
+.badge-default { color: #718096; border-color: #a0aec0; }
+
+.checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 12px;
+}
+
+.token-box code {
+    display: inline-block;
+    margin: 8px 0;
+    padding: 6px 10px;
+    background: #1a202c;
+    color: #f7fafc;
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+.migration-log {
+    background: #1a202c;
+    color: #f7fafc;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    max-height: 320px;
+}
+
+.row-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* ===== Dark theme additions ===== */
+body.dark .settings-panel { background: #2d3748; border-color: #4a5568; }
+body.dark .grid-table th,
+body.dark .grid-table td { border-color: #4a5568; }
+body.dark .grid-table thead th { background: #4a5568; }
+body.dark .settings-tab.active { background: #2d3748; border-color: #4a5568; }
+
+/* ===== RTL (ar-SA) ===== */
+[dir="rtl"] body,
+[dir="rtl"] .page-wrapper {
+    direction: rtl;
+    text-align: right;
+}
+
+[dir="rtl"] .grid-table th,
+[dir="rtl"] .grid-table td,
+[dir="rtl"] .settings-form .form-row > label {
+    text-align: right;
+}

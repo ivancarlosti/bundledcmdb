@@ -1,0 +1,75 @@
+# Docker Compose setup on a laptop/workstation.
+#
+#   docker compose -f docker/docker-compose.dev.yml up --build
+#   docker compose -f docker/docker-compose.dev.yml exec app php bin/migrate.php
+#
+# Panel: http://localhost:5600/
+# API:   http://localhost:5600/api/v1/health
+#
+# S3/MinIO is intentionally not bundled (the image registry used by CI does not
+# publish one). Point Settings → Storage at any S3-compatible endpoint, e.g. a
+# MinIO container you run yourself:
+#   docker run -d -p 9000:9000 -p 9001:9001 \
+#     -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+#     minio/minio server /data --console-address ":9001"
+# then use endpoint http://host.docker.internal:9000, path-style URLs on.
+#
+# This file intentionally ships throwaway credentials: never reuse it in
+# production.
+
+name: bundledcmdb-dev
+
+services:
+  db:
+    image: mariadb:11
+    container_name: bcmdb-dev-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: bundledcmdb
+      MARIADB_USER: cmdb
+      MARIADB_PASSWORD: cmdb
+    ports:
+      - "33061:3306"
+    volumes:
+      - bcmdb-dev-db:/var/lib/mysql
+      - ./dev-legacy.sql:/docker-entrypoint-initdb.d/10-legacy.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: bcmdb-dev-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5600:80"
+    environment:
+      DB_SERVER: db
+      DB_PORT: "3306"
+      DB_NAME: bundledcmdb
+      DB_USERNAME: cmdb
+      DB_PASSWORD: cmdb
+      APP_VERSION: dev
+      # Dev-only key (32 base64 bytes). Regenerate for any real deployment:
+      #   openssl rand -base64 32
+      APP_ENCRYPTION_KEY: "ZGV2LW9ubHktMzItYnl0ZS1rZXktZm9yLWJjbWRiISE="
+      APP_DEFAULT_LOCALE: pt-BR
+      APP_TIMEZONE: America/Sao_Paulo
+      # S3 is configured from Settings → Storage (env vars would take precedence
+      # only until a DB value is saved).
+      KEYCLOAK_BASE_URL: https://sso.example.com
+      KEYCLOAK_REALM: dev
+      KEYCLOAK_CLIENT_ID: bundledcmdb
+      KEYCLOAK_CLIENT_SECRET: dev-secret
+      KEYCLOAK_REDIRECT_URI: http://localhost:5600/index.php
+
+volumes:
+  bcmdb-dev-db:

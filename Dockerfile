@@ -33,6 +33,7 @@ RUN printf '%s\n' \
   '    default_type  application/octet-stream;' \
   '' \
   '    sendfile        on;' \
+  '    client_max_body_size 25m;' \
   '' \
   '    server {' \
   '        listen       80;' \
@@ -43,6 +44,15 @@ RUN printf '%s\n' \
   '' \
   '        location / {' \
   '            try_files $uri $uri/ /index.php?$query_string;' \
+  '        }' \
+  '' \
+  '        # REST API front controller: /api/v1/devices -> api.php (PATH_INFO)' \
+  '        location ~ ^/api(/.*)?$ {' \
+  '            include fastcgi_params;' \
+  '            fastcgi_param SCRIPT_FILENAME $document_root/api.php;' \
+  '            fastcgi_param SCRIPT_NAME /api.php;' \
+  '            fastcgi_param PATH_INFO $1;' \
+  '            fastcgi_pass 127.0.0.1:9000;' \
   '        }' \
   '' \
   '        location ~ \.php$ {' \

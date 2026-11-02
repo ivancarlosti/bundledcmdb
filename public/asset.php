@@ -1,412 +1,250 @@
 <?php
-// asset.php
+declare(strict_types=1);
+
+/**
+ * public/asset.php — asset detail: built-in columns, custom fields, attachments.
+ */
+
 session_start();
-require_once '../config.php';
-require_once 'lang.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/lang.php';
+require_once __DIR__ . '/../lib/settings_ui.php';
+require_once __DIR__ . '/../lib/assets_ui.php';
 lang_init();
+app_boot();
 
-// Optional: enable during debugging only (remove or comment in production)
-# ini_set('display_errors', 1);
-# ini_set('display_startup_errors', 1);
-# error_reporting(E_ALL);
-
-// --- Security check ---
-if (!isset($_SESSION['user_email'])) {
-    header('Location: index.php');
-    exit();
+if (empty($_SESSION['user_email'])) {
+    redirect('index.php');
+}
+$role = (string) ($_SESSION['role'] ?? 'user');
+$actor = (string) $_SESSION['user_email'];
+$company = (string) ($_SESSION['company'] ?? '');
+$pdo = db_try();
+if ($pdo === null || $company === '') {
+    http_response_code(503);
+    exit(e(lang('db_unavailable')));
 }
 
-// --- Company from session ---
-$company = $_SESSION['company'] ?? '';
-if ($company === '') {
-    http_response_code(400);
-    exit('No company assigned in session.');
-}
-$table = 'assets'; // Fixed table name
-
-// --- Row id ---
-if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
+$id = (int) ($_GET['id'] ?? 0);
+if ($id <= 0) {
     http_response_code(400);
     exit('Invalid record ID');
 }
-$recordId = (int) $_GET['id'];
 
-// --- Admin check from session ---
-$role = $_SESSION['role'] ?? 'user';
-$isAdmin = ($role === 'admin' || $role === 'superadmin');
-$currentUserEmail = $_SESSION['user_email'] ?? '';
-
-// --- DB Connection ---
-try {
-    $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-    );
-} catch (PDOException $e) {
-    die("DB Connection failed: " . $e->getMessage());
+$row = asset_get($pdo, $id, $company);
+if ($row === null) {
+    http_response_code(404);
+    exit(e(lang('asset_not_found')));
+}
+if ($role === 'user' && (string) ($row['UserEmail'] ?? '') !== $actor) {
+    http_response_code(403);
+    exit(e(lang('access_denied')));
 }
 
-require_once '../s3_client.php';
-$s3 = new S3Client();
-
-// --- Helper functions (Local DB & S3) ---
-function get_row($pdo, $table, $id, $company)
-{
-    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id AND company = :company");
-    $stmt->execute([':id' => $id, ':company' => $company]);
-    return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-}
-
-function update_row($pdo, $table, $id, $data, $company)
-{
-    if (empty($data))
-        return;
-    $set = [];
-    $params = [':id' => $id, ':company' => $company];
-    foreach ($data as $col => $val) {
-        $set[] = "`$col` = :$col";
-        $params[":$col"] = $val;
-    }
-    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id AND company = :company";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-}
-
-function get_files($pdo, $table, $id)
-{
-    $stmt = $pdo->prepare("SELECT * FROM device_files WHERE device_id = :id AND device_table = 'assets'");
-    $stmt->execute([':id' => $id]);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
-
-function upload_file($pdo, $s3, $table, $id, $file)
-{
-    $fileName = $file['name'];
-    $tmpName = $file['tmp_name'];
-    $mime = $file['type'];
-    $size = $file['size'];
-
-    // Generate unique key
-    $key = "uploads/$table/$id/" . uniqid() . '_' . $fileName;
-
-    $result = $s3->uploadFile($tmpName, $key, $mime);
-
-    if ($result['success']) {
-        $stmt = $pdo->prepare("INSERT INTO device_files (device_id, device_table, file_path, file_name, mime_type, size) VALUES (:did, :dtab, :path, :name, :mime, :size)");
-        $stmt->execute([
-            ':did' => $id,
-            ':dtab' => 'assets',
-            ':path' => $key,
-            ':name' => $fileName,
-            ':mime' => $mime,
-            ':size' => $size
-        ]);
-        return ['success' => true];
-    }
-    return $result;
-}
-
-function delete_file($pdo, $s3, $fileId)
-{
-    $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = :id");
-    $stmt->execute([':id' => $fileId]);
-    $file = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($file) {
-        if ($s3->deleteFile($file['file_path'])) {
-            $del = $pdo->prepare("DELETE FROM device_files WHERE id = :id");
-            $del->execute([':id' => $fileId]);
-            return true;
-        }
-    }
-    return false;
-}
-
-// --- Handle file actions ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($role === 'user') {
-        die('Access Denied: Read-only user.');
-    }
-    if (isset($_FILES['new_file'])) {
-        $file = $_FILES['new_file'];
-        if ($file['error'] === UPLOAD_ERR_OK) {
-            $result = upload_file($pdo, $s3, $table, $recordId, $file);
-            if (!$result['success']) {
-                die("S3 Upload Failed. Code: " . $result['code'] . " | Message: " . htmlspecialchars($result['message']));
-            }
-        } else {
-            die("File upload error code: " . $file['error']);
-        }
-        header("Location: asset.php?id=" . urlencode((string) $recordId));
-        exit();
-    }
-    if (isset($_POST['delete_file'])) {
-        delete_file($pdo, $s3, $_POST['delete_file']);
-        header("Location: asset.php?id=" . urlencode((string) $recordId));
-        exit();
-    }
-}
-
-// --- Row data ---
-$row = get_row($pdo, $table, $recordId, $company);
-if ($role === 'user' && ($row['UserEmail'] ?? '') !== $currentUserEmail) {
-    die('Access Denied: You do not own this asset.');
-}
-$files = get_files($pdo, $table, $recordId);
+$isAdmin = in_array($role, ['admin', 'superadmin'], true);
+$canEdit = in_array($role, ['manager', 'admin', 'superadmin'], true);
 
 $companyUsers = [];
-if ($role === 'admin' || $role === 'manager' || $role === 'superadmin') {
-    // Fetch all users for this company to populate the dropdown
-    $uStmt = $pdo->prepare("SELECT email FROM users WHERE company = :comp ORDER BY email ASC");
-    $uStmt->execute([':comp' => $company]);
-    $companyUsers = $uStmt->fetchAll(PDO::FETCH_COLUMN);
-}
-function escape($v)
-{
-    return htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
+if (db_table_exists($pdo, 'users')) {
+    $stmt = $pdo->prepare('SELECT email FROM users WHERE company = ? ORDER BY email');
+    $stmt->execute([$company]);
+    $companyUsers = $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
-// Serial number for title/h2; fall back to record id if empty
+$files = asset_files($pdo, $id);
+$s3Ready = false;
+$s3 = null;
+try {
+    require_once __DIR__ . '/../s3_client.php';
+    $s3 = new S3Client();
+    $s3Ready = $s3->isConfigured();
+} catch (Throwable $e) {
+    $s3 = null;
+}
+
+$customValues = custom_values_for_asset($pdo, $id);
+$editableColumns = [];
+if ($canEdit) {
+    foreach (asset_form_columns() as $column) {
+        $def = asset_column_defs()[$column] ?? null;
+        if ($def !== null && in_array($role, $def['form_roles'], true)) {
+            $editableColumns[] = $column;
+        }
+    }
+}
+
 $serial = trim((string) ($row['SN'] ?? ''));
-$serialForTitle = $serial !== '' ? $serial : (string) $recordId;
-
-// --- Columns config ---
-// Reordered: Term first, then LastSeen, then UserEmail, then rest.
-$columns = [
-    'Id',
-    'UUID',
-    'SN',
-    'OS',
-    'OSVersion',
-    'Hostname',
-    'Mobile',
-    'Manufacturer',
-    'Term',
-    'LastSeen',
-    'UserEmail',
-    'BYOD',
-    'Status',
-    'Warranty',
-    'Asset',
-    'PurchaseDate',
-    'CypherID',
-    'CypherKey',
-    'Notes'
-];
-
-// Insert the new read-only, view-only columns immediately after CypherKey (or append if not present)
-$newReadOnlyCols = [
-    'CPUs',
-    'HDs',
-    'HDsTypes',
-    'HDsSpacesGB',
-    'NetworkAdapters',
-    'MACAddresses',
-    'ESETComponents',
-    'PrimaryLocalIP',
-    'PrimaryRemoteIP'
-];
-$idx = array_search('CypherKey', $columns, true);
-if ($idx !== false) {
-    array_splice($columns, $idx + 1, 0, $newReadOnlyCols);
-} else {
-    // Non-admin or CypherKey absent: still show these new fields
-    $columns = array_merge($columns, $newReadOnlyCols);
-}
-
-$hidden = ['Id'];
-$editable = ['UserEmail', 'Status', 'Warranty', 'Asset', 'PurchaseDate', 'BYOD'];
-
-// Role-based editability
-if ($role === 'user') {
-    $editable = [];
-} else {
-    // Manager, Admin, Superadmin can edit Notes
-    if (in_array($role, ['manager', 'admin', 'superadmin'])) {
-        $editable[] = 'Notes';
-    }
-    // Admin, Superadmin can edit Cypher fields
-    if (in_array($role, ['admin', 'superadmin'])) {
-        $editable[] = 'CypherID';
-        $editable[] = 'CypherKey';
-    }
-}
-// Mark the requested fields as read-only (view-only)
-$readonly = array_merge(
-    ['Hostname'],
-    [
-        'CPUs',
-        'HDs',
-        'HDsTypes',
-        'HDsSpacesGB',
-        'NetworkAdapters',
-        'MACAddresses',
-        'ESETComponents',
-        'PrimaryLocalIP',
-        'PrimaryRemoteIP'
-    ]
-);
-
-$display = array_filter($columns, fn($c) => !in_array($c, $hidden, true));
-
-// Status options (Replaced removed) — keys are DB English values, values are translated labels
-$status_options = lang_status_options();
+$title = $serial !== '' ? $serial : '#' . $id;
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo escape($_SESSION['lang'] ?? 'pt_BR'); ?>">
+<html lang="<?php echo e(lang_code()); ?>" dir="<?php echo e(lang_dir()); ?>">
 
 <head>
     <meta charset="utf-8">
-    <title><?php echo lang('row_details'); ?><?php echo escape($serialForTitle); ?>)</title>
+    <title><?php echo e(lang('asset_edit_title')); ?> <?php echo e($title); ?> — <?php echo e(lang('panel_title')); ?></title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body class="asset-page">
     <div class="page-wrapper">
-    <!-- Top-Right Toolbar: Language Flags + Theme Toggle -->
-    <div class="top-toolbar">
-        <?php echo lang_flag_buttons('asset.php'); ?>
-        <?php echo theme_toggle_button(); ?>
-    </div>
+        <div class="top-toolbar">
+            <?php echo lang_selector('asset.php'); ?>
+            <?php echo theme_toggle_button(); ?>
+        </div>
 
-    <a href="main.php" class="back-link">&larr; <?php echo lang('back_to_cmdb'); ?> <?php echo escape($company); ?></a>
-    <h2><?php echo lang('row_details'); ?><?php echo escape($serialForTitle); ?>)</h2>
+        <a href="main.php" class="back-link">&larr; <?php echo e(lang('back_to_cmdb')); ?> <?php echo e($company); ?></a>
 
-    <form method="post" action="save_row.php" class="form-section">
-        <input type="hidden" name="row[Id]" value="<?php echo escape($row['Id'] ?? $recordId); ?>">
-        <input type="hidden" name="row[UUID]" value="<?php echo escape($row['UUID'] ?? ''); ?>">
+        <div class="asset-title">
+            <h2><?php echo e(lang('asset_edit_title')); ?> <?php echo e($title); ?></h2>
+            <?php echo source_badge($pdo, (string) ($row['source'] ?? '')); ?>
+        </div>
 
-        <table class="details-table">
-            <tbody>
-                <?php foreach ($display as $col): ?>
+        <p class="muted">
+            <?php echo e(lang('source')); ?>: <?php echo e($row['source'] ?? '—'); ?>
+            <?php if (!empty($row['source_ref'])): ?> · <?php echo e((string) $row['source_ref']); ?><?php endif; ?>
+            <?php if (!empty($row['updated_at'])): ?> · <?php echo e(lang('asset_updated')); ?> <?php echo e(app_date((string) $row['updated_at'])); ?><?php endif; ?>
+            <?php if (!empty($row['updated_by'])): ?> (<?php echo e((string) $row['updated_by']); ?>)<?php endif; ?>
+        </p>
+
+        <?php echo app_schema_banner(); ?>
+        <?php echo app_flash_html(); ?>
+
+        <form method="post" action="save_row.php" class="form-section">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="row[Id]" value="<?php echo $id; ?>">
+
+            <table class="details-table">
+                <tbody>
+                <?php foreach (asset_form_columns() as $column): ?>
+                    <?php
+                    $def = asset_column_defs()[$column] ?? null;
+                    if ($def === null) {
+                        continue;
+                    }
+                    $value = (string) ($row[$column] ?? '');
+                    $editable = in_array($column, $editableColumns, true);
+                    ?>
                     <tr>
-                        <th><?php echo escape($col); ?></th>
+                        <th><?php echo e($def['label']); ?><?php echo $column === 'SN' ? ' *' : ''; ?></th>
                         <td>
                             <?php
-                            $value = $row[$col] ?? '';
-
-                            // Mobile: show "True"/"False" explicitly
-                            if ($col === 'Mobile') {
-                                $norm = is_bool($value) ? $value : strtolower(trim((string) $value));
-                                $isMobile = is_bool($norm) ? $norm : in_array($norm, ['true', '1', 'yes', 'on'], true);
-                                echo $isMobile ? lang('true_label') : lang('false_label');
-
-                            } elseif ($col === 'Term') {
-                                $count = is_array($row['Term'] ?? null) ? count($row['Term']) : 0;
-                                echo $count ? "$count " . ($count > 1 ? lang('file_plural') : lang('file_singular')) : lang('no_files');
-
-                            } elseif ($col === 'SN') {
-                                echo escape($value);
-
-                            } elseif (in_array($col, $editable, true)) {
-
-                                if ($col === 'BYOD') {
-                                    $v = strtolower(trim((string) $value));
-                                    $isTrue = in_array($v, ['true', '1', 'yes', 'on'], true);
-                                    ?>
-                                    <select name="row[BYOD]">
-                                        <option value="true" <?php echo $isTrue ? 'selected' : ''; ?>><?php echo lang('true_label'); ?></option>
-                                        <option value="false" <?php echo !$isTrue ? 'selected' : ''; ?>><?php echo lang('false_label'); ?></option>
-                                    </select>
-                                <?php } elseif ($col === 'Status') { ?>
-                                    <select name="row[Status]">
-                                        <option value="" <?php echo ($value === '' || is_null($value)) ? 'selected' : ''; ?>></option>
-                                        <?php foreach ($status_options as $db_val => $label): ?>
-                                            <option value="<?php echo escape($db_val); ?>" <?php echo ($value === $db_val) ? 'selected' : ''; ?>>
-                                                <?php echo escape($label); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                <?php } elseif ($col === 'UserEmail') { ?>
-                                    <select name="row[UserEmail]">
-                                        <option value="" <?php echo ($value === '') ? 'selected' : ''; ?>></option>
-                                        <?php foreach ($companyUsers as $uEmail): ?>
-                                            <option value="<?php echo escape($uEmail); ?>" <?php echo ($value === $uEmail) ? 'selected' : ''; ?>>
-                                                <?php echo escape($uEmail); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                <?php } elseif ($col === 'Warranty' || $col === 'PurchaseDate') { ?>
-                                    <input type="date" name="row[<?php echo escape($col); ?>]"
-                                        value="<?php echo escape($value); ?>">
-                                <?php } elseif ($col === 'Notes') { ?>
-                                    <textarea name="row[<?php echo escape($col); ?>]" rows="5" style="width: 100%;"><?php echo escape($value); ?></textarea>
-                                <?php } else { ?>
-                                    <input type="text" name="row[<?php echo escape($col); ?>]"
-                                        value="<?php echo escape($value); ?>">
-                                <?php }
-
-                            } elseif (in_array($col, $readonly, true)) {
-                                if ($col === 'Status') {
-                                    echo isset($status_options[$value]) ? escape($status_options[$value]) : escape($value);
-                                } else {
-                                    echo is_array($value) ? escape(json_encode($value)) : escape($value);
+                            if ($editable && $column === 'UserEmail' && $companyUsers !== []) {
+                                echo '<select name="row[UserEmail]"><option value="">—</option>';
+                                foreach ($companyUsers as $email) {
+                                    $selected = $value === $email ? ' selected' : '';
+                                    echo '<option value="' . e($email) . '"' . $selected . '>' . e($email) . '</option>';
                                 }
-
-                            } elseif ($col === 'BYOD') {
-                                $v = strtolower(trim((string) $value));
-                                $isTrue = in_array($v, ['true', '1', 'yes', 'on'], true);
-                                echo $isTrue ? lang('true_label') : lang('false_label');
-
+                                echo '</select>';
+                            } elseif ($editable) {
+                                echo asset_field_input($column, $value);
+                            } elseif ($column === 'Status') {
+                                echo e(lang_status_label($value));
+                            } elseif ($def['type'] === 'bool') {
+                                echo e(asset_bool_parse($value) ? lang('true_label') : lang('false_label'));
+                            } elseif ($def['type'] === 'datetime') {
+                                echo e(app_date($value));
                             } else {
-                                if ($col === 'Status') {
-                                    echo isset($status_options[$value]) ? escape($status_options[$value]) : escape($value);
-                                } else {
-                                    echo is_array($value) ? escape(json_encode($value)) : escape($value);
-                                }
+                                echo nl2br(e($value));
                             }
                             ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
-            </tbody>
-        </table>
+                </tbody>
+            </table>
 
-        <div class="save-section">
-            <?php if ($role !== 'user'): ?>
-            <button type="submit"><?php echo lang('save_changes'); ?></button>
+            <?php
+            $editableCustom = array_values(array_filter(
+                field_defs($pdo),
+                static fn (array $def): bool => field_editable_by($def, $role)
+            ));
+            if ($editableCustom !== []):
+                ?>
+                <h3><?php echo e(lang('custom_fields')); ?></h3>
+                <table class="details-table">
+                    <tbody>
+                        <?php echo asset_custom_fields_html($pdo, $role, $customValues); ?>
+                    </tbody>
+                </table>
             <?php endif; ?>
-        </div>
-    </form>
 
-    <!-- Files Upload -->
-    <?php if ($role !== 'user'): ?>
-    <div class="upload-box">
-        <h3><?php echo lang('upload_title'); ?></h3>
-        <form method="post" enctype="multipart/form-data">
-            <input type="file" name="new_file" required>
-            <button type="submit" class="upload"><?php echo lang('upload_btn'); ?></button>
+            <?php if ($canEdit): ?>
+                <div class="form-actions">
+                    <button type="submit"><?php echo e(lang('save_asset')); ?></button>
+                    <a class="link-button" href="main.php"><?php echo e(lang('cancel')); ?></a>
+                </div>
+            <?php endif; ?>
         </form>
-    </div>
-    <?php endif; ?>
 
-    <!-- Existing Files -->
-    <div class="existing-files">
-        <h3><?php echo lang('existing_files'); ?></h3>
-        <div class="file-list">
-            <?php if (is_array($files) && count($files)):
-                foreach ($files as $f):
-                    $url = $s3->getPresignedUrl($f['file_path']);
-                    $title = $f['file_name'];
-                    $delete = $f['id'];
-                    ?>
-                    <div class="file-item">
-                        <a href="<?php echo escape($url); ?>" target="_blank"><?php echo escape($title); ?></a>
-                        <?php if ($role !== 'user'): ?>
-                        <form method="post" style="display:inline;">
-                            <input type="hidden" name="delete_file" value="<?php echo escape($delete); ?>">
-                            <button type="submit" onclick="return confirm('<?php echo lang('confirm_delete'); ?>');"><?php echo lang('delete_btn'); ?></button>
-                        </form>
-                        <?php endif; ?>
-                    </div>
-                <?php endforeach; else: ?>
-                <div><?php echo lang('no_files_found'); ?></div>
-            <?php endif; ?>
-        </div>
+        <h3><?php echo e(lang('files_title')); ?></h3>
+        <?php if ($files === []): ?>
+            <p class="muted"><?php echo e(lang('no_files_found')); ?></p>
+        <?php else: ?>
+            <table class="grid-table">
+                <thead>
+                    <tr>
+                        <th><?php echo e(lang('file_singular')); ?></th>
+                        <th>MIME</th>
+                        <th><?php echo e(lang('records')); ?></th>
+                        <th><?php echo e(lang('actions')); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($files as $file): ?>
+                    <tr>
+                        <td>
+                            <?php
+                            $url = '';
+                            if ($s3Ready && $s3 !== null) {
+                                try {
+                                    $url = $s3->getPresignedUrl((string) $file['file_path']);
+                                } catch (Throwable $e) {
+                                    $url = '';
+                                }
+                            }
+                            ?>
+                            <?php if ($url !== ''): ?>
+                                <a href="<?php echo e($url); ?>" target="_blank" rel="noopener"><?php echo e($file['file_name']); ?></a>
+                            <?php else: ?>
+                                <?php echo e($file['file_name']); ?>
+                            <?php endif; ?>
+                        </td>
+                        <td><?php echo e($file['mime_type'] ?? '—'); ?></td>
+                        <td><?php echo isset($file['size']) ? (int) $file['size'] : 0; ?> B</td>
+                        <td>
+                            <?php if ($canEdit): ?>
+                                <form method="post" action="save_row.php" class="inline-form">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="row[Id]" value="<?php echo $id; ?>">
+                                    <input type="hidden" name="delete_file" value="<?php echo (int) $file['id']; ?>">
+                                    <button type="submit" class="link-button danger" onclick="return confirm('<?php echo e(lang('confirm_delete')); ?>')"><?php echo e(lang('delete_btn')); ?></button>
+                                </form>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
+        <?php if ($canEdit): ?>
+            <form method="post" action="save_row.php" enctype="multipart/form-data" class="upload-form">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="row[Id]" value="<?php echo $id; ?>">
+                <label for="newFile"><?php echo e(lang('upload_title')); ?></label>
+                <input type="file" id="newFile" name="new_file" required>
+                <button type="submit"><?php echo e(lang('upload_btn')); ?></button>
+            </form>
+        <?php endif; ?>
+
+        <?php if ($isAdmin): ?>
+            <form method="post" action="main.php" class="delete-form" onsubmit="return confirm('<?php echo e(lang('delete_confirm')); ?>')">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="delete_asset" value="<?php echo $id; ?>">
+                <button type="submit" class="danger"><?php echo e(lang('delete_asset')); ?></button>
+            </form>
+        <?php endif; ?>
     </div>
-    </div><!-- .page-wrapper -->
     <script src="theme.js"></script>
 </body>
 

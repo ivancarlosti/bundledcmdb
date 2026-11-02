@@ -1,9 +1,10 @@
 <?php
 // manage_permissions.php
 session_start();
-require_once '../config.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
 require_once 'lang.php';
 lang_init();
+app_boot();
 
 // Security check: Only SuperAdmins allowed
 $role = $_SESSION['role'] ?? 'user';
@@ -82,7 +83,7 @@ $allUsers = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo escape($_SESSION['lang'] ?? 'pt_BR'); ?>">
+<html lang="<?php echo e(lang_code()); ?>" dir="<?php echo e(lang_dir()); ?>">
 <head>
     <title><?php echo lang('perm_title'); ?></title>
     <meta charset="utf-8">

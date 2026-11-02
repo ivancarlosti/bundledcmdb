@@ -1,463 +1,364 @@
 <?php
-//main.php
+declare(strict_types=1);
+
+/**
+ * public/main.php — asset grid.
+ *
+ * Filters/sorting/paging come from lib/assets.php (asset_list), so the panel,
+ * the CSV export and the API share one query implementation.
+ */
+
 session_start();
-require_once '../config.php';
-require_once '../auth_keycloak.php';
-require_once 'lang.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/lang.php';
+require_once __DIR__ . '/../lib/settings_ui.php';
+require_once __DIR__ . '/../lib/assets_ui.php';
 lang_init();
+app_boot();
 
-if (!isset($_SESSION['user_email'])) {
-    header('Location: index.php');
-    exit();
+if (empty($_SESSION['user_email'])) {
+    redirect('index.php');
 }
-$role = $_SESSION['role'] ?? 'user';
+$role = (string) ($_SESSION['role'] ?? 'user');
+$currentUser = (string) $_SESSION['user_email'];
+$isSuper = $role === 'superadmin';
+$canEdit = in_array($role, ['manager', 'admin', 'superadmin'], true);
+$canDelete = in_array($role, ['admin', 'superadmin'], true);
+$canCreate = $canEdit;
 
-// Superadmin: Handle company switch
-if ($role === 'superadmin') {
-    // Fetch all available companies
-    try {
-        $pdo = new PDO(
-            "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-            DB_USER,
-            DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-        );
-        $stmt = $pdo->query("SELECT DISTINCT company FROM assets ORDER BY company ASC");
-        $allCompanies = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    } catch (PDOException $e) {
-        die("DB Connection failed: " . $e->getMessage());
-    }
-
-    // Handle switch action
-    if (isset($_POST['switch_company']) && in_array($_POST['switch_company'], $allCompanies)) {
-        $_SESSION['company'] = $_POST['switch_company'];
-        header("Location: main.php");
-        exit();
-    }
+$pdo = db_try();
+if ($pdo === null) {
+    http_response_code(503);
+    exit(e(lang('db_unavailable')));
 }
 
-$company = $_SESSION['company'] ?? '';
+// --- Superadmin: switch company -----------------------------------------
+$allCompanies = asset_companies($pdo);
+if ($isSuper && request_method() === 'POST' && isset($_POST['switch_company'])) {
+    csrf_require();
+    if (in_array($_POST['switch_company'], $allCompanies, true)) {
+        $_SESSION['company'] = (string) $_POST['switch_company'];
+    }
+    redirect('main.php');
+}
+
+$company = (string) ($_SESSION['company'] ?? '');
 if ($company === '') {
-    if ($role === 'superadmin' && !empty($allCompanies)) {
-        // Auto-select first company if none selected
+    if ($isSuper && $allCompanies !== []) {
         $company = $allCompanies[0];
         $_SESSION['company'] = $company;
     } else {
-        die('No company assigned in session.');
+        http_response_code(400);
+        exit('No company assigned in session.');
     }
 }
-$userTableName = 'assets'; // Fixed table name
-$role = $_SESSION['role'] ?? 'user';
-$currentUserEmail = $_SESSION['user_email'] ?? '';
-$perPage = 25;
-$page = (isset($_GET['page']) && is_numeric($_GET['page']) && $_GET['page'] > 0) ? intval($_GET['page']) : 1;
-// Sorting
-$sort_by  = $_GET['sort_by']  ?? '';
-$sort_dir = strtolower($_GET['sort_dir'] ?? 'asc');
-$sort_dir = in_array($sort_dir, ['asc','desc'], true) ? $sort_dir : 'asc';
-// Columns to fetch from API (Term before UserEmail)
-$columns_to_show = [
-    'Id','UUID','SN','OS','OSVersion','Hostname','Mobile','Manufacturer',
-    'Term','UserEmail','BYOD','Status','Warranty','Asset','PurchaseDate',
-    'CypherID','CypherKey'
-];
-// Columns editable in this grid
-$columns_editable = ['UserEmail','Status','Warranty','Asset','PurchaseDate','BYOD'];
-// Columns read-only in this grid
-$columns_readonly = ['Hostname'];
 
-
-// Columns hidden in this grid (but still fetched)
-$columns_hidden   = ['Id','UUID','CypherID','CypherKey','OSVersion','Mobile'];
-// Visible columns in this grid (Term will appear before UserEmail here)
-$columns_visible = array_values(array_diff($columns_to_show, $columns_hidden));
-
-if ($role === 'user') {
-    $columns_editable = [];
-    $columns_readonly = $columns_visible;
-}
-$fields_param = implode(',', $columns_to_show);
-// Status options (Replaced removed) — keys are DB English values, values are translated labels
-$status_options = lang_status_options();
-// Search/filter
-$search_field = $_GET['search_field'] ?? '';
-$search_text  = $_GET['search_text'] ?? '';
-$filterParamStr = '';
-if ($search_field !== '' && $search_text !== '') {
-    $filterParamStr = '&where=(' . rawurlencode($search_field) . ',like,' . rawurlencode('%' . $search_text . '%') . ')';
-}
-// Helper: DB Connection
-try {
-    $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-    );
-} catch (PDOException $e) {
-    die("DB Connection failed: " . $e->getMessage());
+// --- Delete action (POST, CSRF) -----------------------------------------
+if (request_method() === 'POST' && isset($_POST['delete_asset'])) {
+    csrf_require();
+    if (!$canDelete) {
+        http_response_code(403);
+        exit(e(lang('access_denied')));
+    }
+    if (asset_soft_delete($pdo, (int) $_POST['delete_asset'], $currentUser, $company)) {
+        flash_set('success', lang('asset_deleted'));
+    }
+    redirect('main.php');
 }
 
-// Build Query
-$whereClauses = [];
-$params = [];
+$settings = settings_all();
+$perPage = max(5, min(500, (int) ($settings['general.per_page']['value'] ?? 25)));
 
-if ($search_field !== '' && $search_text !== '') {
-    $whereClauses[] = "`$search_field` LIKE :searchText";
-    $params[':searchText'] = '%' . $search_text . '%';
+$searchField = trim((string) ($_GET['search_field'] ?? ''));
+$searchText = trim((string) ($_GET['search_text'] ?? ''));
+$sourceFilter = trim((string) ($_GET['source'] ?? ''));
+$sort = trim((string) ($_GET['sort'] ?? ''));
+$dir = strtolower((string) ($_GET['dir'] ?? 'asc')) === 'desc' ? 'desc' : 'asc';
+$page = max(1, (int) ($_GET['page'] ?? 1));
+
+$result = asset_list($pdo, [
+    'company'      => $company,
+    'source'       => $sourceFilter,
+    'search'       => $searchText,
+    'search_field' => $searchField,
+    'owner_email'  => $role === 'user' ? $currentUser : '',
+    'sort'         => $sort,
+    'dir'          => $dir,
+    'page'         => $page,
+    'per_page'     => $perPage,
+]);
+
+$rows = $result['rows'];
+$total = $result['total'];
+$totalPages = $result['pages'];
+$assetIds = array_map(static fn (array $row): int => (int) $row['Id'], $rows);
+$customValues = custom_values_load($pdo, $assetIds);
+$gridFields = array_values(array_filter(
+    field_defs($pdo),
+    static fn (array $def): bool => (int) $def['show_in_grid'] === 1
+));
+$sourcesList = sources_all($pdo);
+
+$fileCounts = [];
+if ($assetIds !== [] && db_table_exists($pdo, 'device_files')) {
+    $in = implode(',', array_fill(0, count($assetIds), '?'));
+    $stmt = $pdo->prepare("SELECT device_id, COUNT(*) AS c FROM device_files
+                            WHERE device_table = 'assets' AND device_id IN ($in) GROUP BY device_id");
+    $stmt->execute($assetIds);
+    foreach ($stmt->fetchAll() as $row) {
+        $fileCounts[(int) $row['device_id']] = (int) $row['c'];
+    }
 }
 
-if ($role === 'user') {
-    $whereClauses[] = "`UserEmail` = :currentUserEmail";
-    $params[':currentUserEmail'] = $currentUserEmail;
-}
-
-// Always filter by company
-$whereClauses[] = "`company` = :company";
-$params[':company'] = $company;
-
-$whereSql = '';
-if (!empty($whereClauses)) {
-    $whereSql = 'WHERE ' . implode(' AND ', $whereClauses);
-}
-
-// Count Total — use JOIN when sorting by Term
-if ($sort_by === 'Term') {
-    $countSql = "SELECT COUNT(*) FROM `$userTableName` a LEFT JOIN device_files df ON df.device_id = a.Id AND df.device_table = 'assets' $whereSql";
-} else {
-    $countSql = "SELECT COUNT(*) FROM `$userTableName` $whereSql";
-}
-$stmt = $pdo->prepare($countSql);
-$stmt->execute($params);
-$totalRows = $stmt->fetchColumn();
-$totalPages = $perPage > 0 ? (int)ceil($totalRows / $perPage) : 1;
-
-// Sorting
-$orderSql = '';
-$sortingByTerm = false;
-if ($sort_by === 'Term') {
-    $sortingByTerm = true;
-} elseif ($sort_by !== '' && in_array($sort_by, $columns_to_show, true)) {
-    $orderSql = "ORDER BY `$sort_by` " . ($sort_dir === 'desc' ? 'DESC' : 'ASC');
-} else {
-    // Default sort
-    $orderSql = "ORDER BY Id DESC";
-}
-
-// Pagination
-$offset = ($page - 1) * $perPage;
-$limitSql = "LIMIT :offset, :limit";
-
-// Fetch Rows — use LEFT JOIN for Term sort
-if ($sortingByTerm) {
-    $sql = "SELECT a.*, COUNT(df.id) AS file_count 
-            FROM `$userTableName` a 
-            LEFT JOIN device_files df ON df.device_id = a.Id AND df.device_table = 'assets'
-            $whereSql 
-            GROUP BY a.Id 
-            ORDER BY file_count " . ($sort_dir === 'desc' ? 'DESC' : 'ASC') . " 
-            $limitSql";
-} else {
-    $sql = "SELECT * FROM `$userTableName` $whereSql $orderSql $limitSql";
-}
-$stmt = $pdo->prepare($sql);
-foreach ($params as $k => $v) {
-    $stmt->bindValue($k, $v);
-}
-$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-$stmt->execute();
-$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$gridColumns = asset_grid_columns();
+$editableColumns = asset_grid_editable_columns($role);
 
 $companyUsers = [];
-if ($role === 'admin' || $role === 'manager' || $role === 'superadmin') {
-    // Fetch all users for this company to populate the dropdown
-    // We need to query the 'users' table.
-    $uStmt = $pdo->prepare("SELECT email FROM users WHERE company = :comp ORDER BY email ASC");
-    $uStmt->execute([':comp' => $company]);
-    $companyUsers = $uStmt->fetchAll(PDO::FETCH_COLUMN);
+if (db_table_exists($pdo, 'users')) {
+    $userStmt = $pdo->prepare('SELECT email FROM users WHERE company = ? ORDER BY email');
+    $userStmt->execute([$company]);
+    $companyUsers = $userStmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
-function escape($text) {
-    return htmlspecialchars((string)$text, ENT_QUOTES, 'UTF-8');
+/** Build a query string for links, dropping empty values. */
+function grid_url(array $base, array $overrides = []): string
+{
+    $params = array_filter(
+        array_merge($base, $overrides),
+        static fn ($value): bool => $value !== '' && $value !== null
+    );
+    return 'main.php' . ($params === [] ? '' : '?' . http_build_query($params));
 }
 
-function count_files_in_term($row, $pdo, $tableName) {
-    $id = $row['Id'] ?? 0;
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM device_files WHERE device_id = :id AND device_table = 'assets'");
-    $stmt->execute([':id' => $id]);
-    return $stmt->fetchColumn();
+$filterParams = [
+    'search_field' => $searchField,
+    'search_text'  => $searchText,
+    'source'       => $sourceFilter,
+    'sort'         => $sort,
+    'dir'          => $dir,
+];
+
+/** Translate a built-in column header (fallback: its English label). */
+function column_label(string $column): string
+{
+    $key = 'col_' . strtolower($column);
+    $translated = lang($key);
+    return $translated === $key ? (asset_column_defs()[$column]['label'] ?? $column) : $translated;
 }
 
-// Preserve query params for pagination links
-$queryParams = $_GET;
-unset($queryParams['page']);
-// Also preserve lang param
-$queryFilterStr = http_build_query($queryParams);
-$paginationSuffix = $queryFilterStr ? '&' . $queryFilterStr : '';
-$startRecord = $totalRows > 0 ? (($page - 1) * $perPage) + 1 : 0;
-$endRecord   = ($page * $perPage) > $totalRows ? $totalRows : ($page * $perPage);
-
-// Helper to build sorted header links and arrow
-function sort_link($col, $current_by, $current_dir) {
-    $params = $_GET;
-    $params['sort_by'] = $col;
-    $params['sort_dir'] = ($current_by === $col && strtolower($current_dir) === 'asc') ? 'desc' : 'asc';
-    $qs = http_build_query($params);
-    return '?' . $qs;
-}
-function sort_arrow($col, $current_by, $current_dir) {
-    if ($col !== $current_by) return '';
-    return strtolower($current_dir) === 'asc' ? '▲' : '▼';
+/** Sort link for a column header. */
+function sort_link(string $column, array $filterParams, string $sort, string $dir): string
+{
+    $nextDir = ($sort === $column && $dir === 'asc') ? 'desc' : 'asc';
+    $arrow = $sort === $column ? ($dir === 'asc' ? ' ▲' : ' ▼') : '';
+    return '<a href="' . e(grid_url($filterParams, ['sort' => $column, 'dir' => $nextDir])) . '">'
+        . e(column_label($column)) . $arrow . '</a>';
 }
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo escape($_SESSION['lang'] ?? 'pt_BR'); ?>">
+<html lang="<?php echo e(lang_code()); ?>" dir="<?php echo e(lang_dir()); ?>">
+
 <head>
-    <title>CMDB <?php echo lang('title_cmdb'); ?> <?php echo escape($company); ?></title>
     <meta charset="utf-8">
+    <title><?php echo e(lang('title_cmdb')); ?> <?php echo e($company); ?></title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<div class="page-wrapper">
-<!-- Top-Right Toolbar: Language Flags + Theme Toggle -->
-<div class="top-toolbar">
-    <?php echo lang_flag_buttons('main.php'); ?>
-    <?php echo theme_toggle_button(); ?>
-</div>
 
-<h2><?php echo lang('title_cmdb'); ?> <?php echo escape($company); ?></h2>
-<p><?php echo lang('signed_in_as'); ?> <?php echo escape($_SESSION['user_email']); ?> (<?php echo escape($role); ?>)</p>
+<body class="dashboard-page">
+    <div class="page-wrapper">
+        <div class="top-toolbar">
+            <?php echo lang_selector('main.php'); ?>
+            <?php echo theme_toggle_button(); ?>
+        </div>
 
-<?php if ($role === 'superadmin'): ?>
-<div class="superadmin-controls">
-    <form method="post" style="display:inline;">
-        <label for="switch_company"><strong><?php echo lang('switch_company'); ?></strong></label>
-        <select name="switch_company" id="switch_company" onchange="this.form.submit()">
-            <?php foreach ($allCompanies as $comp): ?>
-                <option value="<?php echo escape($comp); ?>" <?php echo ($company === $comp) ? 'selected' : ''; ?>>
-                    <?php echo escape($comp); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <noscript><button type="submit">Switch</button></noscript>
-    </form>
-</div>
-<?php endif; ?>
-<div class="search-container" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-    <form method="get" action="main.php" style="flex-grow:1; min-width: 300px; max-width: 600px;">
-        <label for="search_field"><?php echo lang('search_field'); ?>:</label>
-        <select name="search_field" id="search_field" required>
-            <option value="" disabled <?php echo $search_field === '' ? 'selected' : ''; ?>><?php echo lang('select_field'); ?></option>
-            <?php foreach ($columns_visible as $col): ?>
-                <option value="<?php echo escape($col); ?>" <?php echo ($search_field === $col) ? 'selected' : ''; ?>>
-                    <?php echo escape($col); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <label for="search_text"><?php echo lang('search_text'); ?>:</label>
-        <input type="text" id="search_text" name="search_text" value="<?php echo escape($search_text); ?>" required>
-        <button type="submit"><?php echo lang('search_btn'); ?></button>
-        <a href="main.php" style="margin-left:10px;"><?php echo lang('clear'); ?></a>
-    </form>
-    <form method="get" action="export.php" style="margin: 0;">
-        <?php if ($search_field !== ''): ?>
-            <input type="hidden" name="search_field" value="<?php echo escape($search_field); ?>">
+        <div class="dashboard-header">
+            <div>
+                <h2><?php echo e(lang('title_cmdb')); ?> <?php echo e($company); ?></h2>
+                <p class="muted"><?php echo e(lang('signed_in_as')); ?> <?php echo e($currentUser); ?> (<?php echo e(lang('role_' . $role)); ?>)</p>
+            </div>
+            <div class="dashboard-actions">
+                <?php if ($canCreate): ?>
+                    <a class="button-link" href="asset_new.php">+ <?php echo e(lang('new_asset')); ?></a>
+                <?php endif; ?>
+                <a class="button-link" href="export.php?<?php echo e(http_build_query($filterParams)); ?>"><?php echo e(lang('export_btn')); ?></a>
+                <?php if (in_array($role, ['admin', 'superadmin'], true)): ?>
+                    <a class="button-link" href="settings.php"><?php echo e(lang('set_title')); ?></a>
+                    <a class="button-link" href="manage_permissions.php"><?php echo e(lang('manage_perm')); ?></a>
+                <?php endif; ?>
+                <a class="button-link" href="index.php?action=logout"><?php echo e(lang('logout')); ?></a>
+            </div>
+        </div>
+
+        <?php echo app_schema_banner(); ?>
+        <?php echo app_flash_html(); ?>
+
+        <?php if ($isSuper && $allCompanies !== []): ?>
+            <form method="post" class="company-switch">
+                <?php echo csrf_field(); ?>
+                <label for="switchCompany"><?php echo e(lang('switch_company')); ?></label>
+                <select id="switchCompany" name="switch_company" onchange="this.form.submit()">
+                    <?php foreach ($allCompanies as $option): ?>
+                        <option value="<?php echo e($option); ?>" <?php echo $option === $company ? 'selected' : ''; ?>><?php echo e($option); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
         <?php endif; ?>
-        <?php if ($search_text !== ''): ?>
-            <input type="hidden" name="search_text" value="<?php echo escape($search_text); ?>">
-        <?php endif; ?>
-        <?php if ($sort_by !== ''): ?>
-            <input type="hidden" name="sort_by" value="<?php echo escape($sort_by); ?>">
-        <?php endif; ?>
-        <?php if ($sort_dir !== ''): ?>
-            <input type="hidden" name="sort_dir" value="<?php echo escape($sort_dir); ?>">
-        <?php endif; ?>
-        <button type="submit" class="export-btn"><?php echo lang('export_btn'); ?></button>
-    </form>
-    <?php if ($role === 'superadmin'): ?>
-        <form method="get" action="manage_permissions.php" style="margin: 0;">
-            <button type="submit" class="export-btn" style="background-color: var(--btn-info) !important;"><?php echo lang('manage_perm'); ?></button>
+
+        <form method="get" class="search-form">
+            <label for="searchField"><?php echo e(lang('search_field')); ?></label>
+            <select id="searchField" name="search_field">
+                <option value=""><?php echo e(lang('search_any')); ?></option>
+                <?php foreach ($gridColumns as $column): ?>
+                    <?php if (in_array($column, ['source', 'BYOD', 'Status'], true)) { continue; } ?>
+                    <option value="<?php echo e($column); ?>" <?php echo $searchField === $column ? 'selected' : ''; ?>><?php echo e(column_label($column)); ?></option>
+                <?php endforeach; ?>
+                <?php foreach ($gridFields as $def): ?>
+                    <option value="custom:<?php echo e($def['field_key']); ?>" <?php echo $searchField === 'custom:' . $def['field_key'] ? 'selected' : ''; ?>>
+                        <?php echo e(field_label($def, lang_code())); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <input type="search" name="search_text" value="<?php echo e($searchText); ?>" placeholder="<?php echo e(lang('search_text')); ?>">
+            <select name="source">
+                <option value=""><?php echo e(lang('all_sources')); ?></option>
+                <?php foreach ($sourcesList as $source): ?>
+                    <option value="<?php echo e($source['slug']); ?>" <?php echo $sourceFilter === $source['slug'] ? 'selected' : ''; ?>>
+                        <?php echo e($source['label']); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <button type="submit"><?php echo e(lang('search_btn')); ?></button>
+            <a class="link-button" href="main.php"><?php echo e(lang('clear')); ?></a>
         </form>
-    <?php endif; ?>
-    <div class="header-links">
-        <form method="post" action="logout.php" style="display:inline;">
-            <button type="submit"><?php echo lang('logout'); ?></button>
+
+        <form method="post" action="save_rows.php" id="gridForm">
+            <?php echo csrf_field(); ?>
+            <div class="table-scroll">
+                <table class="grid-table">
+                    <thead>
+                        <tr>
+                            <th><?php echo e(lang('col_sn')); ?></th>
+                            <?php foreach ($gridColumns as $column): ?>
+                                <?php if ($column === 'source'): ?>
+                                    <th><?php echo e(lang('source_filter')); ?></th>
+                                <?php else: ?>
+                                    <th><?php echo sort_link($column, $filterParams, $sort, $dir); ?></th>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                            <?php foreach ($gridFields as $def): ?>
+                                <?php $fieldSort = 'custom:' . $def['field_key']; ?>
+                                <th><a href="<?php echo e(grid_url($filterParams, ['sort' => $fieldSort, 'dir' => $sort === $fieldSort && $dir === 'asc' ? 'desc' : 'asc'])); ?>">
+                                    <?php echo e(field_label($def, lang_code())); ?>
+                                </a></th>
+                            <?php endforeach; ?>
+                            <th><?php echo e(lang('files_title')); ?></th>
+                            <th><?php echo e(lang('actions')); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if ($rows === []): ?>
+                        <tr><td colspan="<?php echo 3 + count($gridColumns) + count($gridFields); ?>" class="muted"><?php echo e(lang('no_assets')); ?></td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($rows as $row): ?>
+                        <?php
+                        $rowId = (int) $row['Id'];
+                        $rowCustom = $customValues[$rowId] ?? [];
+                        ?>
+                        <tr>
+                            <td>
+                                <input type="hidden" name="rows[<?php echo $rowId; ?>][Id]" value="<?php echo $rowId; ?>">
+                                <a href="asset.php?id=<?php echo $rowId; ?>"><?php echo e(($row['SN'] ?? '') !== '' ? $row['SN'] : '#' . $rowId); ?></a>
+                            </td>
+                            <?php foreach ($gridColumns as $column): ?>
+                                <?php
+                                $value = (string) ($row[$column] ?? '');
+                                $isEditable = in_array($column, $editableColumns, true);
+                                $inputName = 'rows[' . $rowId . '][' . $column . ']';
+                                ?>
+                                <td>
+                                    <?php if ($column === 'source'): ?>
+                                        <?php echo source_badge($pdo, (string) ($row['source'] ?? '')); ?>
+                                    <?php elseif ($column === 'Status'): ?>
+                                        <?php if ($isEditable): ?>
+                                            <?php echo asset_field_input('Status', $value); ?>
+                                        <?php else: ?>
+                                            <?php echo e(lang_status_label($value)); ?>
+                                        <?php endif; ?>
+                                    <?php elseif ($column === 'BYOD'): ?>
+                                        <?php if ($isEditable): ?>
+                                            <?php echo asset_field_input('BYOD', $value); ?>
+                                        <?php else: ?>
+                                            <?php echo e(asset_bool_parse($value) ? lang('true_label') : lang('false_label')); ?>
+                                        <?php endif; ?>
+                                    <?php elseif ($isEditable): ?>
+                                        <?php
+                                        $type = asset_column_defs()[$column]['type'] ?? 'text';
+                                        if ($type === 'date') {
+                                            echo '<input type="date" name="' . e($inputName) . '" value="' . e(substr($value, 0, 10)) . '">';
+                                        } elseif ($type === 'textarea') {
+                                            echo '<input type="text" name="' . e($inputName) . '" value="' . e($value) . '">';
+                                        } else {
+                                            echo '<input type="text" name="' . e($inputName) . '" value="' . e($value) . '">';
+                                        }
+                                        ?>
+                                    <?php else: ?>
+                                        <?php echo e($value); ?>
+                                    <?php endif; ?>
+                                </td>
+                            <?php endforeach; ?>
+
+                            <?php foreach ($gridFields as $def): ?>
+                                <td><?php echo e(field_display_value($def, $rowCustom[(string) $def['field_key']] ?? null)); ?></td>
+                            <?php endforeach; ?>
+
+                            <td><?php echo (int) ($fileCounts[$rowId] ?? 0); ?></td>
+                            <td>
+                                <a class="link-button" href="asset.php?id=<?php echo $rowId; ?>"><?php echo e(lang('details')); ?></a>
+                                <?php if ($canDelete): ?>
+                                    <label class="inline-check">
+                                        <input type="checkbox" name="delete_ids[]" value="<?php echo $rowId; ?>">
+                                        <?php echo e(lang('delete')); ?>
+                                    </label>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="grid-actions">
+                <?php if ($editableColumns !== []): ?>
+                    <button type="submit" name="action" value="save"><?php echo e(lang('save_changes')); ?></button>
+                <?php endif; ?>
+                <?php if ($canDelete): ?>
+                    <button type="submit" name="action" value="delete_selected" class="danger"
+                            onclick="return confirm('<?php echo e(lang('delete_confirm')); ?>')"><?php echo e(lang('delete_asset')); ?></button>
+                <?php endif; ?>
+                <span class="muted">
+                    <?php echo e(lang('showing_results')); ?>
+                    <?php echo $total === 0 ? 0 : (($page - 1) * $perPage + 1); ?>–<?php echo min($total, $page * $perPage); ?>
+                    <?php echo e(lang('of')); ?> <?php echo $total; ?> <?php echo e(lang('records')); ?>
+                </span>
+            </div>
+
+            <div class="pagination">
+                <?php if ($page > 1): ?>
+                    <a href="<?php echo e(grid_url($filterParams, ['page' => $page - 1])); ?>">&laquo; <?php echo e(lang('previous')); ?></a>
+                <?php else: ?>
+                    <span>&laquo; <?php echo e(lang('previous')); ?></span>
+                <?php endif; ?>
+                <span class="current"><?php echo e(lang('page')); ?> <?php echo $page; ?> <?php echo e(lang('of')); ?> <?php echo $totalPages; ?></span>
+                <?php if ($page < $totalPages): ?>
+                    <a href="<?php echo e(grid_url($filterParams, ['page' => $page + 1])); ?>"><?php echo e(lang('next')); ?> &raquo;</a>
+                <?php else: ?>
+                    <span><?php echo e(lang('next')); ?> &raquo;</span>
+                <?php endif; ?>
+            </div>
         </form>
     </div>
-</div>
-<div class="record-info">
-    <?php echo lang('showing'); ?> <?php echo (int)$startRecord; ?> <?php echo lang('to'); ?> <?php echo (int)$endRecord; ?> <?php echo lang('of'); ?> <?php echo (int)$totalRows; ?> <?php echo lang('records'); ?>
-</div>
-<form method="post" action="save_rows.php" id="editForm">
-    <table>
-        <thead>
-            <tr>
-                <?php foreach ($columns_visible as $col): ?>
-                    <?php $arrow = sort_arrow($col, $sort_by, $sort_dir); ?>
-                    <th>
-                        <a href="<?php echo escape(sort_link($col, $sort_by, $sort_dir)); ?>">
-                            <?php echo escape($col); ?>
-                            <?php if ($arrow): ?><span class="arrow"><?php echo $arrow; ?></span><?php endif; ?>
-                        </a>
-                    </th>
-                <?php endforeach; ?>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($rows as $index => $row): ?>
-                <?php
-
-                $row = (array)$row;
-                $rowId = $row['Id'] ?? '';
-                ?>
-                <tr data-row-index="<?php echo (int)$index; ?>">
-                    <input type="hidden" name="rows[<?php echo (int)$index; ?>][Id]" value="<?php echo escape($rowId); ?>">
-                    <input type="hidden" name="rows[<?php echo (int)$index; ?>][UUID]" value="<?php echo escape($row['UUID'] ?? ''); ?>">
-                    <?php foreach ($columns_visible as $col): ?>
-                        <td>
-                            <?php
-                            $value = $row[$col] ?? '';
-                            if ($col === 'SN') {
-                                $label = ($value !== '') ? escape($value) : lang('no_files');
-                                echo '<a href="asset.php?id=' . urlencode($rowId) . '">' . $label . '</a>';
-                            } elseif ($col === 'Term') {
-                                $fileCount = count_files_in_term($row, $pdo, $userTableName);
-                                echo '<a href="asset.php?id=' . urlencode($rowId) . '">';
-                                echo $fileCount > 0 ? ($fileCount . ' ' . ($fileCount > 1 ? lang('file_plural') : lang('file_singular'))) : lang('no_files');
-                                echo '</a>';
-                            } elseif (in_array($col, $columns_editable, true)) {
-                                if ($col === 'BYOD') {
-                                    $v = strtolower(trim((string)$value));
-                                    $isTrue = in_array($v, ['true','1','yes','on'], true);
-                                    ?>
-                                    <select name="rows[<?php echo (int)$index; ?>][BYOD]" class="track-change">
-                                        <option value="true"  <?php echo $isTrue ? 'selected' : ''; ?>><?php echo lang('true_label'); ?></option>
-                                        <option value="false" <?php echo !$isTrue ? 'selected' : ''; ?>><?php echo lang('false_label'); ?></option>
-                                    </select>
-                                    <?php
-                                } elseif ($col === 'Status') { ?>
-                                    <select name="rows[<?php echo (int)$index; ?>][Status]" class="track-change">
-                                        <option value="" <?php echo ($value === '' || is_null($value)) ? 'selected' : ''; ?>></option>
-                                        <?php foreach ($status_options as $db_val => $label): ?>
-                                            <option value="<?php echo escape($db_val); ?>" <?php echo ($value === $db_val) ? 'selected' : ''; ?>>
-                                                <?php echo escape($label); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                <?php
-                                } elseif ($col === 'UserEmail') { ?>
-                                    <select name="rows[<?php echo (int)$index; ?>][UserEmail]" class="track-change">
-                                        <option value="" <?php echo ($value === '') ? 'selected' : ''; ?>></option>
-                                        <?php foreach ($companyUsers as $uEmail): ?>
-                                            <option value="<?php echo escape($uEmail); ?>" <?php echo ($value === $uEmail) ? 'selected' : ''; ?>>
-                                                <?php echo escape($uEmail); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                <?php
-                                } elseif ($col === 'Warranty' || $col === 'PurchaseDate') { ?>
-                                    <input
-                                        type="date"
-                                        name="rows[<?php echo (int)$index; ?>][<?php echo escape($col); ?>]"
-                                        value="<?php echo escape($value); ?>"
-                                        class="track-change"
-                                    >
-                                <?php
-                                } elseif ($col === 'Asset') { ?>
-                                    <input
-                                        type="text"
-                                        name="rows[<?php echo (int)$index; ?>][Asset]"
-                                        value="<?php echo escape($value); ?>"
-                                        class="track-change"
-                                    >
-                                <?php
-                                } else { ?>
-                                    <input
-                                        type="text"
-                                        name="rows[<?php echo (int)$index; ?>][<?php echo escape($col); ?>]"
-                                        value="<?php echo escape($value); ?>"
-                                        class="track-change"
-                                    >
-                                <?php
-                                }
-                            } elseif ($col === 'BYOD') {
-                                $v = strtolower(trim((string)$value));
-                                $isTrue = in_array($v, ['true','1','yes','on'], true);
-                                echo $isTrue ? lang('true_label') : lang('false_label');
-                            } elseif ($col === 'Status') {
-                                echo isset($status_options[$value]) ? escape($status_options[$value]) : escape($value);
-                            } elseif (in_array($col, $columns_readonly, true)) {
-                                echo escape($value);
-                            } else {
-                                echo escape($value);
-                            }
-                            ?>
-                        </td>
-                    <?php endforeach; ?>
-                </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
-    <br>
-    <button type="submit"><?php echo lang('save_changes'); ?></button>
-</form>
-<div class="pagination">
-    <?php if ($page > 1): ?>
-        <a href="?page=<?php echo ($page - 1) . $paginationSuffix; ?>">&laquo; <?php echo lang('previous'); ?></a>
-    <?php else: ?>
-        <span>&laquo; <?php echo lang('previous'); ?></span>
-    <?php endif; ?>
-    <span class="current"><?php echo lang('page'); ?> <?php echo (int)$page; ?> <?php echo lang('of'); ?> <?php echo (int)max(1, $totalPages); ?></span>
-    <?php if ($page < $totalPages): ?>
-        <a href="?page=<?php echo ($page + 1) . $paginationSuffix; ?>"><?php echo lang('next'); ?> &raquo;</a>
-    <?php else: ?>
-        <span><?php echo lang('next'); ?> &raquo;</span>
-    <?php endif; ?>
-</div>
-<script>
-// Preserve native validation and only disable untouched rows.
-document.getElementById('editForm').addEventListener('submit', function(e) {
-    const form = this;
-    Array.from(form.querySelectorAll('tbody tr')).forEach(function(row) {
-        let hasChanged = false;
-        Array.from(row.querySelectorAll('[name^="rows["]')).forEach(function(input) {
-            if (input.type === "hidden") return;
-            if (input.type === "checkbox" || input.type === "radio") {
-                if (input.checked !== input.defaultChecked) hasChanged = true;
-            } else if (input.tagName === "SELECT") {
-                const selectedIndex = input.selectedIndex;
-                let hasDefaultSelected = false;
-                Array.from(input.options).forEach(function(opt, idx) {
-                    if (opt.defaultSelected && idx === selectedIndex) {
-                        hasDefaultSelected = true;
-                    }
-                });
-                if (!hasDefaultSelected) {
-                    const anyDefault = Array.from(input.options).some(opt => opt.defaultSelected);
-                    if (!anyDefault) {
-                        if (input.value !== '') hasChanged = true;
-                    } else {
-                        hasChanged = true;
-                    }
-                }
-            } else {
-                if (input.value !== input.defaultValue) hasChanged = true;
-            }
-        });
-        if (!hasChanged) {
-            Array.from(row.querySelectorAll('input,select,textarea')).forEach(function(input) {
-                input.disabled = true;
-            });
-        }
-    });
-    if (!form.reportValidity()) {
-        e.preventDefault();
-        return false;
-    }
-});
-</script>
-</div><!-- .page-wrapper -->
-<script src="theme.js"></script>
+    <script src="theme.js"></script>
 </body>
+
 </html>
+

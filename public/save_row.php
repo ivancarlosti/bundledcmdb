@@ -1,235 +1,155 @@
 <?php
-// save_row.php
+declare(strict_types=1);
+
+/**
+ * public/save_row.php — update one asset (detail form), upload/delete files.
+ */
+
 session_start();
-require_once '../config.php';
-require_once '../s3_client.php';
-if (!isset($_SESSION['user_email'])) {
-    header('Location: index.php');
-    exit();
+require_once __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/lang.php';
+lang_init();
+app_boot();
+
+if (empty($_SESSION['user_email']) || request_method() !== 'POST') {
+    redirect('index.php');
+}
+csrf_require();
+
+$role = (string) ($_SESSION['role'] ?? 'user');
+$actor = (string) $_SESSION['user_email'];
+$company = (string) ($_SESSION['company'] ?? '');
+$pdo = db_try();
+if ($pdo === null || $company === '') {
+    http_response_code(503);
+    exit(e(lang('db_unavailable')));
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['row'])) {
-    http_response_code(405);
-    exit('Method Not Allowed');
-}
-
-$userEmail = $_SESSION['user_email'];
-$company = $_SESSION['company'] ?? '';
-if ($company === '') {
+$id = (int) ($_POST['row']['Id'] ?? 0);
+if ($id <= 0) {
     http_response_code(400);
-    exit('No company assigned in session.');
-}
-$userTableName = 'assets';
-
-$row = $_POST['row'];
-$rowId = $row['Id'] ?? null;
-$uuidForLog = $row['UUID'] ?? '';
-
-if (!$rowId) {
-    http_response_code(400);
-    exit('Missing Id');
+    exit('Invalid record ID');
 }
 
-// ----------------- Helpers (same style as save_rows.php) -----------------
-// Helpers
-// DB Connection
-try {
-    $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-    );
-} catch (PDOException $e) {
-    die("DB Connection failed: " . $e->getMessage());
+$row = asset_get($pdo, $id, $company);
+if ($row === null) {
+    http_response_code(404);
+    exit(e(lang('asset_not_found')));
+}
+if ($role === 'user' && (string) ($row['UserEmail'] ?? '') !== $actor) {
+    http_response_code(403);
+    exit(e(lang('access_denied')));
 }
 
-// GET current row (before) to compare
-function get_row($pdo, $table, $pk, $company)
-{
-    $stmt = $pdo->prepare("SELECT * FROM `$table` WHERE Id = :id AND company = :company");
-    $stmt->execute([':id' => $pk, ':company' => $company]);
-    return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-}
-
-// PATCH only certain fields
-function update_row($pdo, $table, $pk, $data, $company)
-{
-    if (empty($data))
-        return ['ok' => true];
-    $set = [];
-    $params = [':id' => $pk, ':company' => $company];
-    foreach ($data as $col => $val) {
-        $set[] = "`$col` = :$col";
-        $params[":$col"] = $val;
-    }
-    $sql = "UPDATE `$table` SET " . implode(', ', $set) . " WHERE Id = :id AND company = :company";
+// --- File upload / delete ----------------------------------------------
+if (isset($_FILES['new_file']) && (int) $_FILES['new_file']['error'] === UPLOAD_ERR_OK) {
     try {
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        return ['ok' => true];
-    } catch (PDOException $e) {
-        return ['error' => $e->getMessage()];
-    }
-}
-
-// INSERT a single audit log
-function insert_log($pdo, $email, $field, $newValue, $uuid, $dateTimeIsoUtc)
-{
-    // Skip logging for now or implement local log table
-    return ['ok' => true];
-}
-
-// Normalize payload similarly to your grid flow
-function normalize_update_payload(array $input): array
-{
-    $updateData = $input;
-    // Remove PK/immutable from update set
-    unset($updateData['Id']);
-
-    // Email: optional, but if filled must be valid; blank -> null
-    if (array_key_exists('UserEmail', $updateData)) {
-        $emailVal = trim((string) ($updateData['UserEmail'] ?? ''));
-        if ($emailVal !== '' && !filter_var($emailVal, FILTER_VALIDATE_EMAIL)) {
-            $updateData['**invalid_email**'] = $emailVal;
+        require_once __DIR__ . '/../s3_client.php';
+        $s3 = new S3Client();
+        if (!$s3->isConfigured()) {
+            flash_set('error', lang('set_err_unknown_setting'));
+            redirect('asset.php?id=' . $id);
+        }
+        $file = $_FILES['new_file'];
+        $key = 'assets/' . $id . '/' . uniqid('', true) . '_' . preg_replace('/[^A-Za-z0-9._-]/', '_', (string) $file['name']);
+        $result = $s3->uploadFile((string) $file['tmp_name'], $key, (string) $file['type']);
+        if (!empty($result['success'])) {
+            $stmt = $pdo->prepare(
+                'INSERT INTO device_files (device_id, device_table, file_path, file_name, mime_type, size)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([$id, 'assets', $s3->objectKey($key), $file['name'], $file['type'], (int) $file['size']]);
+            flash_set('success', lang('upload_btn'));
         } else {
-            $updateData['UserEmail'] = ($emailVal === '') ? null : $emailVal;
+            flash_set('error', (string) ($result['message'] ?? 'upload failed'));
         }
+    } catch (Throwable $e) {
+        error_log('[save_row upload] ' . $e->getMessage());
+        flash_set('error', $e->getMessage());
     }
+    redirect('asset.php?id=' . $id);
+}
 
-    // BYOD boolean normalization
-    if (array_key_exists('BYOD', $updateData)) {
-        $val = strtolower(trim((string) $updateData['BYOD']));
-        $updateData['BYOD'] = in_array($val, ['true', '1', 'on', 'yes'], true) ? 1 : 0;
-    }
-
-    // Optional date/text fields: empty string -> null
-    foreach (['Warranty', 'PurchaseDate', 'Asset'] as $field) {
-        if (array_key_exists($field, $updateData)) {
-            $v = $updateData[$field];
-            if ($v === '' || $v === null) {
-                $updateData[$field] = null;
-            } elseif (in_array($field, ['Warranty', 'PurchaseDate'], true)) {
-                // Normalize to YYYY-MM-DD if parseable; else null
-                $ts = strtotime((string) $v);
-                $updateData[$field] = ($ts !== false) ? date('Y-m-d', $ts) : null;
-            }
+if (isset($_POST['delete_file'])) {
+    $fileId = (int) $_POST['delete_file'];
+    $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = ? AND device_id = ? AND device_table = 'assets'");
+    $stmt->execute([$fileId, $id]);
+    $file = $stmt->fetch();
+    if ($file !== false) {
+        try {
+            require_once __DIR__ . '/../s3_client.php';
+            (new S3Client())->deleteFile((string) $file['file_path']);
+        } catch (Throwable $e) {
+            error_log('[save_row delete file] ' . $e->getMessage());
         }
+        $pdo->prepare('DELETE FROM device_files WHERE id = ?')->execute([$fileId]);
+        flash_set('success', lang('delete'));
     }
-
-    return $updateData;
+    redirect('asset.php?id=' . $id);
 }
 
-// Robust equality with normalization (empty string ~ null, boolean-ish strings, numeric strings)
-function values_equal($a, $b): bool
-{
-    $boolMap = ['true' => true, 'false' => false, '1' => true, '0' => false, 'yes' => true, 'no' => false];
-    if (is_string($a) && array_key_exists(strtolower($a), $boolMap))
-        $a = $boolMap[strtolower($a)];
-    if (is_string($b) && array_key_exists(strtolower($b), $boolMap))
-        $b = $boolMap[strtolower($b)];
-
-    if (is_string($a) && is_numeric($a))
-        $a = $a + 0;
-    if (is_string($b) && is_numeric($b))
-        $b = $b + 0;
-
-    // Treat '' and null as equal
-    if ($a === '' && $b === null)
-        return true;
-    if ($b === '' && $a === null)
-        return true;
-
-    if ((is_array($a) || is_object($a)) || (is_array($b) || is_object($b))) {
-        return json_encode($a, JSON_UNESCAPED_SLASHES) === json_encode($b, JSON_UNESCAPED_SLASHES);
-    }
-    return $a === $b;
+// --- Field update -------------------------------------------------------
+if ($role === 'user') {
+    http_response_code(403);
+    exit(e(lang('access_denied')));
 }
 
-// ----------------- Build and apply update -----------------
-
-// Compute which fields are allowed to be edited on this page
-$editable = ['UserEmail', 'Status', 'Warranty', 'Asset', 'PurchaseDate', 'BYOD'];
-$role = $_SESSION['role'] ?? 'user';
-
-if ($role !== 'user') {
-    // Manager, Admin, Superadmin can edit Notes
-    if (in_array($role, ['manager', 'admin', 'superadmin'])) {
-        $editable[] = 'Notes';
-    }
-    // Admin, Superadmin can edit Cypher fields
-    if (in_array($role, ['admin', 'superadmin'])) {
-        $editable[] = 'CypherID';
-        $editable[] = 'CypherKey';
-    }
-}
-
-// Start from posted row; keep only editable keys
-$incoming = [];
-foreach ($editable as $k) {
-    if (array_key_exists($k, $row)) {
-        $incoming[$k] = $row[$k];
-    }
-}
-
-// Normalize incoming values (email/boolean/dates/empties)
-$updateData = normalize_update_payload($incoming);
-
-// Abort on invalid email (mirror save_rows.php behavior)
-if (isset($updateData['**invalid_email**'])) {
-    header("Location: asset.php?id=" . urlencode((string) $rowId));
-    exit();
-}
-
-// If nothing submitted, return
-if (empty($updateData)) {
-    header("Location: asset.php?id=" . urlencode((string) $rowId));
-    exit();
-}
-
-// Fetch current state
-$before = get_row($pdo, $userTableName, $rowId, $company);
-if (empty($before)) {
-    // On fetch error, just return to the page (or render an error if preferred)
-    header("Location: asset.php?id=" . urlencode((string) $rowId));
-    exit();
-}
-
-// Determine actual changes vs DB
-$changedPayload = [];
-$changedFields = [];
-foreach ($updateData as $fieldName => $newVal) {
-    $oldVal = $before[$fieldName] ?? null;
-    if (!values_equal($oldVal, $newVal)) {
-        $changedPayload[$fieldName] = $newVal;
-        $changedFields[$fieldName] = $newVal;
-    }
-}
-
-// If no changes, redirect back
-if (empty($changedPayload)) {
-    header("Location: asset.php?id=" . urlencode((string) $rowId));
-    exit();
-}
-
-// Apply PATCH with only changed fields
-$result = update_row($pdo, $userTableName, $rowId, $changedPayload, $company);
-if (isset($result['error'])) {
-    // If update failed, just go back; you can improve UX with a query param or flash
-    header("Location: asset.php?id=" . urlencode((string) $rowId));
-    exit();
-}
-
-// Write one log per changed field (skip sensitive values if needed)
-$nowUtc = (new DateTime('now', new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
-foreach ($changedFields as $fieldName => $newValue) {
-    if (in_array($fieldName, ['CypherKey'], true)) {
-        // Skip logging sensitive secrets if desired
+$submitted = (array) ($_POST['row'] ?? []);
+$data = [];
+foreach (asset_form_columns() as $column) {
+    $def = asset_column_defs()[$column] ?? null;
+    if ($def === null || !in_array($role, $def['form_roles'], true)) {
         continue;
     }
-    insert_log($pdo, $userEmail, $fieldName, $newValue, $uuidForLog, $nowUtc);
+    if (array_key_exists($column, $submitted)) {
+        $data[$column] = $submitted[$column];
+    }
+}
+$data = asset_normalize_input($data);
+$errors = asset_validate($data, true);
+
+$duplicate = $errors === [] ? asset_find_duplicate($pdo, $data, $id, $company) : null;
+if ($duplicate !== null) {
+    $errors[$duplicate['field']] = 'duplicate';
 }
 
-// Done
-header("Location: asset.php?id=" . urlencode((string) $rowId));
-exit();
+// Custom fields: only definitions the role may edit, only submitted keys.
+$defs = [];
+foreach (field_defs($pdo) as $def) {
+    if (field_editable_by($def, $role)) {
+        $defs[(string) $def['field_key']] = $def;
+    }
+}
+$customInput = array_intersect_key(custom_input_from($_POST), $defs);
+foreach ($customInput as $key => $value) {
+    $parsed = field_parse_value($defs[$key], $value);
+    if (!$parsed['ok']) {
+        $errors['custom.' . $key] = (string) $parsed['error'];
+    }
+}
+
+if ($errors !== []) {
+    flash_set('error', lang('validation_failed') . ' ' . implode(', ', array_keys($errors)));
+    redirect('asset.php?id=' . $id);
+}
+
+$pdo->beginTransaction();
+try {
+    asset_update($pdo, $id, $data, $actor, $company);
+    $customErrors = custom_values_save($pdo, $id, $customInput, $defs, $actor, false);
+    if ($customErrors !== []) {
+        $pdo->rollBack();
+        flash_set('error', lang('validation_failed'));
+    } else {
+        $pdo->commit();
+        flash_set('success', lang('asset_updated'));
+    }
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log('[save_row] ' . $e->getMessage());
+    flash_set('error', lang('save_failed'));
+}
+
+redirect('asset.php?id=' . $id);

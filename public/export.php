@@ -1,172 +1,100 @@
 <?php
+declare(strict_types=1);
+
+/**
+ * public/export.php — CSV export of the filtered asset list.
+ *
+ * Uses the same asset_list() query as the grid, so filters, sorting and the
+ * visible custom fields match what the user sees.
+ */
+
 session_start();
-require_once '../config.php';
-require_once 'lang.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/lang.php';
 lang_init();
+app_boot();
 
-// Only allow logged-in users to export
-if (!isset($_SESSION['user_email'])) {
-    header('HTTP/1.1 403 Forbidden');
-    echo 'Access denied';
-    exit();
+if (empty($_SESSION['user_email'])) {
+    redirect('index.php');
+}
+$role = (string) ($_SESSION['role'] ?? 'user');
+$currentUser = (string) $_SESSION['user_email'];
+$company = (string) ($_SESSION['company'] ?? '');
+$pdo = db_try();
+if ($pdo === null || $company === '') {
+    http_response_code(503);
+    exit(e(lang('db_unavailable')));
 }
 
-$company = $_SESSION['company'] ?? '';
-if ($company === '') {
-    die('No company assigned in session.');
+$searchField = trim((string) ($_GET['search_field'] ?? ''));
+$searchText = trim((string) ($_GET['search_text'] ?? ''));
+$sourceFilter = trim((string) ($_GET['source'] ?? ''));
+$sort = trim((string) ($_GET['sort'] ?? ''));
+$dir = strtolower((string) ($_GET['dir'] ?? 'asc')) === 'desc' ? 'desc' : 'asc';
+
+$gridFields = array_values(array_filter(
+    field_defs($pdo),
+    static fn (array $def): bool => (int) $def['show_in_grid'] === 1
+));
+$columns = asset_grid_columns();
+
+$filename = 'assets-' . preg_replace('/[^A-Za-z0-9_-]+/', '_', $company) . '-' . gmdate('Ymd-His') . '.csv';
+
+header('Content-Type: text/csv; charset=utf-8');
+header('Content-Disposition: attachment; filename="' . $filename . '"');
+header('Cache-Control: no-store');
+
+$out = fopen('php://output', 'wb');
+fwrite($out, "\xEF\xBB\xBF"); // Excel-friendly UTF-8 BOM
+
+$header = [];
+foreach ($columns as $column) {
+    $header[] = asset_column_defs()[$column]['label'] ?? $column;
 }
-$userTableName = 'assets';
-
-// Check admin status from session
-$role = $_SESSION['role'] ?? 'user';
-$isAdmin = ($role === 'admin');
-
-// Base columns matching your main.php + asset.php (all visible for export)
-$base_columns = [
-    'Id',
-    'UUID',
-    'SN',
-    'OS',
-    'OSVersion',
-    'Hostname',
-    'Mobile',
-    'Manufacturer',
-    'Term',
-    'LastSeen',
-    'UserEmail',
-    'BYOD',
-    'Status',
-    'Warranty',
-    'Asset',
-    'PurchaseDate'
-];
-
-// Admin-only columns
-$admin_columns = ['CypherID', 'CypherKey'];
-
-// Read-only additional columns included for everyone
-$additional_read_only = [
-    'CPUs',
-    'HDs',
-    'HDsTypes',
-    'HDsSpacesGB',
-    'NetworkAdapters',
-    'MACAddresses',
-    'ESETComponents',
-    'PrimaryLocalIP',
-    'PrimaryRemoteIP'
-];
-
-// Build columns for export respecting admin rights
-$columns_to_export = $base_columns;
-if ($isAdmin) {
-    // Insert admin columns after 'Asset'
-    $columns_to_export = array_merge($columns_to_export, $admin_columns);
+foreach ($gridFields as $def) {
+    $header[] = field_label($def, lang_code());
 }
-$columns_to_export = array_merge($columns_to_export, $additional_read_only);
+fputcsv($out, $header, ';', '"', '');
 
-$fields_param = implode(',', $columns_to_export);
+$page = 1;
+do {
+    $result = asset_list($pdo, [
+        'company'      => $company,
+        'source'       => $sourceFilter,
+        'search'       => $searchText,
+        'search_field' => $searchField,
+        'owner_email'  => $role === 'user' ? $currentUser : '',
+        'sort'         => $sort,
+        'dir'          => $dir,
+        'page'         => $page,
+        'per_page'     => 500,
+    ]);
 
-// Get filter and sort parameters from GET to match the table view
-$search_field = $_GET['search_field'] ?? '';
-$search_text = $_GET['search_text'] ?? '';
-$sort_by = $_GET['sort_by'] ?? '';
-$sort_dir = strtolower($_GET['sort_dir'] ?? 'asc');
-$sort_dir = in_array($sort_dir, ['asc', 'desc'], true) ? $sort_dir : 'asc';
+    $assetIds = array_map(static fn (array $row): int => (int) $row['Id'], $result['rows']);
+    $customValues = custom_values_load($pdo, $assetIds, $gridFields);
+    $statusOptions = lang_status_options();
 
-$filterParamStr = '';
-if ($search_field !== '' && $search_text !== '') {
-    $filterParamStr = '&where=(' . rawurlencode($search_field) . ',like,' . rawurlencode('%' . $search_text . '%') . ')';
-}
-
-$sortParamStr = '';
-if ($sort_by !== '' && $sort_by !== 'Term' && in_array($sort_by, $columns_to_export, true)) {
-    $prefix = ($sort_dir === 'desc') ? '-' : '+';
-    $sortParamStr = '&sort=' . rawurlencode($prefix . $sort_by);
-}
-
-// Helper: DB Connection
-try {
-    $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-    );
-} catch (PDOException $e) {
-    die("DB Connection failed: " . $e->getMessage());
-}
-
-// Build Query
-$whereClauses = [];
-$params = [];
-
-if ($search_field !== '' && $search_text !== '') {
-    $whereClauses[] = "`$search_field` LIKE :searchText";
-    $params[':searchText'] = '%' . $search_text . '%';
-}
-
-// Always filter by company
-$whereClauses[] = "`company` = :company";
-$params[':company'] = $company;
-
-$whereSql = '';
-if (!empty($whereClauses)) {
-    $whereSql = 'WHERE ' . implode(' AND ', $whereClauses);
-}
-
-// Sorting — use LEFT JOIN for Term
-$orderSql = '';
-if ($sort_by === 'Term') {
-    // ORDER BY is embedded in the JOIN query below
-} elseif ($sort_by !== '' && in_array($sort_by, $columns_to_export, true)) {
-    $orderSql = "ORDER BY `$sort_by` " . ($sort_dir === 'desc' ? 'DESC' : 'ASC');
-} else {
-    $orderSql = "ORDER BY Id DESC";
-}
-
-// Fetch All Rows — use LEFT JOIN for Term sort
-if ($sort_by === 'Term') {
-    $sql = "SELECT a.*, COUNT(df.id) AS file_count 
-            FROM `$userTableName` a 
-            LEFT JOIN device_files df ON df.device_id = a.Id AND df.device_table = 'assets'
-            $whereSql 
-            GROUP BY a.Id 
-            ORDER BY file_count " . ($sort_dir === 'desc' ? 'DESC' : 'ASC');
-} else {
-    $sql = "SELECT * FROM `$userTableName` $whereSql $orderSql";
-}
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$allRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Send headers to prompt download as CSV file
-header('Content-Type: text/csv; charset=UTF-8');
-header('Content-Disposition: attachment; filename="cmdb_export_' . date('Ymd_His') . '.csv"');
-header('Cache-Control: no-cache, no-store, must-revalidate');
-header('Pragma: no-cache');
-header('Expires: 0');
-
-$output = fopen('php://output', 'w');
-
-// Write UTF-8 BOM for Excel compatibility
-fwrite($output, "\xEF\xBB\xBF");
-
-// Write CSV header row
-fputcsv($output, $columns_to_export, ",", "\"", "\\");
-
-// Write all rows
-foreach ($allRows as $row) {
-    $exportRow = [];
-    foreach ($columns_to_export as $colName) {
-        $val = $row[$colName] ?? '';
-        if (is_array($val)) {
-            $val = implode('; ', $val); // Flatten arrays if any
+    foreach ($result['rows'] as $row) {
+        $line = [];
+        foreach ($columns as $column) {
+            $value = $row[$column] ?? '';
+            if ($column === 'Status') {
+                $value = $statusOptions[(string) $value] ?? $value;
+            } elseif ($column === 'BYOD' || $column === 'Mobile') {
+                $value = asset_bool_parse($value) ? lang('true_label') : lang('false_label');
+            } elseif ($column === 'LastSeen') {
+                $value = app_date((string) $value);
+            }
+            $line[] = $value;
         }
-        $exportRow[] = $val;
+        foreach ($gridFields as $def) {
+            $line[] = field_display_value($def, $customValues[(int) $row['Id']][(string) $def['field_key']] ?? null);
+        }
+        fputcsv($out, $line, ';', '"', '');
     }
-    fputcsv($output, $exportRow, ",", "\"", "\\");
-}
 
-fclose($output);
-exit();
+    $page++;
+} while ($page <= $result['pages']);
+
+fclose($out);
+exit;

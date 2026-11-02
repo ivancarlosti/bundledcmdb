@@ -34,6 +34,58 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/ivancarlosti/bundle
 ```
 docker compose pull && docker compose up -d
 ```
+* Apply the schema migrations (idempotent; safe to re-run):
+```
+docker compose exec ddnsonroute53 php bin/migrate.php
+```
+
+## What's new in 1.1
+
+* **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert and bulk
+  endpoints, per-key company/source scopes, IP allowlists, token rotation.
+  See [docs/api.md](docs/api.md).
+* **Source per asset** — `assets.source` (seeded `eset`, `api`, `manual`, plus
+  any custom source), shown as badges and filterable in the grid.
+* **Panel-side asset management** — create assets (`asset_new.php`), edit them
+  with attachments, soft-delete from the grid.
+* **Settings page** (`settings.php`, admin/superadmin) — language combo (7
+  locales), timezone, S3 storage (secret encrypted with `APP_ENCRYPTION_KEY`),
+  API keys, sources, custom fields and schema maintenance. Values are stored in
+  the database with `DB → ENV → default` precedence; see
+  [docs/settings.md](docs/settings.md).
+* **Dynamic custom fields** (EAV) — text, textarea, integer, decimal, date,
+  datetime, boolean, single/multi choice, e-mail, URL, IP; validation, unique
+  constraints, per-role editing, per-locale labels, grid columns and search.
+* **Schema migrations** — `bin/migrate.php` (+ Settings → Maintenance button),
+  `docker/schema.sql` for DBA-managed databases. No manual `ALTER TABLE` needed.
+
+### New environment variables
+
+| Variable | Purpose |
+|---|---|
+| `APP_ENCRYPTION_KEY` | 32-byte key (base64/hex) that encrypts panel secrets. `openssl rand -base64 32` |
+| `APP_DEFAULT_LOCALE` | Optional fallback for the default language |
+| `APP_TIMEZONE` | Optional fallback for the timezone |
+| `APP_VERSION` | Shown by `/api/v1/health` |
+| `DB_PORT` | Optional non-default database port |
+
+S3 variables remain supported as fallbacks, but the panel values take
+precedence and encrypt the secret.
+
+### Languages
+
+`en-US`, `pt-BR`, `es-MX`, `fr-FR`, `zh-CN`, `hi-IN`, `ar-SA` (RTL), selected
+from a combo box in every page toolbar. Catalogues live in
+`public/lang/<code>.php`; `php bin/check-i18n.php` validates them and prints
+coverage.
+
+### Developer docs
+
+* [docs/api.md](docs/api.md) — API reference and curl examples.
+* [docs/settings.md](docs/settings.md) — settings precedence, encryption,
+  sources, custom fields, migrations.
+* [docs/development.md](docs/development.md) — local stack, CLI tools, layout,
+  validation checklist.
 
 ## 📸 Screenshots
 
@@ -43,7 +95,7 @@ Captured from the Docker image with demo data (no production or customer data).
 |---|---|
 | ![Asset dashboard in light theme](docs/screenshots/02-dashboard-light.png) | ![Asset dashboard in dark theme](docs/screenshots/03-dashboard-dark.png) |
 
-<sub>Light/dark/system theme and pt_BR / es_MX / en_US languages are switched from the toolbar in the top-right corner of every page.</sub>
+<sub>Light/dark/system theme and the language combo (7 locales, including RTL) are available in the top-right corner of every page.</sub>
 
 ### Login with Keycloak SSO
 ![Login screen with the Keycloak SSO button](docs/screenshots/01-login.png)

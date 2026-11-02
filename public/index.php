@@ -1,10 +1,11 @@
 <?php
 // index.php
 session_start();
-require_once '../config.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
 require_once '../auth_keycloak.php';
 require_once 'lang.php';
 lang_init();
+app_boot();
 
 $debug = false;
 $message = '';
@@ -75,7 +76,7 @@ $loginUrl = $keycloak->getLoginUrl();
 
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars($_SESSION['lang'] ?? 'pt_BR', ENT_QUOTES, 'UTF-8'); ?>">
+<html lang="<?php echo e(lang_code()); ?>" dir="<?php echo e(lang_dir()); ?>">
 
 <head>
     <title><?php echo lang('login_title'); ?></title>
