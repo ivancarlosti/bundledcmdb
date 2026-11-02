@@ -10,7 +10,7 @@
 | Path | Responsibility |
 |---|---|
 | `ui/` | React 19 + TypeScript + Vite single-page app (source) |
-| `public/app/` | Build output copied here by `npm run build` (git-ignored; shipped in the image and the release zip) |
+| `public/app/` | Build output copied here by `npm run build` (git-ignored; built inside the Docker `ui` stage and shipped in the image and the release zip) |
 | `public/auth.php` | Keycloak login/callback/logout (server-side; the SPA never sees a token) |
 | `public/panel_api.php` | JSON API for the SPA at `/panel-api/v1/*` (session cookie + `X-CSRF-Token`) |
 | `public/api.php` | Public Bearer-token API at `/api/v1/*` — unchanged, see [api.md](api.md) |

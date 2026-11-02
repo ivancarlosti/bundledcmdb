@@ -431,6 +431,10 @@ Estimates are focus days for one developer.
   left-/right-*`), Vitest + Testing Library, Playwright config + smoke spec.
 * [ ] Router (`/devices`, `/devices/:id`, `/settings/*`), `AppShell`, toasts,
   error boundary, keyboard-only walkthrough — next.
+* [x] Multi-stage Dockerfile (`vendor` → `ui` on `node:24-alpine` → runtime) and
+  nginx `/app/` locations (immutable assets, `no-store` shell, history fallback) —
+  landed with phase 4 so the scaffold could be verified end-to-end.
+* [ ] Release ZIP (`build.yml`) builds the SPA before `zip -r` (still pending).
 * Done when: light/dark/system switch with no flash and no reload; all 7 locales
   switch instantly incl. `ar-SA` RTL; shell passes a keyboard-only walkthrough.
 
@@ -620,4 +624,5 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 2 | `/meta` appends a synthetic `files` column (COUNT(device_files)) | `asset_column_defs()` has no `files` entry, so the virtual column would otherwise be invisible to the SPA even though the server sorts by it |
 | 2026-11-02 | 4 | Playwright config + smoke spec added with the scaffold (plan had e2e in phase 8) | the two cheapest assertions (viewport meta, single theme mechanism) guard the exact §2.1 regressions; browsers are not installed in CI yet |
 | 2026-11-02 | 4 | ESLint flat config also warns on `console.*` and bans physical inline-axis utilities | encoded so reviewers stop repeating it; scoped to `src/**` and disabled for tests |
+| 2026-11-02 | 4 | Multi-stage Dockerfile + nginx `/app/` locations landed in phase 4 (plan had them in §8) | without them the scaffold cannot be verified against the real image; the runtime stage is unchanged apart from one `COPY --from=ui` |
 

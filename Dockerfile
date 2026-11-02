@@ -6,7 +6,16 @@ COPY auth_keycloak.php auth_keycloak.php
 COPY s3_client.php s3_client.php
 RUN export COMPOSER_PROCESS_TIMEOUT=2000 && composer install --no-dev --ignore-platform-reqs --no-scripts --prefer-dist
 
-# Stage 2: Final image
+# Stage 2: Build the SPA (Node never reaches the runtime image)
+FROM node:24-alpine AS ui
+WORKDIR /src/ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ui/ ./
+# vite.config.ts writes to ../public/app → /src/public/app
+RUN npm run build
+
+# Stage 3: Final image
 FROM php:8.5-fpm-alpine
 
 # Install Nginx and MariaDB client; install PHP extensions (mysqli, pdo_mysql) and clean up
@@ -21,6 +30,9 @@ COPY --from=vendor /app/vendor /var/www/html/vendor
 
 # Copy application code
 COPY . /var/www/html/
+
+# Copy the built SPA from the UI stage
+COPY --from=ui /src/public/app/ /var/www/html/public/app/
 
 # Create nginx.conf directly in the Docker build
 RUN printf '%s\n' \
@@ -41,6 +53,22 @@ RUN printf '%s\n' \
   '        root   /var/www/html/public;' \
   '' \
   '        index  index.php index.html;' \
+  '' \
+  '        # SPA bundle: hashed assets are immutable, the shell is never cached.' \
+  '        location = /app/index.html {' \
+  '            add_header Cache-Control "no-store";' \
+  '        }' \
+  '' \
+  '        location /app/assets/ {' \
+  '            try_files $uri =404;' \
+  '            expires 1y;' \
+  '            add_header Cache-Control "public, immutable";' \
+  '        }' \
+  '' \
+  '        # History fallback so /app/devices/12 survives a reload.' \
+  '        location /app/ {' \
+  '            try_files $uri /app/index.html;' \
+  '        }' \
   '' \
   '        location / {' \
   '            try_files $uri $uri/ /index.php?$query_string;' \
