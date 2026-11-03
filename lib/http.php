@@ -86,6 +86,16 @@ function request_method(): string
     return strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 }
 
+/**
+ * Request content type without parameters (`application/json; charset=utf-8` ->
+ * `application/json`). Empty when the client sent no `Content-Type` at all.
+ */
+function request_content_type(): string
+{
+    $header = (string) ($_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '');
+    return strtolower(trim(explode(';', $header)[0]));
+}
+
 function redirect(string $url): never
 {
     header('Location: ' . $url);

@@ -700,6 +700,12 @@ function panel_devices_files_store(array $params = []): array
         throw new ApiError('storage_not_configured', 'Object storage is not configured.', 503);
     }
 
+    // A JSON body means "I already uploaded this object with the presigned URL"
+    // (`POST /devices/{id}/files/presign`); multipart is the server-side path.
+    if (request_content_type() === 'application/json') {
+        return panel_devices_files_register($pdo, $user, $id);
+    }
+
     $file = $_FILES['file'] ?? $_FILES['new_file'] ?? null;
     if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         throw new ApiError('validation_failed', 'A file is required.', 422, ['file' => 'required']);
@@ -734,6 +740,124 @@ function panel_devices_files_store(array $params = []): array
 
     $fileId = (int) $pdo->lastInsertId();
     asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]]);
+    $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = ? AND device_table = 'assets'");
+    $stmt->execute([$fileId]);
+    $row = $stmt->fetch();
+
+    return ['data' => panel_file_payload(is_array($row) ? $row : []), 'status' => 201, 'meta' => ['created' => true]];
+}
+
+/**
+ * POST /devices/{id}/files/presign — a URL the browser can PUT to directly.
+ *
+ * Answers `{mode: "s3", ...}` when the S3 driver is active and `{mode: "server"}`
+ * otherwise, so the SPA has one call to make and no guessing: `local` storage (or
+ * an S3 bucket without CORS) falls back to the multipart endpoint, which is also
+ * the only path that works through a proxy that rejects large bodies.
+ */
+function panel_devices_files_presign(array $params = []): array
+{
+    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    session_csrf_require();
+
+    $id = panel_device_id($params);
+    $pdo = db();
+    panel_device_for_write($pdo, $user, $id);
+
+    if (!panel_storage_configured()) {
+        throw new ApiError('storage_not_configured', 'Object storage is not configured.', 503);
+    }
+
+    $body = request_json_body();
+    $name = trim((string) ($body['name'] ?? ''));
+    $mime = trim((string) ($body['mime'] ?? ''));
+    $size = (int) ($body['size'] ?? 0);
+
+    $errors = [];
+    if ($name === '') {
+        $errors['name'] = 'required';
+    }
+    if ($size <= 0) {
+        $errors['size'] = 'required';
+    } elseif ($size > PANEL_MAX_UPLOAD_BYTES) {
+        $errors['size'] = 'too_large';
+    }
+    if ($errors !== []) {
+        throw new ApiError('validation_failed', 'A name and a size within the limit are required.', 422, $errors);
+    }
+
+    if (storage_driver() !== 's3') {
+        return ['data' => ['mode' => 'server']];
+    }
+
+    $safeName = (string) preg_replace('/[^A-Za-z0-9._-]+/', '_', $name);
+    $key = 'assets/' . $id . '/' . uniqid('', true) . '_' . ($safeName === '' ? 'file' : $safeName);
+    $contentType = $mime === '' ? 'application/octet-stream' : $mime;
+
+    require_once __DIR__ . '/../../s3_client.php';
+    $s3 = new S3Client();
+    $signed = $s3->getPresignedPutUrl($key, $contentType);
+    if ($signed === null) {
+        // A signature failure must not strand the upload: the client falls back.
+        return ['data' => ['mode' => 'server']];
+    }
+
+    return ['data' => [
+        'mode'       => 's3',
+        'url'        => $signed['url'],
+        'key'        => $s3->objectKey($key),
+        'headers'    => $signed['headers'],
+        'expires_in' => $signed['expires_in'],
+    ]];
+}
+
+/**
+ * Register an object the browser uploaded with the presigned PUT.
+ *
+ * Two checks keep this from being an "attach anything in the bucket" endpoint:
+ * the key has to live under `assets/<this device>/`, and the object has to exist.
+ */
+function panel_devices_files_register(PDO $pdo, array $user, int $id): array
+{
+    $body = request_json_body();
+    $key = trim((string) ($body['key'] ?? ''));
+    $name = trim((string) ($body['name'] ?? ''));
+    $mime = trim((string) ($body['mime'] ?? ''));
+    $size = (int) ($body['size'] ?? 0);
+
+    $errors = [];
+    if ($key === '') {
+        $errors['key'] = 'required';
+    }
+    if ($name === '') {
+        $errors['name'] = 'required';
+    }
+    if ($size <= 0 || $size > PANEL_MAX_UPLOAD_BYTES) {
+        $errors['size'] = $size <= 0 ? 'required' : 'too_large';
+    }
+    if ($errors === [] && !str_contains($key, '/assets/' . $id . '/') && !str_starts_with($key, 'assets/' . $id . '/')) {
+        $errors['key'] = 'invalid_key';
+    }
+    if ($errors !== []) {
+        throw new ApiError('validation_failed', 'The uploaded object could not be registered.', 422, $errors);
+    }
+
+    if (storage_driver() === 's3') {
+        require_once __DIR__ . '/../../s3_client.php';
+        $s3 = new S3Client();
+        if (!$s3->objectExists(preg_replace('#^' . preg_quote($s3->bucket(), '#') . '/#', '', $key) ?? $key)) {
+            throw new ApiError('validation_failed', 'The uploaded object was not found.', 422, ['key' => 'missing']);
+        }
+    }
+
+    $pdo->prepare(
+        'INSERT INTO device_files (device_id, device_table, file_path, file_name, mime_type, size)
+              VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute([$id, 'assets', $key, $name, $mime === '' ? null : $mime, $size]);
+
+    $fileId = (int) $pdo->lastInsertId();
+    asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]]);
+
     $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = ? AND device_table = 'assets'");
     $stmt->execute([$fileId]);
     $row = $stmt->fetch();

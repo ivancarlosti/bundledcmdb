@@ -106,6 +106,7 @@ function FilesSection({ device }: { device: DeviceDetail }) {
   const session = useCurrentSession();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pendingName, setPendingName] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
   const upload = useUploadDeviceFile(device.id);
   const remove = useDeleteDeviceFile(device.id);
 
@@ -114,12 +115,14 @@ function FilesSection({ device }: { device: DeviceDetail }) {
       return;
     }
     setPendingName(file.name);
+    setProgress(0);
     try {
-      await upload.mutateAsync(file);
+      await upload.mutateAsync({ file, onProgress: setProgress });
     } catch {
       // the mutation already toasted the error
     } finally {
       setPendingName(null);
+      setProgress(null);
       if (inputRef.current !== null) {
         inputRef.current.value = '';
       }
@@ -140,8 +143,9 @@ function FilesSection({ device }: { device: DeviceDetail }) {
               onChange={(event) => void onFileChange(event.target.files?.[0] ?? null)}
             />
             {upload.isPending ? (
-              <span className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+              <span className="flex items-center gap-1 text-xs text-[var(--color-muted)]" role="status">
                 <Spinner className="size-3" /> {t('ui_uploading')}
+                {progress === null ? null : <span>{Math.round(progress * 100)}%</span>}
                 {pendingName === null ? null : <span className="max-w-[12ch] truncate">{pendingName}</span>}
               </span>
             ) : null}

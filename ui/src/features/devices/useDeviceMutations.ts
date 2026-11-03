@@ -172,7 +172,8 @@ export function useUploadDeviceFile(id: number | null) {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (file: File) => uploadDeviceFile(id as number, file),
+    mutationFn: (input: { file: File; onProgress?: (fraction: number) => void }) =>
+      uploadDeviceFile(id as number, input.file, input.onProgress),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['device', id] });
       void queryClient.invalidateQueries({ queryKey: ['devices'] });

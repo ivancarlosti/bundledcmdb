@@ -40,6 +40,7 @@ function panel_routes(): array
         ['GET',   '/devices/{id}/files',  'panel_devices_files_index'],
         ['GET',   '/devices/{id}/files/{fileId}/download', 'panel_devices_files_download'],
         ['GET',   '/devices/{id}/events', 'panel_devices_events'],
+        ['POST',  '/devices/{id}/files/presign', 'panel_devices_files_presign'],
         ['POST',  '/devices/{id}/files',  'panel_devices_files_store'],
         ['DELETE', '/devices/{id}/files/{fileId}', 'panel_devices_files_delete'],
         ['GET',   '/devices/{id}',        'panel_devices_show'],

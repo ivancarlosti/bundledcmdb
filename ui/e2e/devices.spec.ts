@@ -186,3 +186,65 @@ test.describe('saved views', () => {
     await expect(page.getByText('No saved views yet. Filter the grid, then name it below.')).toBeVisible();
   });
 });
+
+/**
+ * Attachment upload (plan §14.9).
+ *
+ * With the S3 driver the browser PUTs straight to the bucket and only registers
+ * the object, which is the path that reports real progress; with `local` storage
+ * (or a bucket that refuses CORS) the server puts the object and the client uses
+ * multipart instead. Both end in the same `device_files` row.
+ */
+test.describe('attachment upload', () => {
+  test('uploads straight to the bucket when the server offers a presigned PUT', async ({ page }) => {
+    let registered: Record<string, unknown> | undefined;
+    let presigned: Record<string, unknown> | undefined;
+    await mockPanel(page, {
+      session: { ...SESSION, features: { ...SESSION.features, attachments: true } },
+      presign: {
+        mode: 's3',
+        url: '/fake-upload?X-Amz-Signature=abc',
+        key: 'uploads/assets/7/x_note.txt',
+        headers: { 'Content-Type': 'text/plain' },
+        expires_in: 300,
+      },
+      onFileUpload: (body) => {
+        registered = body;
+      },
+    });
+    page.on('request', (request) => {
+      if (request.url().includes('/files/presign')) {
+        presigned = request.postDataJSON() as Record<string, unknown>;
+      }
+    });
+
+    await page.goto('/app/devices/7');
+    await page.getByLabel('Upload New File').setInputFiles({
+      name: 'note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('hello attachment'),
+    });
+
+    await expect.poll(() => registered).toBeDefined();
+    expect(presigned).toMatchObject({ name: 'note.txt', size: 16 });
+    // The registration carries the key the server signed, not a client-made one.
+    expect(registered).toMatchObject({ key: 'uploads/assets/7/x_note.txt', name: 'note.txt' });
+  });
+
+  test('falls back to a multipart upload when storage is local', async ({ page }) => {
+    await mockPanel(page, {
+      session: { ...SESSION, features: { ...SESSION.features, attachments: true } },
+    });
+
+    await page.goto('/app/devices/7');
+    await page.getByLabel('Upload New File').setInputFiles({
+      name: 'note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('hello attachment'),
+    });
+
+    // `mode: 'server'` (the fixture default) means the browser never talks to a
+    // bucket: the request goes to the panel API as multipart.
+    await expect(page.getByText('invoice.pdf')).toBeVisible();
+  });
+});

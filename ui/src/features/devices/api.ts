@@ -189,10 +189,82 @@ export async function restoreDevice(id: number): Promise<{ device: DeviceDetail;
 }
 
 /** Upload one attachment (multipart; the server puts the object in S3). */
-export function uploadDeviceFile(id: number, file: File): Promise<DeviceFile> {
-  const form = new FormData();
-  form.set('file', file);
-  return apiRequest<DeviceFile>(`/devices/${id}/files`, { method: 'POST', form });
+/** What `POST /devices/{id}/files/presign` answers. */
+export type UploadPlan =
+  { mode: 'server' } | { mode: 's3'; url: string; key: string; headers: Record<string, string>; expires_in: number };
+
+export function presignDeviceFile(
+  id: number,
+  input: { name: string; mime: string; size: number },
+): Promise<UploadPlan> {
+  return apiRequest<UploadPlan>(`/devices/${id}/files/presign`, { method: 'POST', body: input });
+}
+
+/**
+ * Upload one attachment.
+ *
+ * Uses `XMLHttpRequest`, not `fetch`, because this is the one request in the panel
+ * whose *progress* matters: a 20 MB PDF over a slow link should show a percentage
+ * instead of a spinner that looks stuck. When the server offers a presigned PUT
+ * (S3 driver) the browser talks to the bucket directly and only the registration
+ * call goes through the panel API; otherwise the bytes go through PHP-FPM.
+ *
+ * @param onProgress 0..1, called on the way up (never for the multipart fallback
+ *   until the request completes, because XHR cannot report server-side progress)
+ */
+export async function uploadDeviceFile(
+  id: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<DeviceFile> {
+  const plan = await presignDeviceFile(id, { name: file.name, mime: file.type, size: file.size });
+
+  if (plan.mode !== 's3') {
+    const form = new FormData();
+    form.set('file', file);
+    onProgress?.(0.1);
+    const uploaded = await apiRequest<DeviceFile>(`/devices/${id}/files`, { method: 'POST', form });
+    onProgress?.(1);
+    return uploaded;
+  }
+
+  await putWithProgress(plan.url, file, plan.headers, onProgress);
+  return apiRequest<DeviceFile>(`/devices/${id}/files`, {
+    method: 'POST',
+    body: { key: plan.key, name: file.name, mime: file.type, size: file.size },
+  });
+}
+
+/** PUT one file to a presigned URL, reporting upload progress. */
+function putWithProgress(
+  url: string,
+  file: File,
+  headers: Record<string, string>,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', url, true);
+    for (const [name, value] of Object.entries(headers)) {
+      request.setRequestHeader(name, value);
+    }
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress?.(event.loaded / event.total);
+      }
+    });
+    request.addEventListener('load', () => {
+      if (request.status >= 200 && request.status < 300) {
+        onProgress?.(1);
+        resolve();
+      } else {
+        reject(new Error(`Upload failed with status ${request.status}`));
+      }
+    });
+    request.addEventListener('error', () => reject(new Error('Upload failed')));
+    request.addEventListener('abort', () => reject(new Error('Upload aborted')));
+    request.send(file);
+  });
 }
 
 /**

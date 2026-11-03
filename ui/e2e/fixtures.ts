@@ -25,6 +25,8 @@ export const MESSAGES: Record<string, string> = {
   ui_dev_login: 'Development sign-in',
   ui_history: 'History',
   ui_drag_column: 'Drag {{name}} to reorder',
+  upload_title: 'Upload New File',
+  files_title: 'Attachments',
   ui_views: 'Views',
   ui_views_empty: 'No saved views yet. Filter the grid, then name it below.',
   ui_view_name: 'View name',
@@ -326,6 +328,10 @@ export type MockOptions = {
   onBulk?: (body: Record<string, unknown>) => void;
   /** Called with the JSON body of every `PATCH /session/preferences`. */
   onPreferences?: (patch: Record<string, unknown>) => void;
+  /** Answer `POST /devices/{id}/files/presign` with this (default: server mode). */
+  presign?: Record<string, unknown>;
+  /** Called with the JSON body that registers a direct upload. */
+  onFileUpload?: (body: Record<string, unknown>) => void;
   /** Called with the entry the SPA saved as a grid view (`POST /views`). */
   onSaveView?: (view: { id: number; name: string; state: Record<string, unknown> }) => void;
   /** Merged into the stubbed session (role, capabilities, locale, …). */
@@ -478,6 +484,42 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     }
     return json(route, { ok: true, data: {} });
   });
+
+  // Attachments: presign + register + the (stubbed) bucket PUT. Registered after
+  // `/devices/**` so `POST /devices/{id}/files` is not answered as a device write.
+  await page.route('**/panel-api/v1/devices/*/files/presign', (route) =>
+    json(route, options.presign ?? { mode: 'server' }),
+  );
+  await page.route('**/panel-api/v1/devices/*/files', async (route) => {
+    const request = route.request();
+    if (request.method() !== 'POST') {
+      return json(route, { rows: [], total: 0 });
+    }
+    let body: Record<string, unknown> = {};
+    try {
+      body = (request.postDataJSON() ?? {}) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
+    options.onFileUpload?.(body);
+    return route.fulfill({
+      status: 201,
+      json: {
+        ok: true,
+        data: {
+          id: 5,
+          name: (body.name as string) ?? 'note.txt',
+          path: (body.key as string) ?? 'assets/7/x_note.txt',
+          mime: 'text/plain',
+          size: (body.size as number) ?? 16,
+          uploaded_at: '2026-11-02T12:00:00Z',
+        },
+        meta: { created: true },
+      },
+    });
+  });
+  // The bucket the browser PUTs to; only the presigned path reaches this.
+  await page.route('**/fake-upload**', (route) => route.fulfill({ status: 200, body: '' }));
 
   // Registered last: Playwright gives the newest route priority, and
   // `/devices/{id}/events` would otherwise be answered by the `/devices/**`

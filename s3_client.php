@@ -129,6 +129,50 @@ class S3Client
         }
     }
 
+    /**
+     * Presigned PUT for a browser upload (`POST /devices/{id}/files/presign`).
+     *
+     * The content type is part of the signature, so the client has to send the
+     * same one it asked for; `expiresIn` stays short (the panel's presign
+     * lifetime) because the URL is used once, immediately.
+     *
+     * @return array{url: string, headers: array<string, string>, expires_in: int}|null
+     */
+    public function getPresignedPutUrl(string $key, string $contentType, ?int $expiresIn = null): ?array
+    {
+        $expiresIn = max(60, $expiresIn ?? $this->presignSeconds);
+        try {
+            $cmd = $this->s3->getCommand('PutObject', [
+                'Bucket' => $this->bucket,
+                'Key' => $this->objectKey($key),
+                'ContentType' => $contentType,
+            ]);
+            $request = $this->s3->createPresignedRequest($cmd, "+{$expiresIn} seconds");
+            return [
+                'url'        => (string) $request->getUri(),
+                'headers'    => ['Content-Type' => $contentType],
+                'expires_in' => $expiresIn,
+            ];
+        } catch (Aws\Exception\AwsException $e) {
+            error_log($e->getMessage());
+            return null;
+        }
+    }
+
+    /** True when the object exists (used to validate a direct upload). */
+    public function objectExists(string $key): bool
+    {
+        try {
+            $this->s3->headObject([
+                'Bucket' => $this->bucket,
+                'Key' => $this->objectKey($key),
+            ]);
+            return true;
+        } catch (Aws\Exception\AwsException $e) {
+            return false;
+        }
+    }
+
     public function getPresignedUrl(string $key, ?int $expiresIn = null): string
     {
         $expiresIn = $expiresIn ?? $this->presignSeconds;

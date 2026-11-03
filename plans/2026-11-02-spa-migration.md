@@ -750,8 +750,14 @@ bumps by hand.
    four community locales, floor raised to 45 % in `bin/check-i18n.php` and
    enforced per locale by `ui/src/i18n/coverage.test.ts`). The legacy `set_*` /
    `perm_*` keys of the PHP pages still fall back to en-US there.
-9. **Presigned PUT upload** (`POST /devices/{id}/files/presign`) if uploads ever
-    need to bypass PHP-FPM; today the server puts the object itself (§16, phase 3).
+9. ~~**Presigned PUT upload** (`POST /devices/{id}/files/presign`)~~ — done:
+    with the S3 driver the endpoint signs a short-lived PUT (content type included
+    in the signature) and the SPA uploads with `XMLHttpRequest`, so the file also
+    gets a real progress percentage. `local` storage — or a bucket whose CORS
+    refuses the PUT — answers `{mode: "server"}` and the client uses the
+    multipart endpoint instead, so there is one call to make and no guessing. The
+    registration step (`POST /files` with a JSON body) only accepts keys under
+    `assets/<id>/` and checks the object exists.
 10. ~~**Pointer drag-and-drop** for the column picker~~ — done: the grip handle
     in `ColumnPicker` is a `@dnd-kit` sortable row (`PointerSensor` with a 4 px
     activation distance, vertical axis only, restricted to the list) and a real
@@ -858,3 +864,4 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 2 | Fixed `panel_match()`: placeholder names may mix case | the helper only expanded `[a-z_]+`, so `{fileId}` never became a capture group and both attachment routes (`DELETE /devices/{id}/files/{fileId}` included) matched nothing — a file listed by the panel could not be removed over HTTP. The unit test drove the handlers directly, which is why it stayed hidden; the routing table now has explicit `{fileId}` assertions |
 | 2026-11-04 | 5 | Column reordering ships with `@dnd-kit` **and** keeps the up/down buttons | the picker is the only place where a pointer drag is the natural gesture, but a drag-only control is unusable with a keyboard and invisible to a screen reader; keeping both is one component and no extra state |
 | 2026-11-04 | 5 | A saved view stores only the grid state + column layout, keyed by e-mail, and `POST /views` upserts on the name | the URL is already the grid's source of truth, so a view is a bookmark with a label — no new state machine in the SPA, and applying one is a normal `update()`. Upsert on `(email, name)` matches the toolbar gesture ("save" on an existing label overwrites) and keeps the id stable for an open tab |
+| 2026-11-04 | 3 | `POST /devices/{id}/files/presign` answers `{mode: "server"}` instead of an error when it cannot presign | CORS on the bucket, the `local` driver and a signing failure all mean the same thing to the client ("upload through PHP"); a 4xx would force the SPA to duplicate the fallback logic per error code, and a bucket without CORS is a *supported* deployment, not a fault |

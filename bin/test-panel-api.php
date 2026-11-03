@@ -644,6 +644,33 @@ try {
         check($onDisk === null || !is_file($onDisk), 'storage: the object is deleted with the row');
 
         check(storage_safe_key('../../etc/passwd') === 'etc/passwd', 'storage: keys cannot escape the root');
+
+        // Presigned upload: with `local` active the answer is the fallback mode the
+        // SPA switches on, and validation still runs first.
+        body(['name' => 'note.txt', 'mime' => 'text/plain', 'size' => 16]);
+        $_SERVER['CONTENT_TYPE'] = 'application/json';
+        $plan = panel_devices_files_presign(['id' => (string) $id]);
+        check(($plan['data']['mode'] ?? '') === 'server', 'storage: local storage asks the client to upload through PHP');
+
+        $errors = [];
+        try {
+            body(['name' => '', 'size' => 0]);
+            panel_devices_files_presign(['id' => (string) $id]);
+        } catch (ApiError $e) {
+            $errors = $e->errors;
+        }
+        check(($errors['name'] ?? '') === 'required' && ($errors['size'] ?? '') === 'required', 'storage: presign validates the file metadata');
+
+        // Registration of a direct upload refuses keys outside this device.
+        body(['key' => 'assets/999/other.txt', 'name' => 'other.txt', 'mime' => 'text/plain', 'size' => 10]);
+        check_error(
+            'storage: registering an object of another device is 422',
+            fn () => panel_devices_files_store(['id' => (string) $id]),
+            'validation_failed',
+            422,
+            ['key' => 'invalid_key']
+        );
+        unset($_SERVER['CONTENT_TYPE']);
     } finally {
         foreach (['storage.driver' => $driverBefore, 'storage.local_path' => $pathBefore] as $key_ => $previous) {
             if ($previous === null) {
