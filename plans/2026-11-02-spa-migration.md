@@ -291,8 +291,9 @@ SPA strings, date/number formatting, Status labels, CSV headers
   wired into `ui.yml` so the JSON can never drift from the PHP catalogs.
 * Locale resolution: `user_preferences.locale` → `settings.general.default_locale`
   → `Accept-Language` → `en-US`; `dir` comes from `lang_meta()`.
-* Status values are stored in English and rendered through `lang_status_options()`
-  (exported as `status.*` JSON), so filters/search keep using DB values.
+* Status values are stored in English and rendered through the status catalogue
+  (`status_*` keys, exported as `status.*` JSON), so filters/search keep using DB
+  values.
 * No hard-coded user-facing strings: `eslint-plugin-i18next`-style check
   (`no-literal-string` limited to `src/features/**` and `src/components/**`).
 
@@ -329,7 +330,10 @@ location ^~ /auth/      { include fastcgi_params; fastcgi_param SCRIPT_FILENAME 
                           fastcgi_param PATH_INFO $uri; fastcgi_pass app:9000; }
 location ^~ /panel-api/ { include fastcgi_params; fastcgi_param SCRIPT_FILENAME $document_root/panel_api.php;
                           fastcgi_param PATH_INFO $uri; fastcgi_pass app:9000; }
-# /api/ block unchanged; legacy *.php locations unchanged until phase 9
+# /api/ block unchanged
+# Only the entry points run PHP: / (index.php), /api, /panel-api, /auth.
+# Every other *.php request is a 404 — a stray file must never be served as source.
+location ~ \.php$ { return 404; }
 add_header X-Content-Type-Options nosniff always;
 add_header X-Frame-Options DENY always;
 add_header Referrer-Policy strict-origin-when-cross-origin always;
@@ -574,20 +578,37 @@ Estimates are focus days for one developer.
   `docs/api.md` cross-links the panel API; `docs/development.md` documents
   `npm run dev` + proxy.
 
-### Phase 9 — cutover (2–3 d) 🚧 step 1 done
+### Phase 9 — cutover (2–3 d) ✅ done
 
 * [x] `ui.spa_enabled` default `1` → `/` redirects to `/app/`; legacy pages still
-  reachable by direct URL for one release. `public/index.php` picks the target
-  from `settings_spa_enabled()` (falls back to `main.php` when the database is
-  unreachable), anonymous visitors go to the SPA's own login screen, and
-  `/app/` renders a localised "turned off" notice (`features.spa`) instead of a
-  half-working shell when an administrator rolls back. Covered by
-  `bin/test-panel-api.php` (flag default) and `e2e/smoke.spec.ts` (notice).
-* [ ] Then a breaking `feat!:` release deletes `main.php`, `asset.php`,
-  `asset_new.php`, `export.php`, `save_row.php`, `save_rows.php`,
-  `settings.php`, `manage_permissions.php`, `style.css`, `theme.js`,
-  `lang_flag_buttons`/`theme_toggle_button` helpers, and the nginx `*.php`
-  locations, plus `docs/screenshots` refresh.
+  reachable by direct URL for one release (10.8.0). `public/index.php` picked the
+  target from `settings_spa_enabled()`, anonymous visitors went to the SPA's own
+  login screen, and `/app/` rendered a localised "turned off" notice
+  (`features.spa`) instead of a half-working shell when an administrator rolled
+  back.
+* [x] 11.0.0 (breaking `feat!:`) deleted `main.php`, `asset.php`, `asset_new.php`,
+  `export.php`, `save_row.php`, `save_rows.php`, `settings.php`,
+  `manage_permissions.php`, `style.css`, `theme.js` and everything that only
+  existed for them: `lang_selector()`/`lang_flag_buttons()`/
+  `theme_toggle_button()`/`lang_status_options()`/`lang_status_label()`,
+  `csrf_field()`/`csrf_require()`/`flash_set()`/`flash_take()`,
+  `lib/assets_ui.php`, `lib/settings_ui.php`, `lib/settings_actions.php`, the
+  dead model helpers (`source_label()`, `source_badge()`, `field_def()`,
+  `field_set_active()`, `custom_values_delete()`, `field_render_input()`,
+  `asset_grid_columns()`, `asset_column_exists()`, `settings_schema_ready()`,
+  `user_preferences_ready()`, `api_key_set_active()`, `crypto_mask()`,
+  `locale_native_name()`, `db_schema_cache_flush()`, `migrate_pending()`), the
+  `ui.spa_enabled` setting (`0008_retire_spa_flag` deletes the stored row) and the
+  `features.spa` flag. nginx now runs PHP for the four entry points only —
+  `/`, `/api`, `/panel-api`, `/auth` — and answers `404` to every other `*.php`
+  request, so a stray file can never be served as source.
+* [x] `public/index.php` is a pure entry point: `/` → `/app/`, plus the two things
+  that must stay on `/` (`?action=logout` and the legacy `?code=` SSO callback,
+  which now reports failures as `/app/?auth_error=<code>` and lets the SPA render
+  the localised message — `e2e/smoke.spec.ts`).
+* [x] `docs/screenshots` refreshed from the real image with
+  `node ui/scripts/screenshots.mjs` (dev login through the dev stack, six screens,
+  including the Users tab that replaced `manage_permissions.php`).
 
 **Total: ~28–37 focus days.**
 
@@ -801,3 +822,9 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 8 | `fr-FR`/`zh-CN`/`hi-IN`/`ar-SA` floors raised 15 % → 45 % and a per-locale family gate added to `coverage.test.ts` | the panel families are what a user actually reads; a percentage floor alone let a single new `col_*` key ship untranslated |
 | 2026-11-04 | 6 | The tabbed drawer / `react-hook-form` + `zod` rewrite stays deferred (marked `[~]`) | the field list comes from `/meta.writeColumns`, so the controlled form has no blind spots, and `deviceForm.ts` is unit-tested; rewriting the only device-write screen in the same release that makes it the default UI would trade known-good behaviour for style |
 | 2026-11-04 | 9 | The legacy pages are **not** deleted in this release | the rollback I just shipped links at `/main.php`, `bin/bootstrap.php` still points its maintenance banner at `settings.php?tab=maintenance`, and the plan (D7) stages the deletion as a separate breaking release with the `docs/screenshots` refresh |
+| 2026-11-04 | 9 | 11.0.0 deletes the legacy panel **and** the `ui.spa_enabled` switch instead of keeping the flag as a no-op | a setting that no longer selects anything is worse than no setting: it would still be rendered in Settings → General and silently do nothing. `0008_retire_spa_flag` deletes the stored row, so an installation that had it at `0` upgrades to a working panel rather than a dead notice |
+| 2026-11-04 | 9 | `public/index.php` keeps the `?code=` SSO callback (and `?action=logout`) after the pages are gone | Keycloak clients registered before `/auth/callback` existed point their redirect URI at `/index.php`; deleting the file would break their sign-in with a 404 after a successful login. The callback now redirects failures to `/app/?auth_error=<code>` so the SPA keeps owning the message |
+| 2026-11-04 | 9 | nginx answers `404` for every `*.php` outside the four entry points instead of keeping the generic `location ~ \.php$` FastCGI block | with the pages deleted the generic block had nothing left to serve, and it would happily execute any file dropped into `public/` |
+| 2026-11-04 | 9 | Dead helpers removed in the same commit (24 functions, 3 `lib/*_ui`/`*_actions` files) | they only existed for the deleted pages (`csrf_field()`, `flash_set()`, `field_render_input()`, `crypto_mask()`, …); leaving them behind makes the next reader believe there is a second UI to keep in sync |
+| 2026-11-04 | 9 | `docs/screenshots` are generated by `ui/scripts/screenshots.mjs` against the dev stack, not by hand | the refresh has to be repeatable: the script signs in through the development login, drives the real theme/locale switchers and writes all six files, so the next UI change can re-run one command |
+| 2026-11-04 | 4 | `loadLocale()` caches the whole payload (not a "loaded" flag) and `SessionGate` re-applies it on every locale change | switching *back* to a cached locale never re-ran the query (`staleTime: Infinity`), so the previous language stayed on screen until a reload, and `dir` could not be restored for RTL because `i18n.dir()` does not know `ar-SA` is RTL. The screenshot run caught it; `src/i18n/loadLocale.test.ts` and `e2e/preferences.spec.ts` now pin it |

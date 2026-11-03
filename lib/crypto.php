@@ -105,15 +105,3 @@ function crypto_decrypt(string $stored): ?string
 
     return $pt === false ? null : $pt;
 }
-
-/**
- * Human-readable mask for a secret ("••••••••" / "not set").
- */
-function crypto_mask(?string $value): string
-{
-    if ($value === null || $value === '') {
-        return '—';
-    }
-    $len = mb_strlen($value);
-    return str_repeat('•', 8) . ($len > 4 ? ' (' . $len . ')' : '');
-}

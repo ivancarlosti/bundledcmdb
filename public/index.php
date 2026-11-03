@@ -1,5 +1,16 @@
 <?php
-// index.php
+// index.php — the entry point for `/`.
+//
+// Since 11.0.0 this file renders nothing: the React panel at `/app/` owns the
+// login screen, the language/theme controls and every error state. Two things
+// have to stay on `/` anyway:
+//
+//   * `?action=logout` — old bookmarks and the Keycloak post-logout landing;
+//   * `?code=…` — the authorization-code callback for Keycloak clients whose
+//     redirect URI was registered as `/index.php` before `/auth/callback`
+//     existed. New clients should use `/auth/callback` (public/auth.php).
+//
+// Everything else is a single redirect to `/app/`.
 session_start();
 require_once __DIR__ . '/../lib/bootstrap.php';
 require_once '../auth_keycloak.php';
@@ -7,119 +18,61 @@ require_once 'lang.php';
 lang_init();
 app_boot();
 
-/**
- * Where a browser that reached `/` belongs.
- *
- * Since the phase 9 cutover (10.8.0) `ui.spa_enabled` defaults to on, and `/` is
- * only an entry point: the SPA owns the login screen, the language/theme
- * controls and the error states, so this page exists for the SSO callback and
- * for the rollback (`ui.spa_enabled = 0` → legacy `main.php` + login form).
- */
-$spaHome = settings_spa_enabled() ? '/app/' : 'main.php';
+/** Where the browser belongs once it is (or is not) signed in. */
+const PANEL_HOME = '/app/';
 
-$debug = false;
-$message = '';
-
-// Initialize Keycloak Helper
 $keycloak = new KeycloakAuth();
 
-// Handle Logout
+// Logout: drop the session, then let Keycloak end its own SSO session too.
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     session_destroy();
     header('Location: ' . $keycloak->getLogoutUrl());
     exit();
 }
 
-// Handle Keycloak Callback
+// Legacy SSO callback. Success sets the session and continues to /app/; a
+// failure is reported to the SPA (which owns the error state) instead of
+// rendering a PHP page.
 if (isset($_GET['code'])) {
-    $tokenData = $keycloak->getToken($_GET['code']);
+    $error = 'token_failed';
+    $tokenData = $keycloak->getToken((string) $_GET['code']);
 
     if ($tokenData && isset($tokenData['access_token'])) {
         $userInfo = $keycloak->getUserInfo($tokenData['access_token']);
 
         if ($userInfo && isset($userInfo['email'])) {
-            $email = $userInfo['email'];
-
-            // Verify user in MariaDB
+            $email = (string) $userInfo['email'];
             try {
                 $pdo = new PDO(
-                    "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
+                    'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
                     DB_USER,
                     DB_PASS,
                     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
                 );
             } catch (PDOException $e) {
-                die("DB Connection failed: " . $e->getMessage());
+                error_log('index.php: database unreachable during SSO callback: ' . $e->getMessage());
+                header('Location: ' . PANEL_HOME . '?auth_error=server_error');
+                exit();
             }
 
             $user = $keycloak->verifyUser($email, $pdo);
-
             if ($user) {
-                $company = $user['company'] ?? '';
-                $role = $user['role'] ?? 'user';
-
                 $_SESSION['user_email'] = $email;
-                $_SESSION['company'] = $company;
-                $_SESSION['role'] = $role;
-
-                header('Location: ' . $spaHome);
+                $_SESSION['company'] = $user['company'] ?? '';
+                $_SESSION['role'] = $user['role'] ?? 'user';
+                header('Location: ' . PANEL_HOME);
                 exit();
-            } else {
-                $message = 'Access Denied: User not found in authorized list.';
             }
+            $error = 'not_authorized';
         } else {
-            $message = 'Failed to retrieve user information from Keycloak.';
+            $error = 'userinfo_failed';
         }
-    } else {
-        $message = 'Failed to authenticate with Keycloak.';
     }
-}
 
-// If already logged in, redirect to main
-if (isset($_SESSION['user_email'])) {
-    header('Location: ' . $spaHome);
+    header('Location: ' . PANEL_HOME . '?auth_error=' . $error);
     exit();
 }
 
-// Anonymous visitor: with the SPA enabled `/` is not a page any more, it is a
-// redirect to the SPA's own login screen. Only the rollback renders the form
-// below, and a failed SSO callback keeps its message on screen.
-if ($spaHome === '/app/' && $message === '') {
-    header('Location: /app/');
-    exit();
-}
+header('Location: ' . PANEL_HOME);
+exit();
 
-// If no code and not logged in, show login page or redirect
-$loginUrl = $keycloak->getLoginUrl();
-
-?>
-<!DOCTYPE html>
-<html lang="<?php echo e(lang_code()); ?>" dir="<?php echo e(lang_dir()); ?>">
-
-<head>
-    <title><?php echo lang('login_title'); ?></title>
-    <meta charset="utf-8">
-    <link rel="stylesheet" href="style.css">
-</head>
-
-<body class="login-page">
-    <!-- Top-Right Toolbar: Language Flags + Theme Toggle -->
-    <div class="top-toolbar">
-        <?php echo lang_flag_buttons('index.php'); ?>
-        <?php echo theme_toggle_button(); ?>
-    </div>
-
-    <div class="login-container">
-        <h2><?php echo lang('login_title'); ?></h2>
-        <?php if ($message): ?>
-            <p class="error-msg"><?php echo htmlspecialchars($message); ?></p>
-        <?php endif; ?>
-
-        <p><?php echo lang('login_prompt'); ?></p>
-        <a href="<?php echo htmlspecialchars($loginUrl); ?>" class="sso-btn"><?php echo lang('sso_btn'); ?></a>
-    </div>
-
-    <script src="theme.js"></script>
-</body>
-
-</html>

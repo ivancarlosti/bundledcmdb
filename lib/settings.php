@@ -44,15 +44,6 @@ function settings_definitions(): array
             'label' => 'Rows per page',
         ],
 
-        // --- User interface ---
-        // `1` since 10.8.0 (phase 9 cutover): `/` sends the browser to /app/.
-        // Turning it off is the rollback: `/` goes back to the legacy pages and
-        // /app/ shows a "disabled" notice instead of a half-working shell.
-        'ui.spa_enabled' => [
-            'group' => 'general', 'type' => 'bool', 'default' => '1',
-            'label' => 'Serve the React panel at /app/',
-        ],
-
         // --- Assets ---
         'assets.default_source' => [
             'group' => 'assets', 'type' => 'source', 'default' => 'manual',
@@ -116,17 +107,6 @@ function settings_definitions(): array
         ],
     ];
 }
-
-function settings_schema_ready(): bool
-{
-    static $ready = null;
-    if ($ready !== null) {
-        return $ready;
-    }
-    $pdo = db_try();
-    return $ready = ($pdo !== null && db_table_exists($pdo, 'app_settings'));
-}
-
 /**
  * Placeholder values shipped in .env.example count as "not configured".
  */
@@ -229,23 +209,6 @@ function settings_bool(string $key): bool
     }
     return filter_var((string) $value, FILTER_VALIDATE_BOOLEAN);
 }
-
-/**
- * True when `/` must send the browser to the React panel at `/app/`.
- *
- * Never throws: `public/index.php` calls it before anything is rendered, and a
- * database that is not reachable yet must fall back to the legacy pages instead
- * of a fatal error.
- */
-function settings_spa_enabled(): bool
-{
-    try {
-        return settings_bool('ui.spa_enabled');
-    } catch (Throwable) {
-        return false;
-    }
-}
-
 function settings_int(string $key): int
 {
     return (int) settings_get($key, 0);

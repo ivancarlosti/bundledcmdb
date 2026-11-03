@@ -110,14 +110,6 @@ function db_column_exists(PDO $pdo, string $table, string $column): bool
     }
     return !empty($cache[$key]);
 }
-
-/** Forget cached schema lookups (used after DDL in long-running processes). */
-function db_schema_cache_flush(): void
-{
-    // Static caches are per-function; nothing global to clear, but keeping the
-    // hook makes call sites explicit and future-proof.
-}
-
 /**
  * Column definition (type + nullability) as reported by information_schema.
  */

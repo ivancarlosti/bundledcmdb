@@ -101,11 +101,17 @@ RUN printf '%s\n' \
   '            fastcgi_pass 127.0.0.1:9000;' \
   '        }' \
   '' \
-  '        location ~ \.php$ {' \
+  '        # Entry point for / (redirects to /app/, plus the legacy SSO callback).' \
+  '        location = /index.php {' \
   '            include fastcgi_params;' \
-  '            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;' \
-  '            fastcgi_index index.php;' \
+  '            fastcgi_param SCRIPT_FILENAME $document_root/index.php;' \
   '            fastcgi_pass 127.0.0.1:9000;' \
+  '        }' \
+  '' \
+  '        # 11.0.0 deleted the legacy pages: only the entry points above run PHP,' \
+  '        # so any other .php request is a 404 instead of a source download.' \
+  '        location ~ \\.php$ {' \
+  '            return 404;' \
   '        }' \
   '    }' \
   '}' \

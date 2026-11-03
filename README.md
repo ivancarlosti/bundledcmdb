@@ -24,16 +24,16 @@ Small CMDB project that uses ESET data sent to database for asset management, us
 
 ## Panel
 
-The React panel is the default UI since 10.8.0: `/` redirects to `/app/` —
-devices grid (server-side sort/filter/paging, bulk actions, column layout),
-device detail with attachments, create/edit forms and the admin settings tabs.
-It talks to `/panel-api/v1/*` with the session cookie and `X-CSRF-Token`; the
-Bearer REST API at `/api/v1/*` is unchanged.
+The React panel is the only UI since 11.0.0: `/` redirects to `/app/` — devices
+grid (server-side sort/filter/paging, bulk actions, column layout), device
+detail with attachments, create/edit forms and the admin settings tabs. It talks
+to `/panel-api/v1/*` with the session cookie and `X-CSRF-Token`; the Bearer REST
+API at `/api/v1/*` is unchanged.
 
-`Settings → General → Serve the React panel at /app/` (`ui.spa_enabled`) is the
-rollback: setting it to `0` sends `/` back to the legacy PHP pages, which stay
-reachable by direct URL for one release. See
-[docs/frontend.md](docs/frontend.md) for the cutover and rollback details.
+The classic PHP pages (`main.php`, `settings.php`, `manage_permissions.php`,
+`asset*.php`, `save_row*.php`, `export.php`) were removed in 11.0.0 along with
+the `ui.spa_enabled` switch — every URL is now `/app/…`. Rolling back means
+redeploying the previous 10.x image; see [docs/frontend.md](docs/frontend.md).
 
 ## Deployment instructions:
 
@@ -108,13 +108,14 @@ coverage.
 
 ## 📸 Screenshots
 
-Captured from the Docker image with demo data (no production or customer data).
+Captured from the Docker image with demo data (`node ui/scripts/screenshots.mjs`,
+no production or customer data).
 
 | Asset dashboard — light theme | Asset dashboard — dark theme |
 |---|---|
 | ![Asset dashboard in light theme](docs/screenshots/02-dashboard-light.png) | ![Asset dashboard in dark theme](docs/screenshots/03-dashboard-dark.png) |
 
-<sub>Light/dark/system theme and the language combo (7 locales, including RTL) are available in the top-right corner of every page.</sub>
+<sub>Light/dark/system theme and the language combo (7 locales, including RTL) are available in the top-right corner of every screen.</sub>
 
 ### Login with Keycloak SSO
 ![Login screen with the Keycloak SSO button](docs/screenshots/01-login.png)
@@ -122,8 +123,8 @@ Captured from the Docker image with demo data (no production or customer data).
 ### Asset detail and file attachments
 ![Asset detail page with editable fields and attached files](docs/screenshots/05-asset-detail.png)
 
-### Manage permissions (SuperAdmin)
-![Permission management page listing admins and their roles](docs/screenshots/06-manage-permissions.png)
+### Users and roles (SuperAdmin)
+![Settings screen listing users and their roles](docs/screenshots/06-settings-users.png)
 
 ### Language switcher (es_MX)
 ![Asset dashboard displayed in Spanish](docs/screenshots/04-dashboard-es-MX.png)

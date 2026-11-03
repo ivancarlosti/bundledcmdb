@@ -47,6 +47,24 @@ test.describe('preferences', () => {
     await expect(page.getByRole('heading', { name: 'Devices' })).toBeVisible();
   });
 
+  test('switches back to English after another locale (cached catalogue)', async ({ page }) => {
+    await mockPanel(page);
+    await page.goto('/app/devices');
+
+    const brand = page.getByRole('link', { name: /^CMDB/ }).first();
+    await expect(brand).toHaveText('CMDB');
+
+    await page.getByTestId('locale-switcher').selectOption('es-MX');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'es-MX');
+    await expect(brand).toHaveText('CMDB es-MX');
+
+    // The catalogue is cached (`staleTime: Infinity`), so this switch does not
+    // re-run the query — the screen must still go back to English.
+    await page.getByTestId('locale-switcher').selectOption('en-US');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en-US');
+    await expect(brand).toHaveText('CMDB');
+  });
+
   test('exports the CSV with the current sort and filters', async ({ page }) => {
     await mockPanel(page);
     await page.goto('/app/devices');

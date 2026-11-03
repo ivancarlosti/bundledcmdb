@@ -23,10 +23,6 @@ export const MESSAGES: Record<string, string> = {
   ui_clear_filters: 'Clear filters',
   ui_trashed: 'Deleted only',
   ui_dev_login: 'Development sign-in',
-  ui_spa_disabled_title: 'The React panel is turned off',
-  ui_spa_disabled_hint:
-    'An administrator can turn it back on under Settings → General. The classic panel keeps working in the meantime.',
-  ui_legacy_panel: 'Open the classic panel',
   records: 'records',
   signed_in_as: 'Signed in as:',
   search_text: 'Search Text',
@@ -123,7 +119,7 @@ export const SESSION = {
   pageSizes: [10, 25, 50],
   maxPageSize: 200,
   capabilities: { role: 'admin', rank: 3, can_write: true, can_admin: true, can_superadmin: false },
-  features: { spa: true, api: true, attachments: false, devLogin: false },
+  features: { api: true, attachments: false, devLogin: false },
   serverTime: '2026-11-02T12:00:00Z',
 };
 
@@ -347,10 +343,15 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
   });
   await page.route('**/panel-api/v1/i18n**', (route) => {
     const requested = new URL(route.request().url()).searchParams.get('locale') ?? 'en-US';
+    // Every locale gets the same strings (the assertions are written in English),
+    // except the brand: it carries the locale so a test can prove that switching
+    // back to `en-US` actually re-applied the catalogue instead of leaving the
+    // previous language on screen.
+    const brand = requested === 'en-US' ? MESSAGES.panel_title : `${MESSAGES.panel_title} ${requested}`;
     return json(route, {
       locale: requested,
       dir: requested === 'ar-SA' ? 'rtl' : 'ltr',
-      messages: MESSAGES,
+      messages: { ...MESSAGES, panel_title: brand },
     });
   });
   await page.route('**/panel-api/v1/meta', (route) => json(route, META));

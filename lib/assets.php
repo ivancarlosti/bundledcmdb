@@ -64,19 +64,6 @@ function asset_column_defs(): array
         'deleted_at'      => ['type' => 'datetime', 'grid' => false, 'api' => false, 'form_roles' => [], 'label' => 'Deleted at'],
     ];
 }
-
-/** Columns displayed by the grid, in order. */
-function asset_grid_columns(): array
-{
-    $out = [];
-    foreach (asset_column_defs() as $column => $def) {
-        if (!empty($def['grid'])) {
-            $out[] = $column;
-        }
-    }
-    return $out;
-}
-
 /** Columns editable inline on the grid for a role. */
 function asset_grid_editable_columns(string $role): array
 {
@@ -122,13 +109,6 @@ function asset_create_columns(string $role): array
         static fn (string $column): bool => $column !== 'UUID'
     ));
 }
-
-/** True when the column exists in the current installation. */
-function asset_column_exists(PDO $pdo, string $column): bool
-{
-    return db_column_exists($pdo, 'assets', $column);
-}
-
 /** @return list<string> companies known to the installation */
 function asset_companies(PDO $pdo): array
 {

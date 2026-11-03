@@ -104,12 +104,6 @@ function csrf_token(): string
     }
     return $_SESSION['csrf_token'];
 }
-
-function csrf_field(): string
-{
-    return '<input type="hidden" name="_csrf" value="' . e(csrf_token()) . '">';
-}
-
 function csrf_verify(?string $token): bool
 {
     if (session_status() === PHP_SESSION_NONE) {
@@ -118,40 +112,6 @@ function csrf_verify(?string $token): bool
     $expected = $_SESSION['csrf_token'] ?? '';
     return is_string($token) && $expected !== '' && hash_equals($expected, $token);
 }
-
-/** Abort the request unless the POST carries a valid token. */
-function csrf_require(): void
-{
-    if (csrf_verify($_POST['_csrf'] ?? null)) {
-        return;
-    }
-    http_response_code(419);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo '419 Session expired — reload the page and try again.';
-    exit;
-}
-
-// --- Flash messages -----------------------------------------------------
-
-function flash_set(string $type, string $message): void
-{
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $_SESSION['flash'][] = ['type' => $type, 'message' => $message];
-}
-
-/** @return list<array{type: string, message: string}> */
-function flash_take(): array
-{
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $messages = $_SESSION['flash'] ?? [];
-    unset($_SESSION['flash']);
-    return is_array($messages) ? $messages : [];
-}
-
 
 // --- Client IP / allowlists --------------------------------------------
 

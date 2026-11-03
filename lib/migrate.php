@@ -45,6 +45,10 @@ function migrations(): array
             'description' => 'Ensure every index the device list/export sorts on exists',
             'run' => 'migration_0007_assets_indexes',
         ],
+        '2026_11_04_0008_retire_spa_flag' => [
+            'description' => 'Drop the retired ui.spa_enabled setting (the legacy panel is gone)',
+            'run' => 'migration_0008_retire_spa_flag',
+        ],
     ];
 }
 
@@ -73,13 +77,6 @@ function migrate_applied(PDO $pdo): array
     $rows = $pdo->query('SELECT version FROM schema_migrations ORDER BY version')->fetchAll();
     return array_map(static fn (array $r): string => (string) $r['version'], $rows);
 }
-
-/** @return list<string> */
-function migrate_pending(PDO $pdo): array
-{
-    return array_values(array_diff(array_keys(migrations()), migrate_applied($pdo)));
-}
-
 function migrate_note(string $message): void
 {
     $GLOBALS['bcmdb_migrate_log'] ??= [];
@@ -407,6 +404,25 @@ function migration_0007_assets_indexes(PDO $pdo): void
         if ($present) {
             migrate_add_index($pdo, 'assets', $name, implode(', ', $columns));
         }
+    }
+}
+
+/**
+ * 11.0.0 removed the legacy PHP panel, so `ui.spa_enabled` no longer selects
+ * anything: `/` always goes to `/app/`. Deleting the stored row keeps
+ * `settings_all()` output (and the Settings → General screen, which is generated
+ * from `settings_definitions()`) free of an option that would silently do
+ * nothing. The environment tier never carried it.
+ */
+function migration_0008_retire_spa_flag(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'app_settings')) {
+        return;
+    }
+    $stmt = $pdo->prepare('DELETE FROM app_settings WHERE skey = ?');
+    $stmt->execute(['ui.spa_enabled']);
+    if ($stmt->rowCount() > 0) {
+        migrate_note('DELETE app_settings ui.spa_enabled');
     }
 }
 

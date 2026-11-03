@@ -1,12 +1,12 @@
 # Front end (React SPA)
 
-> **Status: the SPA is the default UI since 10.8.0.** `/` redirects to `/app/`;
-> the legacy PHP pages stay reachable by direct URL for one release as the
-> rollback path. Setting `ui.spa_enabled = 0` restores the old entry point and
-> makes `/app/` show a "turned off" notice. The deletion of the legacy files
-> (`main.php`, `settings.php`, `manage_permissions.php`, `asset*.php`,
-> `save_row*.php`, `export.php`, `style.css`, `theme.js`) is the next, breaking
-> release — see [`plans/2026-11-02-spa-migration.md`](../plans/2026-11-02-spa-migration.md).
+> **Status: the SPA is the only UI since 11.0.0.** `/` redirects to `/app/`, and
+> the legacy PHP pages (`main.php`, `settings.php`, `manage_permissions.php`,
+> `asset*.php`, `save_row*.php`, `export.php`, `style.css`, `theme.js`) no longer
+> exist — nginx answers 404 for anything that is not one of the four entry
+> points. 10.8.0 shipped the default plus the `ui.spa_enabled = 0` rollback;
+> 11.0.0 removed both. To go back now, redeploy the 10.x image.
+> See [`plans/2026-11-02-spa-migration.md`](../plans/2026-11-02-spa-migration.md).
 
 ## How the pieces fit
 
@@ -28,22 +28,31 @@
 The SPA is same-origin with the API, so there is no CORS layer and the session
 cookie works with `SameSite=Lax`.
 
-## Cutover and rollback (phase 9)
+## Cutover (phase 9)
 
-`ui.spa_enabled` defaults to `1`, so `/` and `index.php` are entry points, not
-pages: a browser without a session lands on the SPA's own login screen, and a
-browser with one lands on the grid.
+`/` and `/index.php` are entry points, not pages: a browser without a session
+lands on the SPA's own login screen, and a browser with one lands on the grid.
 
-| Action | Effect |
+| URL | Effect |
 |---|---|
-| `Settings → General → Serve the React panel at /app/` off (or `ui.spa_enabled = 0`) | `/` redirects to the legacy `main.php` again, and `/app/` renders a notice linking at the classic panel instead of a half-working shell |
-| Direct URLs (`/main.php`, `/settings.php`, …) | Still served for one release; nothing links to them any more |
-| `/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/dev-login` | Unaffected — they are the SPA's own endpoints |
+| `/`, `/index.php` | `302` to `/app/`; `/index.php` also keeps the legacy `?code=` SSO callback and `?action=logout` |
+| `/app/*` | The SPA (history fallback to `/app/index.html`) |
+| `/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/dev-login` | SPA authentication (`public/auth.php`) |
+| `/panel-api/v1/*`, `/api/v1/*` | Panel and public APIs |
+| anything else ending in `.php` | `404` — only the entry points above execute PHP |
 
-The SPA reads the switch from `GET /panel-api/v1/session` (`features.spa`) and
-renders the notice from that flag alone, so the rollback does not need a rebuild
-or a new image. `bin/test-panel-api.php` asserts the default and
-`e2e/smoke.spec.ts` renders the notice with `features.spa: false`.
+The legacy pages (`main.php`, `settings.php`, `manage_permissions.php`,
+`asset*.php`, `save_row*.php`, `export.php`, `style.css`, `theme.js`) and their
+helpers (`lang_selector()`, `csrf_field()`, `lib/*_ui.php`, …) were deleted in
+11.0.0, together with the `ui.spa_enabled` switch (migration
+`0008_retire_spa_flag` deletes the stored row). There is no in-app rollback any
+more: the rollback is redeploying the previous 10.x image, which still contains
+both UIs.
+
+A failed legacy SSO callback is not rendered as a PHP page: `/index.php`
+redirects to `/app/?auth_error=<code>` (`not_authorized`, `userinfo_failed`,
+`token_failed`, `server_error`) and `LoginScreen` shows the localised message —
+covered by `e2e/smoke.spec.ts`.
 
 ## Local development
 

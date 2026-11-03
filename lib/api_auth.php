@@ -152,14 +152,6 @@ function api_key_rotate(PDO $pdo, int $id): ?string
 
     return $generated['token'];
 }
-
-function api_key_set_active(PDO $pdo, int $id, bool $active): bool
-{
-    $stmt = $pdo->prepare('UPDATE api_keys SET is_active = ? WHERE id = ?');
-    $stmt->execute([$active ? 1 : 0, $id]);
-    return $stmt->rowCount() > 0;
-}
-
 function api_key_delete(PDO $pdo, int $id): bool
 {
     $stmt = $pdo->prepare('DELETE FROM api_keys WHERE id = ?');

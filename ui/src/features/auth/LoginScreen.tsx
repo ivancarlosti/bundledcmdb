@@ -1,9 +1,33 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Field, Input } from '@/components/ui';
+import { Alert, Button, Field, Input } from '@/components/ui';
 
 const RETURN_PATH = encodeURIComponent('/app/');
+
+/**
+ * Sign-in failures reported by `public/index.php` (the legacy `/index.php?code=`
+ * SSO callback) land here as `?auth_error=<code>`. The SPA owns every error
+ * state, so the callback redirects instead of rendering a PHP page.
+ */
+const AUTH_ERRORS: Record<string, { key: string; fallback: string }> = {
+  not_authorized: {
+    key: 'login_err_not_authorized',
+    fallback: 'Access denied: your account is not on the authorised list.',
+  },
+  userinfo_failed: {
+    key: 'login_err_userinfo_failed',
+    fallback: 'Signed in, but the identity provider did not return your profile.',
+  },
+  token_failed: {
+    key: 'login_err_token_failed',
+    fallback: 'The identity provider rejected the sign-in attempt.',
+  },
+  server_error: {
+    key: 'login_err_server_error',
+    fallback: 'The panel could not reach its database. Try again in a moment.',
+  },
+};
 
 /**
  * Sign-in screen.
@@ -17,6 +41,7 @@ export function LoginScreen() {
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const showDevLogin = import.meta.env.DEV;
+  const authError = AUTH_ERRORS[new URLSearchParams(window.location.search).get('auth_error') ?? ''];
 
   const onDevLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -25,6 +50,12 @@ export function LoginScreen() {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 p-6">
+      {authError ? (
+        <Alert tone="danger" title={t('login_err_title', { defaultValue: 'Sign-in failed' })}>
+          <p className="m-0">{t(authError.key, { defaultValue: authError.fallback })}</p>
+        </Alert>
+      ) : null}
+
       <div className="card p-6">
         <h1 className="m-0 text-xl font-semibold">{t('panel_title', { defaultValue: 'CMDB' })}</h1>
         <p className="mt-2 text-sm text-[var(--color-muted)]">

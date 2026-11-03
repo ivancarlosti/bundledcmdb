@@ -20,27 +20,11 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-/** DB values for Status (English in the database, translated for display). */
-define('STATUS_DB_VALUES', [
-    'In Use',
-    'In Stock',
-    'In Repair',
-    'Decommissioned',
-    'Lost or Stolen',
-]);
-
 /** @return list<string> canonical locale codes, English first */
 function lang_supported(): array
 {
     return locales_supported();
 }
-
-/** @return array<string, string> legacy or alternate code => canonical code */
-function lang_aliases(): array
-{
-    return locales_aliases();
-}
-
 /** Normalise any accepted code to a canonical supported one (or null). */
 function lang_normalize_code(?string $code): ?string
 {
@@ -52,12 +36,6 @@ function lang_meta(): array
 {
     return locales_meta();
 }
-
-function lang_native_name(string $code): string
-{
-    return locale_native_name($code);
-}
-
 /** Default UI locale (Settings → General), canonicalised. */
 function lang_default(): string
 {
@@ -69,14 +47,6 @@ function lang_code(): string
 {
     return lang_normalize_code($_SESSION['lang'] ?? null) ?? lang_default();
 }
-
-/** Writing direction of the active locale. */
-function lang_dir(?string $code = null): string
-{
-    $meta = lang_meta();
-    return $meta[$code ?? lang_code()]['dir'] ?? 'ltr';
-}
-
 /** Fill the session locale: ?lang= → session → default → browser. */
 function lang_init(): void
 {
@@ -93,7 +63,7 @@ function lang_init(): void
             $query = $_GET;
             unset($query['lang']);
             $path = strtok((string) ($_SERVER['REQUEST_URI'] ?? ''), '?');
-            $url = $path !== false ? $path : 'main.php';
+            $url = $path !== false ? $path : '/';
             if ($query !== []) {
                 $url .= '?' . http_build_query($query);
             }
@@ -159,62 +129,3 @@ function lang_coverage(string $code): array
         'unknown'    => array_values(array_diff(array_keys($catalog), $base)),
     ];
 }
-
-/** [db value => translated label] for Status dropdowns. */
-function lang_status_options(): array
-{
-    $keys = ['status_in_use', 'status_stock', 'status_repair', 'status_decomm', 'status_lost'];
-    $result = [];
-    foreach (asset_status_values() as $index => $value) {
-        $result[$value] = lang($keys[$index] ?? 'status_in_use');
-    }
-    return $result;
-}
-
-function lang_status_label(?string $value): string
-{
-    $value = (string) $value;
-    if ($value === '') {
-        return '';
-    }
-    return lang_status_options()[$value] ?? $value;
-}
-
-/** Locale combo box (replaces the flags). Preserves the current query string. */
-function lang_selector(string $currentPage = ''): string
-{
-    $page = $currentPage !== '' ? $currentPage : basename((string) ($_SERVER['SCRIPT_NAME'] ?? 'main.php'));
-    $hidden = '';
-    foreach ($_GET as $name => $value) {
-        if ($name === 'lang' || is_array($value)) {
-            continue;
-        }
-        $hidden .= '<input type="hidden" name="' . e((string) $name) . '" value="' . e((string) $value) . '">';
-    }
-
-    $html = '<form method="get" action="' . e($page) . '" class="lang-selector">' . $hidden;
-    $html .= '<label for="langSelect" class="sr-only">' . e(lang('language')) . '</label>';
-    $html .= '<select id="langSelect" name="lang" onchange="this.form.submit()">';
-    foreach (lang_supported() as $code) {
-        $selected = $code === lang_code() ? ' selected' : '';
-        $html .= '<option value="' . e($code) . '"' . $selected . '>' . e(lang_native_name($code)) . '</option>';
-    }
-    $html .= '</select><noscript><button type="submit">' . e(lang('apply')) . '</button></noscript></form>';
-
-    return $html;
-}
-
-/** Backwards-compatible alias: the old templates called this "flags". */
-function lang_flag_buttons(string $current_page = ''): string
-{
-    return lang_selector($current_page);
-}
-
-function theme_toggle_button(): string
-{
-    $html = '<div class="theme-toggle">';
-    $html .= '<button type="button" id="themeToggleBtn" title="' . e(lang('theme_system')) . '" onclick="cycleTheme()">';
-    $html .= '<span id="themeIcon">⏻</span></button></div>';
-    return $html;
-}
-

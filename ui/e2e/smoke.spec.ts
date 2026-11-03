@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { mockAnonymous, mockPanel, SESSION } from './fixtures';
+import { mockAnonymous } from './fixtures';
 
 /**
  * Scaffold smoke test — the full suite (grid, dark mode, RTL, CSV) lands in
@@ -39,20 +39,19 @@ test.describe('SPA shell', () => {
   });
 
   /**
-   * Phase 9 rollback: `ui.spa_enabled = 0` must never leave a half-working shell
-   * on screen. The notice links at the legacy pages, which are still served.
+   * `public/index.php` (the legacy `/index.php?code=` SSO callback) reports a
+   * failure by redirecting to `/app/?auth_error=<code>`; the login screen owns
+   * the message, so a broken sign-in never lands on a PHP page.
    */
-  test('renders the rollback notice when ui.spa_enabled is off', async ({ page }) => {
-    await mockPanel(page, {
-      session: { ...SESSION, features: { ...SESSION.features, spa: false } },
-    });
+  test('renders the sign-in error the legacy SSO callback passes in', async ({ page }) => {
+    await mockAnonymous(page);
 
-    await page.goto('/app/settings');
+    await page.goto('/app/?auth_error=not_authorized');
 
-    const notice = page.getByRole('alert');
-    await expect(notice).toContainText('The React panel is turned off');
-    await expect(notice.getByRole('link', { name: 'Open the classic panel' })).toHaveAttribute('href', '/main.php');
-    // The router must not have mounted any screen behind the notice.
-    await expect(page.getByRole('navigation')).toHaveCount(0);
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('Sign-in failed');
+    await expect(alert).toContainText('not on the authorised list');
+    // The SSO button stays reachable so the user can try again.
+    await expect(page.getByRole('link', { name: 'Sign in with SSO' })).toBeVisible();
   });
 });

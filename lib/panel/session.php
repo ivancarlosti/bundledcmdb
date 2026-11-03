@@ -60,13 +60,12 @@ function panel_session_payload(array $user): array
     $features = [];
     try {
         $features = [
-            'spa'         => settings_spa_enabled(),
             'api'         => settings_bool('api.enabled'),
             'attachments' => panel_storage_configured(),
             'devLogin'    => app_dev_login_enabled(),
         ];
     } catch (Throwable) {
-        $features = ['spa' => false, 'api' => false, 'attachments' => false, 'devLogin' => app_dev_login_enabled()];
+        $features = ['api' => false, 'attachments' => false, 'devLogin' => app_dev_login_enabled()];
     }
 
     $maxPageSize = 200;

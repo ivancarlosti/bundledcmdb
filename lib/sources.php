@@ -53,13 +53,6 @@ function source_default_slug(PDO $pdo): string
     $configured = (string) settings_get('assets.default_source', 'manual');
     return source_exists($pdo, $configured) ? $configured : 'manual';
 }
-
-function source_label(PDO $pdo, string $slug): string
-{
-    $source = source_get($pdo, $slug);
-    return $source === null ? $slug : (string) $source['label'];
-}
-
 /** Normalise "Intune (Graph)" -> "intune_graph". */
 function source_slugify(string $value): string
 {
@@ -175,18 +168,4 @@ function source_delete(PDO $pdo, string $slug): array
     sources_all($pdo, true);
 
     return ['ok' => true, 'error' => null];
-}
-
-/** Inline badge HTML for the grid / asset page. */
-function source_badge(PDO $pdo, ?string $slug): string
-{
-    $slug = (string) $slug;
-    if ($slug === '') {
-        return '<span class="source-badge source-badge-none">—</span>';
-    }
-    $source = source_get($pdo, $slug);
-    $label = $source === null ? $slug : (string) $source['label'];
-    $color = $source === null ? null : source_color_normalize($source['color'] ?? null);
-    $style = $color === null ? '' : ' style="--source-color:' . e($color) . '"';
-    return '<span class="source-badge"' . $style . '>' . e($label) . '</span>';
 }

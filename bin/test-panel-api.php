@@ -231,8 +231,14 @@ try {
 
     // --- session: capability and feature flags ----------------------------
     $sessionFeatures = panel_session_payload(session_require())['features'];
-    check($sessionFeatures['spa'] === true, 'session: features.spa is on by default (phase 9)');
-    check(settings_spa_enabled() === true, 'settings: ui.spa_enabled defaults to 1');
+    check(
+        !array_key_exists('spa', $sessionFeatures),
+        'session: features.spa is gone now that the legacy panel is deleted'
+    );
+    check(
+        !isset(settings_definitions()['ui.spa_enabled']),
+        'settings: the retired ui.spa_enabled option is no longer defined'
+    );
     check(is_bool($sessionFeatures['attachments']), 'session: features.attachments is a bool');
     check(
         ($sessionFeatures['devLogin'] ?? null) === app_dev_login_enabled(),

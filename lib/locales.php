@@ -78,13 +78,6 @@ function locale_dir(?string $code): string
     $code = locale_normalize($code);
     return $code === null ? 'ltr' : (locales_meta()[$code]['dir'] ?? 'ltr');
 }
-
-/** Native display name, falling back to the raw code. */
-function locale_native_name(string $code): string
-{
-    return locales_meta()[$code]['native'] ?? $code;
-}
-
 /**
  * Default UI locale (Settings → General), canonicalised to a supported code.
  * Falls back to `APP_DEFAULT_LOCALE`, then `en-US`.

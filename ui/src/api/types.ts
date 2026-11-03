@@ -37,6 +37,6 @@ export type Session = {
   pageSizes: number[];
   maxPageSize: number;
   capabilities: Capabilities;
-  features: { spa: boolean; api: boolean; attachments: boolean; devLogin: boolean };
+  features: { api: boolean; attachments: boolean; devLogin: boolean };
   serverTime: string;
 };

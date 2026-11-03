@@ -62,22 +62,6 @@ function field_defs_by_key(PDO $pdo, bool $activeOnly = true, bool $force = fals
     }
     return $map;
 }
-
-function field_def(PDO $pdo, string $key, bool $includeInactive = true): ?array
-{
-    $defs = field_defs_by_key($pdo, !$includeInactive);
-    if (isset($defs[$key])) {
-        return $defs[$key];
-    }
-    if (!$includeInactive) {
-        return null;
-    }
-    $stmt = $pdo->prepare('SELECT * FROM asset_field_defs WHERE field_key = ?');
-    $stmt->execute([$key]);
-    $row = $stmt->fetch();
-    return $row === false ? null : $row;
-}
-
 function field_def_by_id(PDO $pdo, int $id): ?array
 {
     $stmt = $pdo->prepare('SELECT * FROM asset_field_defs WHERE id = ?');
@@ -329,17 +313,6 @@ function field_update(PDO $pdo, int $id, array $data, string $actor): bool
 
     return true;
 }
-
-function field_set_active(PDO $pdo, int $id, bool $active, string $actor): bool
-{
-    $stmt = $pdo->prepare('UPDATE asset_field_defs SET is_active = ?, updated_at = ? WHERE id = ?');
-    $stmt->execute([$active ? 1 : 0, gmdate('Y-m-d H:i:s'), $id]);
-    field_defs($pdo, true, true);
-    field_defs($pdo, false, true);
-
-    return $stmt->rowCount() > 0;
-}
-
 /** Hard delete a definition and all values stored for it. */
 function field_delete(PDO $pdo, int $id): bool
 {
@@ -633,14 +606,6 @@ function custom_values_save(
 
     return $errors;
 }
-
-function custom_values_delete(PDO $pdo, int $assetId): void
-{
-    if (db_table_exists($pdo, 'asset_custom_values')) {
-        $pdo->prepare('DELETE FROM asset_custom_values WHERE asset_id = ?')->execute([$assetId]);
-    }
-}
-
 /** Extract the `custom[...]` map from a POST/JSON payload. */
 function custom_input_from(array $source): array
 {
@@ -649,78 +614,4 @@ function custom_input_from(array $source): array
 }
 
 // --- Form rendering -----------------------------------------------------
-
-/**
- * HTML input for one custom field. Keeps asset.php and asset_new.php in sync.
- */
-function field_render_input(array $def, mixed $value, string $name, bool $disabled = false): string
-{
-    $type = (string) $def['data_type'];
-    $options = field_options($def);
-    $required = !empty($def['is_required']) ? ' required' : '';
-    $disabledAttr = $disabled ? ' disabled' : '';
-    $nameAttr = e($name);
-    $yes = e(function_exists('lang') ? lang('true_label') : 'Yes');
-    $no = e(function_exists('lang') ? lang('false_label') : 'No');
-
-    switch ($type) {
-        case 'textarea':
-            return '<textarea name="' . $nameAttr . '" rows="3" style="width:100%"' . $required . $disabledAttr . '>'
-                . e($value) . '</textarea>';
-
-        case 'bool':
-            $selected = $value === null || $value === '' ? '' : (asset_bool_parse($value) ? '1' : '0');
-            $html = '<select name="' . $nameAttr . '"' . $required . $disabledAttr . '>';
-            $html .= '<option value=""' . ($selected === '' ? ' selected' : '') . '>—</option>';
-            $html .= '<option value="1"' . ($selected === '1' ? ' selected' : '') . '>' . $yes . '</option>';
-            $html .= '<option value="0"' . ($selected === '0' ? ' selected' : '') . '>' . $no . '</option>';
-            return $html . '</select>';
-
-        case 'select':
-            $html = '<select name="' . $nameAttr . '"' . $required . $disabledAttr . '>';
-            $html .= '<option value="">—</option>';
-            foreach ($options as $option) {
-                $selected = (string) $value === $option ? ' selected' : '';
-                $html .= '<option value="' . e($option) . '"' . $selected . '>' . e($option) . '</option>';
-            }
-            return $html . '</select>';
-
-        case 'multiselect':
-            $values = is_array($value) ? array_map('strval', $value) : [];
-            $size = max(3, min(8, count($options)));
-            $html = '<select name="' . $nameAttr . '[]" multiple size="' . $size . '"' . $required . $disabledAttr . '>';
-            foreach ($options as $option) {
-                $selected = in_array($option, $values, true) ? ' selected' : '';
-                $html .= '<option value="' . e($option) . '"' . $selected . '>' . e($option) . '</option>';
-            }
-            return $html . '</select>';
-
-        case 'date':
-            return '<input type="date" name="' . $nameAttr . '" value="' . e(substr((string) $value, 0, 10)) . '"'
-                . $required . $disabledAttr . '>';
-
-        case 'datetime':
-            $local = $value === null || $value === '' ? '' : substr(str_replace(' ', 'T', (string) $value), 0, 16);
-            return '<input type="datetime-local" name="' . $nameAttr . '" value="' . e($local) . '"'
-                . $required . $disabledAttr . '>';
-
-        case 'integer':
-        case 'decimal':
-            $step = $type === 'integer' ? ' step="1"' : ' step="any"';
-            return '<input type="number" name="' . $nameAttr . '" value="' . e($value) . '"' . $step
-                . $required . $disabledAttr . '>';
-
-        case 'email':
-        case 'url':
-        case 'ip':
-            $inputType = $type === 'ip' ? 'text' : $type;
-            return '<input type="' . $inputType . '" name="' . $nameAttr . '" value="' . e($value) . '"'
-                . $required . $disabledAttr . '>';
-
-        default:
-            return '<input type="text" name="' . $nameAttr . '" value="' . e($value) . '"'
-                . $required . $disabledAttr . '>';
-    }
-}
-
 

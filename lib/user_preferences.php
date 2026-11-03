@@ -47,14 +47,6 @@ function user_preferences_theme_normalize(?string $theme): ?string
     $theme = strtolower(trim((string) $theme));
     return in_array($theme, user_preferences_themes(), true) ? $theme : null;
 }
-
-/** True when the preferences table exists (migrations applied). */
-function user_preferences_ready(?PDO $pdo = null): bool
-{
-    $pdo ??= db_try();
-    return $pdo !== null && db_table_exists($pdo, 'user_preferences');
-}
-
 /**
  * Normalise a grid layout coming from the SPA.
  *

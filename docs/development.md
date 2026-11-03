@@ -13,21 +13,17 @@ lib/                  shared PHP (no framework)
   http.php            JSON envelope, ApiError, CSRF, flash, IP/CIDR matching
   sources.php         asset sources
   assets.php          asset model, validation, CRUD, list/search/sort
-  assets_ui.php       shared form inputs
   asset_fields.php    dynamic fields (EAV) + value validation/rendering
   api_auth.php        API keys + request authentication
-  settings_ui.php     settings page widgets
-  settings_actions.php POST handlers for the settings page
+  session_auth.php    session bootstrap, role guards, CSRF
+  panel/              panel API route handlers (devices, writes, settings, meta)
 public/               web root (nginx document root)
+  index.php           entry point for / (redirects to /app/, legacy SSO callback)
   api.php             REST front controller
-  settings.php        settings UI
-  main.php            asset grid
-  asset.php           asset detail
-  asset_new.php       create asset
-  export.php          CSV export
-  save_row.php        detail form handler
-  save_rows.php       grid save / bulk delete
+  panel_api.php       panel API front controller (session cookie + CSRF)
+  auth.php            Keycloak login/callback/logout for the SPA
   lang.php + lang/    i18n loader + catalogues
+  app/                built SPA (npm run build)
 bin/
   migrate.php         schema migrations (CLI)
   check-i18n.php      catalogue validation/coverage
@@ -52,14 +48,14 @@ docker compose -f docker/docker-compose.dev.yml exec app php bin/migrate.php
 * MariaDB: `127.0.0.1:33061` (`cmdb`/`cmdb`, database `bundledcmdb`)
 * sample data: `docker/dev-legacy.sql` (3 assets, 4 users, 2 tenants)
 
-Creating a session for manual page tests:
+Creating a session for manual API tests:
 
 ```bash
 docker compose -f docker/docker-compose.dev.yml exec -T -u www-data app php -r '
   session_id("testsess123"); session_start();
   $_SESSION["user_email"]="admin@example.com"; $_SESSION["role"]="superadmin";
   $_SESSION["company"]="Acme"; $_SESSION["lang"]="en-US"; session_write_close();'
-curl -H 'Cookie: PHPSESSID=testsess123' http://localhost:5600/main.php
+curl -H 'Cookie: PHPSESSID=testsess123' http://localhost:5600/panel-api/v1/session
 ```
 
 ## CLI
@@ -88,8 +84,9 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
      -d '{"company":"Acme","sn":"SN-DEV-1","hostname":"dev-1"}' $B/devices | jq
 ```
 
-5. Panel: `main.php`, `asset.php?id=1`, `asset_new.php`, every `settings.php?tab=…`
-   return 200 without PHP notices, in `en-US` and `ar-SA` (`dir="rtl"`).
+5. Panel: `/app/`, `/app/devices/1`, `/app/devices/1/edit` and every
+   `/app/settings?tab=…` render without console errors, in `en-US` and `ar-SA`
+   (`dir="rtl"`).
 6. ESET compatibility: `INSERT` a row into `assets` without `source` and check
    that it appears with the `eset` badge.
 
@@ -97,7 +94,8 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 * `declare(strict_types=1);` and typed signatures in `lib/` and new pages.
 * Escape all output with `e()` (HTML) or `json_ok()` (API).
-* All panel mutations are POST + CSRF (`csrf_field()` / `csrf_require()`).
+* Every panel mutation goes through the panel API and calls
+  `session_csrf_require()`; never add a PHP page that writes on GET.
 * Never trust `$_GET`/`$_POST` for column names: use `asset_column_defs()`,
   `field_defs()` and the whitelist in `asset_list()`.
 * Timestamps are stored in UTC (`app_now_utc()`), rendered with `app_date()`.
