@@ -441,6 +441,31 @@ function panel_devices_files_index(array $params = []): array
     return ['data' => ['rows' => $files, 'total' => count($files)]];
 }
 
+/**
+ * GET /devices/{id}/events — the audit trail of one device.
+ *
+ * Readable by every role that can read the device itself (the company scope is
+ * the same check as `GET /devices/{id}`), newest first, capped by `?limit=`.
+ * The field names in `changes` are the schema columns: the SPA maps them to the
+ * grid's `col_*` labels, so nothing has to be translated server-side.
+ */
+function panel_devices_events(array $params = []): array
+{
+    $user = session_require();
+    $pdo = db();
+    $id = panel_device_id($params);
+
+    $company = $user['company'] !== '' ? $user['company'] : null;
+    if (asset_get($pdo, $id, $company, true) === null) {
+        throw new ApiError('not_found', 'Device not found.', 404);
+    }
+
+    $limit = (int) ($_GET['limit'] ?? 50);
+    $events = asset_events_for_asset($pdo, $id, $limit);
+
+    return ['data' => ['rows' => $events, 'total' => count($events)]];
+}
+
 
 /**
  * Column name => key inside `panel_device_payload()` (used by the CSV export).

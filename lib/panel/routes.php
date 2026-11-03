@@ -34,6 +34,7 @@ function panel_routes(): array
         ['POST',  '/devices/bulk',        'panel_devices_bulk'],
         ['POST',  '/devices/{id}/restore', 'panel_devices_restore'],
         ['GET',   '/devices/{id}/files',  'panel_devices_files_index'],
+        ['GET',   '/devices/{id}/events', 'panel_devices_events'],
         ['POST',  '/devices/{id}/files',  'panel_devices_files_store'],
         ['DELETE', '/devices/{id}/files/{fileId}', 'panel_devices_files_delete'],
         ['GET',   '/devices/{id}',        'panel_devices_show'],
@@ -143,6 +144,9 @@ function panel_dispatch(): never
 function panel_invoke(string $handler, array $params = []): never
 {
     try {
+        // Write protection before the handler runs, so a rejected call costs one
+        // upsert and nothing else (`rate_limited` 429 + `Retry-After`).
+        rate_limit_require_panel(request_method());
         $result = $handler($params);
         $data = is_array($result) && array_key_exists('data', $result) ? $result['data'] : $result;
         $meta = is_array($result) ? (array) ($result['meta'] ?? []) : [];

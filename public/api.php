@@ -228,6 +228,14 @@ function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 
     }
 
     $row = asset_get($pdo, $id, $company, true) ?? [];
+    // Audit trail: the Bearer API is a writer like any other (lib/asset_events.php).
+    asset_event_record(
+        $pdo,
+        $id,
+        $created ? 'create' : 'update',
+        $actor,
+        asset_event_diff($created ? [] : (array) $existing, $data)
+    );
     return ['device' => api_device_payload($pdo, $row), 'created' => $created];
 }
 
@@ -244,6 +252,7 @@ function api_patch_device(PDO $pdo, array $auth, int $id, array $payload): array
         throw new ApiError('not_found', 'Device not found.', 404);
     }
     $company = (string) $row['company'];
+    $before = $row;
 
     $mapped = asset_api_map_input($payload);
     $data = $mapped['data'];
@@ -300,6 +309,7 @@ function api_patch_device(PDO $pdo, array $auth, int $id, array $payload): array
     }
 
     $row = asset_get($pdo, $id, $company, true) ?? [];
+    asset_event_record($pdo, $id, 'update', $actor, asset_event_diff((array) $before, $changes));
     return ['device' => api_device_payload($pdo, $row)];
 }
 
@@ -317,8 +327,10 @@ function api_delete_device(PDO $pdo, array $auth, int $id): array
     $hard = ($_GET['hard'] ?? '') === '1';
     if ($hard) {
         asset_hard_delete($pdo, $id, $auth['company']);
+        asset_event_record($pdo, $id, 'purge', $actor);
     } else {
         asset_soft_delete($pdo, $id, $actor, $auth['company']);
+        asset_event_record($pdo, $id, 'delete', $actor);
     }
 
     return ['id' => $id, 'deleted' => true, 'hard' => $hard];

@@ -339,6 +339,8 @@ function panel_devices_create(array $params = []): array
         throw $e;
     }
 
+    asset_event_record($pdo, $id, 'create', $actor, asset_event_diff([], $data), null);
+
     $row = asset_get($pdo, $id, $company, true);
     if ($row === null) {
         throw new ApiError('server_error', 'The device could not be reloaded after it was created.', 500);
@@ -444,6 +446,9 @@ function panel_devices_save(PDO $pdo, array $user, array $row, array $body, bool
         throw new ApiError('not_found', 'Device not found.', 404);
     }
 
+    // Only what actually moved, so an idempotent save leaves no audit noise.
+    asset_event_record($pdo, $id, 'update', $actor, asset_event_diff($row, $fresh), null);
+
     return panel_device_write_payload($pdo, $fresh);
 }
 
@@ -494,8 +499,10 @@ function panel_devices_delete(array $params = []): array
 
     if ($hard) {
         asset_hard_delete($pdo, $id, $company);
+        asset_event_record($pdo, $id, 'purge', $user['email']);
     } else {
         asset_soft_delete($pdo, $id, $user['email'], $company);
+        asset_event_record($pdo, $id, 'delete', $user['email']);
     }
 
     return ['data' => ['id' => $id, 'deleted' => true, 'hard' => $hard]];
@@ -515,6 +522,9 @@ function panel_devices_restore(array $params = []): array
     $restored = false;
     if (!empty($row['deleted_at'])) {
         $restored = asset_restore($pdo, $id, $user['email'], $company);
+        if ($restored) {
+            asset_event_record($pdo, $id, 'restore', $user['email']);
+        }
     }
 
     $fresh = asset_get($pdo, $id, $company, true);
@@ -729,6 +739,7 @@ function panel_devices_files_store(array $params = []): array
     )->execute([$id, 'assets', $s3->objectKey($key), $name, $mime === '' ? null : $mime, $size]);
 
     $fileId = (int) $pdo->lastInsertId();
+    asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]]);
     $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = ? AND device_table = 'assets'");
     $stmt->execute([$fileId]);
     $row = $stmt->fetch();
@@ -772,6 +783,7 @@ function panel_devices_files_delete(array $params = []): array
     }
 
     $pdo->prepare('DELETE FROM device_files WHERE id = ?')->execute([$fileId]);
+    asset_event_record($pdo, $id, 'file_remove', $user['email'], ['file' => [(string) $file['file_name'], null]]);
 
     return ['data' => ['id' => $fileId, 'deleted' => true]];
 }

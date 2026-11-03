@@ -52,8 +52,13 @@ prefix — the Storage tab and Maintenance tab show a warning.
 
 ### API
 `api.enabled`, global IP allowlist (IPv4/IPv6/CIDR, one per line), whether to
-trust `X-Forwarded-For`, and the maximum page size. Below the settings are the
-API keys:
+trust `X-Forwarded-For`, the maximum page size and **panel writes per minute per
+user** (`api.panel_rate_limit`, default 120). The last one is the fixed-window
+counter in `lib/rate_limit.php`: every panel mutation (`POST`/`PATCH`/`PUT`/
+`DELETE`) costs one hit and the 121st inside the same minute answers
+`429 rate_limited` with `Retry-After`. Reads are never counted — the grid fetches
+`/devices` and `/session` on every navigation. Below the settings are the API
+keys:
 
 * create/edit: label, company scope, default source, allowed sources, IP
   allowlist, read/write/delete scopes;

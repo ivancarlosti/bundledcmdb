@@ -9,7 +9,7 @@ import { formatBytes, formatDateTime } from '@/lib/format';
 import type { DeviceDetail, MetaPayload } from './api';
 import { cellContext, cellValue, GridCell } from './columns';
 import { useDeleteDevice, useDeleteDeviceFile, useRestoreDevice, useUploadDeviceFile } from './useDeviceMutations';
-import { useDevice, useMeta } from './useDevices';
+import { useDevice, useDeviceEvents, useMeta } from './useDevices';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -183,6 +183,64 @@ function FilesSection({ device }: { device: DeviceDetail }) {
   );
 }
 
+/**
+ * Audit trail of the device (`GET /devices/{id}/events`).
+ *
+ * Field names in `changes` are schema columns, so they are labelled with the
+ * grid's own `col_*` translation (`meta.columns`) — one dictionary for the whole
+ * panel. Rendered as a plain list: it is a record, not something to interact with.
+ */
+function HistorySection({ device, meta }: { device: DeviceDetail; meta: MetaPayload }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? 'en-US';
+  const eventsQuery = useDeviceEvents(device.id);
+  const events = eventsQuery.data ?? [];
+  const labelFor = (column: string): string => {
+    const match = meta.columns.find((entry) => entry.key === column);
+    return match === undefined ? column : t(match.label_key, { defaultValue: match.label });
+  };
+
+  return (
+    <div className="card p-4">
+      <h2 className="m-0 text-base font-semibold">{t('ui_history')}</h2>
+
+      {eventsQuery.isPending ? (
+        <p className="m-0 mt-2 flex items-center gap-2 text-sm text-[var(--color-muted)]">
+          <Spinner className="size-3" /> {t('ui_loading')}
+        </p>
+      ) : events.length === 0 ? (
+        <p className="m-0 mt-2 text-sm text-[var(--color-muted)]">{t('ui_history_empty')}</p>
+      ) : (
+        <ol className="m-0 mt-2 list-none p-0" data-testid="device-history">
+          {events.map((event) => (
+            <li key={event.id} className="border-b border-[var(--color-border)] py-2 last:border-b-0">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">
+                  {t(`ui_ev_${event.action}`, { defaultValue: event.action })}
+                </span>
+                <span className="text-xs whitespace-nowrap text-[var(--color-muted)]">
+                  {formatDateTime(event.created_at, locale)} · {event.actor}
+                </span>
+              </div>
+              {Object.keys(event.changes).length === 0 ? null : (
+                <ul className="m-0 mt-1 list-none p-0 text-xs text-[var(--color-muted)]">
+                  {Object.entries(event.changes).map(([column, [oldValue, newValue]]) => (
+                    <li key={column}>
+                      <span className="font-medium">{labelFor(column)}</span>:{' '}
+                      {oldValue === null || oldValue === '' ? '∅' : oldValue} →{' '}
+                      {newValue === null || newValue === '' ? '∅' : newValue}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /** `/app/devices/:id` — every published column, the custom values, the files. */
 export function DeviceDetailPage() {
   const { t, i18n } = useTranslation();
@@ -265,6 +323,8 @@ export function DeviceDetailPage() {
       </div>
 
       <FilesSection device={device} />
+
+      <HistorySection device={device} meta={metaQuery.data} />
     </section>
   );
 }

@@ -96,6 +96,14 @@ CREATE TABLE IF NOT EXISTS asset_custom_values (
     KEY idx_field_value (field_id, value(64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket VARCHAR(191) NOT NULL,
+    window_start INT UNSIGNED NOT NULL,
+    hits INT UNSIGNED NOT NULL DEFAULT 0,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (bucket)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Provenance columns (run once; each statement fails if the column exists,
 -- which is why bin/migrate.php is the recommended path).
 ALTER TABLE assets ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'eset';
@@ -126,4 +134,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0004_assets_provenance'),
     ('2026_11_02_0005_asset_fields'),
     ('2026_11_02_0006_user_preferences'),
-    ('2026_11_02_0007_assets_indexes');
+    ('2026_11_02_0007_assets_indexes'),
+    ('2026_11_04_0008_retire_spa_flag'),
+    ('2026_11_04_0009_rate_limits');

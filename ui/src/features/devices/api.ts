@@ -239,3 +239,26 @@ export function bulkDevices(
   }
   return apiRequest<BulkResult>('/devices/bulk', { method: 'POST', body });
 }
+
+/**
+ * One line of a device's audit trail (`GET /devices/{id}/events`).
+ *
+ * `changes` is keyed by the schema column (`SN`, `Status`, …), which is the same
+ * spelling as `MetaColumn.key`, so the detail page can label it with the grid's
+ * own `col_*` translation instead of a second dictionary.
+ */
+export type DeviceEvent = {
+  id: number;
+  asset_id: number | null;
+  action: 'create' | 'update' | 'delete' | 'restore' | 'purge' | 'file_add' | 'file_remove' | string;
+  actor: string;
+  changes: Record<string, [string | null, string | null]>;
+  note: string | null;
+  created_at: string;
+};
+
+export function fetchDeviceEvents(id: number, limit = 50): Promise<DeviceEvent[]> {
+  return apiRequest<{ rows: DeviceEvent[]; total: number }>(`/devices/${id}/events?limit=${limit}`).then(
+    (data) => data.rows,
+  );
+}

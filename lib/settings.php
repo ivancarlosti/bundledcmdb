@@ -71,6 +71,12 @@ function settings_definitions(): array
             'group' => 'api', 'type' => 'int', 'default' => '200', 'min' => 1, 'max' => 1000,
             'label' => 'Maximum page size',
         ],
+        // Panel mutations per user per minute (`lib/rate_limit.php`). The public
+        // Bearer API keeps its own per-key limits on api_keys.rate_limit.
+        'api.panel_rate_limit' => [
+            'group' => 'api', 'type' => 'int', 'default' => '120', 'min' => 1, 'max' => 10000,
+            'label' => 'Panel writes per minute (per user)',
+        ],
 
         // --- Storage (S3) ---
         's3.region' => [

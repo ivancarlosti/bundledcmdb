@@ -54,14 +54,18 @@ test.describe('preferences', () => {
     const brand = page.getByRole('link', { name: /^CMDB/ }).first();
     await expect(brand).toHaveText('CMDB');
 
-    await page.getByTestId('locale-switcher').selectOption('es-MX');
-    await expect(page.locator('html')).toHaveAttribute('lang', 'es-MX');
-    await expect(brand).toHaveText('CMDB es-MX');
+    // `ar-SA` also flips `dir`, which has to come back to `ltr` on the way out:
+    // the direction lives in the server payload, not in i18next.
+    await page.getByTestId('locale-switcher').selectOption('ar-SA');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ar-SA');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(brand).toHaveText('CMDB ar-SA');
 
     // The catalogue is cached (`staleTime: Infinity`), so this switch does not
     // re-run the query — the screen must still go back to English.
     await page.getByTestId('locale-switcher').selectOption('en-US');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en-US');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(brand).toHaveText('CMDB');
   });
 

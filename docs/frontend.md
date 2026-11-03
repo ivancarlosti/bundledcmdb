@@ -105,6 +105,7 @@ the server-side guard.
 | `PUT /panel-api/v1/devices/{id}` | full replace (manager+, parity with the Bearer API) |
 | `DELETE /panel-api/v1/devices/{id}` | soft delete (admin+); `?hard=1` is superadmin-only |
 | `POST /panel-api/v1/devices/{id}/restore` | undo a soft delete (admin+, idempotent) |
+| `GET /panel-api/v1/devices/{id}/events` | audit trail (who changed what, `[old, new]` per column), newest first |
 | `POST /panel-api/v1/devices/{id}/files` | multipart upload, server-side to S3 (manager+) |
 | `DELETE /panel-api/v1/devices/{id}/files/{fileId}` | remove object + row (admin+) |
 | `GET /panel-api/v1/settings` | every general/asset/API/storage setting, grouped, with locales/timezones and a `source` (`db`/`env`/`default`) per key |
@@ -121,6 +122,11 @@ the server-side guard.
 | `PATCH /panel-api/v1/settings/users/{email}` | change a role; changing your own is `409 self_role_change` |
 | `GET /panel-api/v1/settings/maintenance` | migration status, PHP/DB/encryption diagnostics, cron hints |
 | `POST /panel-api/v1/settings/maintenance/migrate` | runs the migration runner; `{"dry_run": true}` is the default |
+
+Every mutation (`POST`/`PATCH`/`PUT`/`DELETE`) is counted against
+`api.panel_rate_limit` (default 120 per user per minute, fixed window in
+`lib/rate_limit.php`, one upsert per call). Over the limit the envelope is
+`429 rate_limited` with a `Retry-After` header; reads are never counted.
 
 Writes go through the same helpers as `public/api.php` (`asset_validate()`,
 `asset_create/update/soft_delete/restore/hard_delete()`,

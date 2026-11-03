@@ -119,6 +119,26 @@ check(panel_request_path() === '/', 'routing: bare version path is /');
 // Leave the CLI server superglobal as it was found.
 $_SERVER['REQUEST_URI'] = $requestUri ?? '/';
 
+// --- rate limit windows (no database needed) --------------------------------
+check(rate_limit_window(1_700_000_000, 60) === 1_700_000_000 - (1_700_000_000 % 60), 'rate limit: window start is the containing minute');
+check(rate_limit_window(1_700_000_000, 3600) % 3600 === 0, 'rate limit: window start respects wider windows');
+check(rate_limit_retry_after(1_700_000_030, 1_700_000_000, 60) === 30, 'rate limit: retry-after counts down inside the window');
+check(rate_limit_retry_after(1_700_000_000, 1_700_000_000, 60) === 60, 'rate limit: retry-after is the full window at its start');
+check(rate_limit_retry_after(1_700_000_999, 1_700_000_000, 60) === 1, 'rate limit: retry-after never drops to 0');
+
+// --- audit trail diff (no database needed) ---------------------------------
+$diff = asset_event_diff(['SN' => 'A', 'Status' => 'In Use'], ['SN' => 'B', 'Status' => 'In Use']);
+check($diff === ['SN' => ['A', 'B']], 'events: only the changed column is recorded', json_encode($diff));
+check(
+    asset_event_diff(['SN' => 'A', 'CypherID' => null], ['SN' => 'A', 'CypherID' => '']) === [],
+    'events: null and empty string are the same value'
+);
+check(
+    asset_event_diff(['SN' => 'A'], ['SN' => 'A', 'updated_at' => '2026-11-04 10:00:00', 'updated_by' => 'x']) === [],
+    'events: bookkeeping columns never count as a change'
+);
+check(asset_event_diff([], ['SN' => 'A']) === ['SN' => [null, 'A']], 'events: a create reports every set column');
+
 $pdo = db_try();
 if ($pdo === null) {
     $passes = (int) $GLOBALS['passes'];
@@ -478,6 +498,52 @@ try {
     $_GET = ['hard' => '1'];
     check_error('delete: admin cannot hard delete → 403', fn () => panel_devices_delete(['id' => (string) $id]), 'forbidden', 403);
     $_GET = [];
+
+    // --- audit trail -------------------------------------------------------
+    // Every write above went through `asset_event_record()`, so the history has
+    // to show create -> update -> delete -> restore in reverse order.
+    $_GET = ['limit' => '50'];
+    $events = panel_devices_events(['id' => (string) $id])['data'];
+    $_GET = [];
+    $actions = array_map(static fn (array $event): string => $event['action'], $events['rows']);
+    check($events['total'] > 0, 'events: the device has history');
+    check(in_array('create', $actions, true), 'events: create is recorded');
+    check(in_array('update', $actions, true), 'events: update is recorded');
+    check(in_array('delete', $actions, true), 'events: soft delete is recorded');
+    check(in_array('restore', $actions, true), 'events: restore is recorded');
+    check(
+        $actions[0] === 'restore',
+        'events: newest first (restore is the last thing that happened)'
+    );
+    // The PATCH that moved status A -> B; the later PUT (a replace) has its own
+    // event, so the search looks for the change, not for the first update row.
+    $updateEvent = null;
+    foreach ($events['rows'] as $event) {
+        if (($event['changes']['Status'] ?? null) === [$statusA, $statusB]) {
+            $updateEvent = $event;
+            break;
+        }
+    }
+    check($updateEvent !== null, 'events: the update carries the changed column');
+    if ($updateEvent !== null) {
+        check($updateEvent['action'] === 'update', 'events: the change is recorded as an update');
+        check($updateEvent['actor'] === 'tester@example.com', 'events: the actor is recorded');
+    }
+    if ($companyB !== '') {
+        as_role('admin', $companyB);
+        check_error(
+            'events: another company cannot read the history → 404',
+            fn () => panel_devices_events(['id' => (string) $id]),
+            'not_found',
+            404
+        );
+    }
+    as_role('user', $companyA);
+    check(
+        panel_devices_events(['id' => (string) $id])['data']['total'] > 0,
+        'events: a read-only user sees the history too'
+    );
+    as_role('admin', $companyA);
 
     // --- attachments -------------------------------------------------------
     if (!panel_storage_configured()) {
@@ -872,6 +938,58 @@ try {
     check(($dryRun['meta']['dry_run'] ?? false) === true, 'maintenance: dry run is the default shape');
     check(is_array($dryRun['meta']['log'] ?? null), 'maintenance: the migration log is returned');
 
+    // --- rate limiting on panel writes -------------------------------------
+    // `rate_limit_require_panel()` runs before every mutation, so the setting
+    // only has to be lowered for a dedicated user to observe the 429. The bucket
+    // is keyed by e-mail, which is why this uses its own identity.
+    $limitKey = 'api.panel_rate_limit';
+    $previousLimit = settings_all(true)[$limitKey] ?? null;
+    try {
+        settings_set($limitKey, '2', 'tester@example.com');
+        as_role('manager', $companyA, 'ratelimit@example.com');
+        // `panel_invoke()` runs the guard before the handler, so the test does the
+        // same: a bare `panel_devices_create()` would bypass the counter.
+        $mutate = static function (callable $handler): array {
+            rate_limit_require_panel('POST');
+            return $handler();
+        };
+        body(['sn' => 'TEST-RL-' . strtoupper(bin2hex(random_bytes(3))), 'hostname' => 'RL']);
+        // Two accepted writes...
+        $rlFirst = $mutate(static fn (): array => panel_devices_create());
+        $createdIds[] = (int) $rlFirst['data']['id'];
+        body(['sn' => 'TEST-RL-' . strtoupper(bin2hex(random_bytes(3))), 'hostname' => 'RL']);
+        $rlSecond = $mutate(static fn (): array => panel_devices_create());
+        $createdIds[] = (int) $rlSecond['data']['id'];
+        check(true, 'rate limit: the first writes below the limit are accepted');
+
+        // ...the third within the same window is 429 rate_limited.
+        body(['sn' => 'TEST-RL-' . strtoupper(bin2hex(random_bytes(3))), 'hostname' => 'RL']);
+        check_error('rate limit: the next write is 429 rate_limited', static function (): void {
+            rate_limit_require_panel('POST');
+        }, 'rate_limited', 429);
+        check(
+            rate_limit_hit($pdo, 'panel:ratelimit@example.com', 2)['allowed'] === false,
+            'rate limit: the bucket is over its limit inside the window'
+        );
+        check(
+            rate_limit_hit($pdo, 'panel:ratelimit@example.com', 2, 60, time() + 60)['allowed'] === true,
+            'rate limit: the counter resets in the next window'
+        );
+        // Reads are never counted: the grid reloads `/devices` constantly.
+        rate_limit_require_panel('GET');
+        check(true, 'rate limit: reads are exempt');
+    } finally {
+        rate_limit_reset($pdo, 'panel:ratelimit@example.com');
+        if ($previousLimit !== null) {
+            if (($previousLimit['source'] ?? '') === 'db') {
+                settings_set($limitKey, (string) $previousLimit['value'], 'tester@example.com');
+            } else {
+                settings_forget($limitKey);
+            }
+        }
+        as_role('superadmin', '');
+    }
+
 
 
 } catch (Throwable $e) {
@@ -920,6 +1038,15 @@ try {
             asset_hard_delete($pdo, (int) $createdId);
         } catch (Throwable $e) {
             fwrite(STDERR, "cleanup failed for #{$createdId}: " . $e->getMessage() . "\n");
+        }
+    }
+    // The audit trail is append-only by design, so the test removes the events it
+    // wrote (only the identities it uses are affected).
+    if (asset_events_ready($pdo)) {
+        try {
+            $pdo->exec("DELETE FROM asset_events WHERE actor IN ('tester@example.com', 'ratelimit@example.com')");
+        } catch (Throwable $e) {
+            fwrite(STDERR, 'events cleanup failed: ' . $e->getMessage() . "\n");
         }
     }
 }

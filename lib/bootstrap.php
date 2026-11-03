@@ -19,7 +19,9 @@ require_once __DIR__ . '/session_auth.php';
 require_once __DIR__ . '/user_preferences.php';
 require_once __DIR__ . '/migrate.php';
 require_once __DIR__ . '/sources.php';
+require_once __DIR__ . '/rate_limit.php';
 require_once __DIR__ . '/asset_fields.php';
+require_once __DIR__ . '/asset_events.php';
 require_once __DIR__ . '/assets.php';
 require_once __DIR__ . '/api_auth.php';
 

@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { GridState } from '@/features/grid/gridSearch';
 import { devicesPageQuery } from '@/features/grid/gridSearch';
 
-import { fetchDevice, fetchDevices, fetchMeta } from './api';
+import { fetchDevice, fetchDeviceEvents, fetchDevices, fetchMeta } from './api';
 
 export const metaQueryKey = ['meta'] as const;
 
@@ -37,6 +37,16 @@ export function useDevice(id: number | null) {
   return useQuery({
     queryKey: ['device', id],
     queryFn: () => fetchDevice(id as number),
+    enabled: id !== null && Number.isFinite(id),
+    staleTime: 15_000,
+  });
+}
+
+/** Audit trail of one device; refreshed with the device itself. */
+export function useDeviceEvents(id: number | null) {
+  return useQuery({
+    queryKey: ['device-events', id],
+    queryFn: () => fetchDeviceEvents(id as number),
     enabled: id !== null && Number.isFinite(id),
     staleTime: 15_000,
   });

@@ -49,6 +49,14 @@ function migrations(): array
             'description' => 'Drop the retired ui.spa_enabled setting (the legacy panel is gone)',
             'run' => 'migration_0008_retire_spa_flag',
         ],
+        '2026_11_04_0009_rate_limits' => [
+            'description' => 'Create rate_limits (fixed-window counters for panel writes)',
+            'run' => 'migration_0009_rate_limits',
+        ],
+        '2026_11_04_0010_asset_events' => [
+            'description' => 'Create asset_events (audit trail for device writes)',
+            'run' => 'migration_0010_asset_events',
+        ],
     ];
 }
 
@@ -426,3 +434,54 @@ function migration_0008_retire_spa_flag(PDO $pdo): void
     }
 }
 
+
+/**
+ * Fixed-window counters for `lib/rate_limit.php`.
+ *
+ * One row per bucket (`panel:<email>`): the window start and the hit count. The
+ * upsert in `rate_limit_hit()` makes the update atomic, so concurrent writes from
+ * different PHP-FPM workers cannot each believe they are the first one.
+ * Rows are tiny and self-expiring (the next window overwrites them), so no
+ * cleanup job is needed.
+ */
+function migration_0009_rate_limits(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS rate_limits (
+            bucket VARCHAR(191) NOT NULL,
+            window_start INT UNSIGNED NOT NULL,
+            hits INT UNSIGNED NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (bucket)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    migrate_note('CREATE TABLE rate_limits');
+}
+
+/**
+ * Audit trail (`lib/asset_events.php`).
+ *
+ * `asset_id` is intentionally not a foreign key: the history has to outlive a
+ * hard delete, which is exactly the moment somebody wants to know who did it.
+ * `changes` holds `{field: [old, new]}` as JSON so a row can describe a partial
+ * update without one column per field.
+ */
+function migration_0010_asset_events(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS asset_events (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            asset_id INT NULL,
+            action VARCHAR(32) NOT NULL,
+            actor VARCHAR(191) NOT NULL,
+            changes LONGTEXT NULL,
+            note VARCHAR(255) NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_asset_events_asset (asset_id, id),
+            KEY idx_asset_events_created (created_at),
+            KEY idx_asset_events_actor (actor)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    migrate_note('CREATE TABLE asset_events');
+}

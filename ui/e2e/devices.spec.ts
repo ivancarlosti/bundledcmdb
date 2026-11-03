@@ -58,3 +58,27 @@ test.describe('device writes', () => {
     expect(patched?.grid_state?.visible).not.toContain('Hostname');
   });
 });
+
+/**
+ * Audit trail on the detail page.
+ *
+ * The history is the answer to "who changed this and to what?", so the columns
+ * are labelled with the grid's own `col_*` translation and the field move is
+ * rendered as `old → new` rather than a JSON blob.
+ */
+test.describe('device history', () => {
+  test('lists the recorded changes with their field labels', async ({ page }) => {
+    await mockPanel(page);
+
+    await page.goto('/app/devices/7');
+
+    const history = page.getByTestId('device-history');
+    await expect(history).toBeVisible();
+    // `:scope > li` so the per-field change lists inside each entry do not count.
+    await expect(history.locator(':scope > li')).toHaveCount(2);
+    await expect(history).toContainText('Updated');
+    await expect(history).toContainText('In Use → In Stock');
+    await expect(history).toContainText('Created');
+    await expect(history).toContainText('admin@example.com');
+  });
+});

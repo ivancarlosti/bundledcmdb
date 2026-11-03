@@ -23,6 +23,15 @@ export const MESSAGES: Record<string, string> = {
   ui_clear_filters: 'Clear filters',
   ui_trashed: 'Deleted only',
   ui_dev_login: 'Development sign-in',
+  ui_history: 'History',
+  ui_history_empty: 'No changes recorded yet.',
+  ui_ev_create: 'Created',
+  ui_ev_update: 'Updated',
+  ui_ev_delete: 'Deleted',
+  ui_ev_restore: 'Restored',
+  ui_ev_purge: 'Deleted permanently',
+  ui_ev_file_add: 'Attachment added',
+  ui_ev_file_remove: 'Attachment removed',
   records: 'records',
   signed_in_as: 'Signed in as:',
   search_text: 'Search Text',
@@ -122,6 +131,28 @@ export const SESSION = {
   features: { api: true, attachments: false, devLogin: false },
   serverTime: '2026-11-02T12:00:00Z',
 };
+
+/** Audit trail stub: newest first, one field change each. */
+export const EVENTS = [
+  {
+    id: 2,
+    asset_id: 7,
+    action: 'update',
+    actor: 'admin@example.com',
+    changes: { Status: ['In Use', 'In Stock'] },
+    note: null,
+    created_at: '2026-11-02T12:05:00Z',
+  },
+  {
+    id: 1,
+    asset_id: 7,
+    action: 'create',
+    actor: 'manager@example.com',
+    changes: { SN: [null, 'SN-0007'] },
+    note: null,
+    created_at: '2026-11-02T12:00:00Z',
+  },
+];
 
 export const META = {
   columns: [
@@ -413,6 +444,11 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     options.onBulk?.(body);
     return json(route, { op: body.op, updated: ids, skipped: [] }, { changed: ids.length, skipped: 0 });
   });
+
+  // Registered last: Playwright gives the newest route priority, and
+  // `/devices/{id}/events` would otherwise be answered by the `/devices/**`
+  // detail stub.
+  await page.route('**/panel-api/v1/devices/*/events*', (route) => json(route, { rows: EVENTS, total: EVENTS.length }));
 }
 
 // --- Settings -------------------------------------------------------------

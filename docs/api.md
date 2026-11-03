@@ -154,6 +154,12 @@ row plus its custom values and attachment metadata (files stay in S3).
 > shares the model layer with the endpoints above. Its route table, including the
 > panel-only `POST /panel-api/v1/devices/bulk` used by the grid's bulk actions, is
 > documented in [frontend.md](frontend.md#panel-api-used-by-the-spa-today).
+>
+> Every write — here and in the panel — appends a row to `asset_events`
+> (`lib/asset_events.php`) with the actor (`api:<key label>` for Bearer calls),
+> the action and the `[old, new]` value of each changed column. The panel reads it
+> through `GET /panel-api/v1/devices/{id}/events` and shows it on the device page;
+> the public API does not expose the trail.
 
 ## Payload fields
 
