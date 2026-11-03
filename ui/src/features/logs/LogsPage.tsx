@@ -32,6 +32,7 @@ const ENTITY_LABEL_KEYS: Record<string, string> = {
   user: 'logs_entity_user',
   migration: 'logs_entity_migration',
   logs: 'logs_entity_logs',
+  permission: 'logs_entity_permission',
   system: 'logs_entity_system',
 };
 
@@ -74,6 +75,10 @@ export function LogsPage() {
 
   const query = useLogs({ ...filters, page });
   const purge = usePurgeLogs();
+
+  if (session.capabilities.permissions['logs.view'] !== true) {
+    return <Alert title={t('ui_err_forbidden')}>{t('logs_title')}</Alert>;
+  }
 
   const update = (patch: Partial<FilterState>) => {
     setFilters((current) => ({ ...current, ...patch }));
@@ -264,7 +269,7 @@ export function LogsPage() {
         </div>
       ) : null}
 
-      {session.capabilities.can_superadmin ? (
+      {session.capabilities.permissions['logs.purge'] ? (
         <section className="card flex flex-col gap-3 p-4">
           <h2 className="m-0 text-base font-semibold">{t('logs_purge_title')}</h2>
           <p className="m-0 text-sm text-[var(--color-muted)]">{t('logs_purge_hint')}</p>

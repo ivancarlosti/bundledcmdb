@@ -669,6 +669,7 @@ function asset_api_field_map(): array
         'primary_remote_ip' => 'PrimaryRemoteIP',
         'company'           => 'company',
         'source'            => 'source',
+        'source_slug'       => 'source',
         'source_ref'        => 'source_ref',
     ];
 }

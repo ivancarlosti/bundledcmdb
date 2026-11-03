@@ -144,10 +144,32 @@ keys:
 See [api.md](api.md) for the endpoints.
 
 ### Sources
-Provenance values for `assets.source`. `eset`, `api` and `manual` are seeded and
+Provenance values for `assets.source`. `api` and `manual` are seeded and
 protected (`is_system`); custom ones can be added for other integrations and
 deleted while unused. The default source gets `is_default=1` and a colour used by
 the badges in the grid.
+
+ESET is no longer seeded. Migration `0015` deletes an unreferenced `eset` row and
+otherwise demotes it to a normal source; move its assets and API-key references
+with **Move references** and then delete it. The move rewrites `assets.source`,
+`api_keys.source_slug`, `api_keys.allowed_sources` and `assets.default_source`
+or `asset_sources.is_default` in one transaction, and is audited as a source
+update.
+
+### Permissions
+`/settings?tab=permissions` is the persisted role × capability and role × field
+matrix (`role_capabilities`, `role_field_permissions`). It requires
+`permissions.manage`, which only superadmin has by default.
+
+* Capabilities gate every panel endpoint through `session_require_capability()`;
+  the historical role lists are only the defaults.
+* Field permissions control create/update. Read visibility keeps the existing
+  company/role scope, so the matrix cannot hide data that the API still returns.
+* Superadmin is immutable and always allowed, both in the matrix and in
+  `session_require_capability()`; a row equal to the code default is deleted
+  instead of stored, so a new capability inherits its intended default.
+* Custom fields still keep `asset_field_defs.editable_roles` authoritative; the
+  matrix and the Fields tab both update that column.
 
 ### Custom fields
 Dynamic per-asset fields (EAV):
@@ -175,9 +197,10 @@ It is the policy behind the audit trail (`asset_events`, `lib/logs.php`):
 * `php bin/purge-logs.php` runs the same purge on demand
   (`--dry-run` counts, `--before=YYYY-MM-DD` overrides the window, `--status`
   shows retention, row count and the last purge);
-* the Logs screen (`/app/logs`) lists the events and — for a superadmin only —
-  offers a purge by date. Deleting history is instance-wide, so a company admin
-  can read the log but not destroy it.
+* the Logs screen (`/app/logs`) lists the events and — when the role has
+  `logs.purge` (superadmin by default) — offers a purge by date. Deleting history
+  is instance-wide, so a company admin can read the log but not destroy it
+  unless the matrix grants `logs.purge`.
 
 Dates are inclusive in the configured timezone: "purge before 2026-06-01"
 removes everything older than 2026-06-01 00:00 local time. Values written by a
@@ -202,28 +225,31 @@ The SPA renders the same tabs against these endpoints; the handlers are thin
 wrappers over `lib/settings.php`, so `/app/settings` and `bin/test-panel-api.php`
 cannot disagree about validation, defaults or protection rules.
 
-| Method + path | Role | Notes |
+| Method + path | Capability | Notes |
 |---|---|---|
-| `GET /settings` | admin | Settings grouped for the tabs + sources, locales, timezones and themes |
-| `PATCH /settings` | admin | `{ "values": {...}, "clear": [...], "reset": [...] }`; answers the refreshed payload + `meta.saved` |
-| `GET /settings/sources` | admin | Includes `usage` (assets per source) |
-| `POST /settings/sources` | admin | `{ slug, label, color, is_default }` |
-| `PATCH /settings/sources/{slug}` | admin | `slug` is immutable |
-| `DELETE /settings/sources/{slug}` | admin | `409 system_source` / `409 in_use` |
-| `GET /settings/fields` | admin | Definitions + `usage` + the type/role lists |
-| `POST /settings/fields` | admin | `{ key, label, type, options, default, validation, required, unique, searchable, in_grid, editable_roles, sort_order, active }` |
-| `PATCH /settings/fields/{id}` | admin | Same body; omitted keys keep their stored value |
-| `DELETE /settings/fields/{id}` | admin | Also drops the stored EAV values |
-| `POST /settings/fields/reorder` | admin | `{ "ids": [3, 1, 2] }` — literal path, registered before `{id}` |
-| `GET /settings/api-keys` | admin | Keys (prefix only, never the hash) + sources |
-| `POST /settings/api-keys` | admin | The token is in `meta.token` **once** |
-| `PATCH /settings/api-keys/{id}` | admin | Scopes/label only, the token is untouched |
-| `POST /settings/api-keys/{id}/rotate` | admin | New token in `meta.token`; the old one dies immediately |
-| `DELETE /settings/api-keys/{id}` | admin | |
-| `GET /settings/users` | superadmin | `email`, `company`, `role`, `is_self` |
-| `PATCH /settings/users/{email}` | superadmin | `{ "role": "manager" }`, URL-encoded e-mail |
-| `GET /settings/maintenance` | admin | Migrations + diagnostics (no credentials) |
-| `POST /settings/maintenance/migrate` | admin | `{ "dry_run": true }` is the default; `meta.log` carries the steps |
+| `GET /settings` | `settings.manage` | Settings grouped for the tabs + sources, locales, timezones and themes |
+| `PATCH /settings` | `settings.manage` | `{ "values": {...}, "clear": [...], "reset": [...] }`; answers the refreshed payload + `meta.saved` |
+| `GET /settings/sources` | `settings.sources` | Includes `usage` (assets per source) |
+| `POST /settings/sources` | `settings.sources` | `{ slug, label, color, is_default }` |
+| `POST /settings/sources/move` | `settings.sources` | `{ "from": "eset", "to": "manual" }`; moves assets + API-key refs/default |
+| `PATCH /settings/sources/{slug}` | `settings.sources` | `slug` is immutable |
+| `DELETE /settings/sources/{slug}` | `settings.sources` | `409 system_source` / `409 in_use` |
+| `GET /settings/fields` | `settings.fields` | Definitions + `usage` + the type/role lists |
+| `POST /settings/fields` | `settings.fields` | `{ key, label, type, options, default, validation, required, unique, searchable, in_grid, editable_roles, sort_order, active }` |
+| `PATCH /settings/fields/{id}` | `settings.fields` | Same body; omitted keys keep their stored value |
+| `DELETE /settings/fields/{id}` | `settings.fields` | Also drops the stored EAV values |
+| `POST /settings/fields/reorder` | `settings.fields` | `{ "ids": [3, 1, 2] }` — literal path, registered before `{id}` |
+| `GET /settings/permissions` | `permissions.manage` | Capability/field catalogue + `matrix` |
+| `PUT /settings/permissions` | `permissions.manage` | `{ "capabilities": {role: {key: bool}}, "fields": {field: [roles]} }`; omitted sections untouched |
+| `GET /settings/api-keys` | `settings.api_keys` | Keys (prefix only, never the hash) + sources |
+| `POST /settings/api-keys` | `settings.api_keys` | The token is in `meta.token` **once** |
+| `PATCH /settings/api-keys/{id}` | `settings.api_keys` | Scopes/label only, the token is untouched |
+| `POST /settings/api-keys/{id}/rotate` | `settings.api_keys` | New token in `meta.token`; the old one dies immediately |
+| `DELETE /settings/api-keys/{id}` | `settings.api_keys` | |
+| `GET /settings/users` | `settings.users` | `email`, `company`, `role`, `is_self` |
+| `PATCH /settings/users/{email}` | `settings.users` | `{ "role": "manager" }`, URL-encoded e-mail |
+| `GET /settings/maintenance` | `settings.maintenance` | Migrations + diagnostics (no credentials) |
+| `POST /settings/maintenance/migrate` | `settings.maintenance` | `{ "dry_run": true }` is the default; `meta.log` carries the steps |
 
 Two rules are worth calling out because they protect working installations:
 

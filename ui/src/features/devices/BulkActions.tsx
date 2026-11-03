@@ -11,8 +11,9 @@ export type BulkActionsProps = {
   statuses: { value: string; label: string }[];
   /** Translatable deletion reasons (`/meta` → `deleteReasons`). */
   deleteReasons: { value: string; label: string }[];
-  /** Delete/restore are admin-only, so they are hidden (not disabled) for managers. */
-  canAdmin: boolean;
+  /** Delete/restore are separate capabilities, so each is hidden independently. */
+  canDelete: boolean;
+  canRestore: boolean;
   pending: boolean;
   onStatus: (status: string) => void;
   onByod: (value: boolean) => void;
@@ -37,7 +38,8 @@ export function BulkActions({
   count,
   statuses,
   deleteReasons,
-  canAdmin,
+  canDelete,
+  canRestore,
   pending,
   onStatus,
   onByod,
@@ -90,12 +92,14 @@ export function BulkActions({
         {t('ui_bulk_apply')}
       </Button>
 
-      {canAdmin ? (
+      {canRestore ? (
+        <Button variant="secondary" disabled={pending} onClick={onRestore}>
+          <Undo2 aria-hidden="true" className="size-4" />
+          {t('ui_restore')}
+        </Button>
+      ) : null}
+      {canDelete ? (
         <>
-          <Button variant="secondary" disabled={pending} onClick={onRestore}>
-            <Undo2 aria-hidden="true" className="size-4" />
-            {t('ui_restore')}
-          </Button>
           <Select
             value={reason}
             aria-label={t('ui_delete_reason')}

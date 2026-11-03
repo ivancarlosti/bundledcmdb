@@ -130,6 +130,77 @@ export function deleteSource(slug: string): Promise<SourcesPayload> {
   return apiRequest<SourcesPayload>(`/settings/sources/${encodeURIComponent(slug)}`, { method: 'DELETE' });
 }
 
+export type SourceMoveResult = {
+  from: string;
+  to: string;
+  assets: number;
+  api_keys: number;
+  default_changed: boolean;
+};
+
+export type SourceMoveResponse = {
+  payload: SourcesPayload;
+  result: SourceMoveResult;
+};
+
+/** Move every asset/API-key reference to another source (`POST /settings/sources/move`). */
+export async function moveSource(from: string, to: string): Promise<SourceMoveResponse> {
+  const response = await apiRequestEnvelope<SourcesPayload>('/settings/sources/move', {
+    method: 'POST',
+    body: { from, to },
+  });
+  const meta = response.meta as Partial<SourceMoveResult>;
+  return {
+    payload: response.data,
+    result: {
+      from,
+      to,
+      assets: Number(meta.assets ?? 0),
+      api_keys: Number(meta.api_keys ?? 0),
+      default_changed: Boolean(meta.default_changed),
+    },
+  };
+}
+
+// --- Role permissions ------------------------------------------------------
+
+export type PermissionCapability = {
+  key: string;
+  group: 'devices' | 'logs' | 'settings';
+  label_key: string;
+  default_roles: string[];
+};
+
+export type PermissionField = {
+  key: string;
+  label: string;
+  custom: boolean;
+  editable_roles: string[];
+};
+
+export type PermissionsPayload = {
+  roles: string[];
+  capabilities: PermissionCapability[];
+  fields: PermissionField[];
+  matrix: {
+    capabilities: Record<string, Record<string, boolean>>;
+    fields: Record<string, string[]>;
+  };
+};
+
+export type PermissionsInput = {
+  capabilities?: Record<string, Record<string, boolean>>;
+  fields?: Record<string, string[]>;
+};
+
+export function fetchPermissions(): Promise<PermissionsPayload> {
+  return apiRequest<PermissionsPayload>('/settings/permissions');
+}
+
+export function savePermissions(input: PermissionsInput): Promise<PermissionsPayload> {
+  return apiRequest<PermissionsPayload>('/settings/permissions', { method: 'PUT', body: input });
+}
+
 // --- Custom fields ---------------------------------------------------------
 
 export type FieldType = { value: string; label: string; input: string };

@@ -32,16 +32,25 @@ function panel_storage_configured(): bool
     return storage_configured();
 }
 
-/** Capability flags derived from the role (mirrors lib/assets.php role lists). */
+/**
+ * Capability flags plus the full permission map.
+ *
+ * The three boolean flags are kept for existing SPA builds; new checks should
+ * use the explicit keys in `permissions`. They are derived from the matrix so a
+ * revoked capability hides the matching action.
+ */
 function panel_capabilities(string $role): array
 {
     $rank = session_role_rank($role);
+    $permissions = permission_capabilities_for_role($role);
+
     return [
-        'role'          => session_role_normalize($role),
-        'rank'          => $rank,
-        'can_write'     => $rank >= session_role_rank('manager'),
-        'can_admin'     => $rank >= session_role_rank('admin'),
-        'can_superadmin' => $rank >= session_role_rank('superadmin'),
+        'role'           => session_role_normalize($role),
+        'rank'           => $rank,
+        'can_write'      => $permissions['devices.create'] || $permissions['devices.update'],
+        'can_admin'      => $permissions['settings.manage'] || $permissions['devices.delete'],
+        'can_superadmin' => session_role_normalize($role) === 'superadmin',
+        'permissions'    => $permissions,
     ];
 }
 

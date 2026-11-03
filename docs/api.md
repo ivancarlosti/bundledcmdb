@@ -51,7 +51,11 @@ The plaintext token is displayed **once**, right after creation/rotation. Only
 Version, schema state, server time (UTC), timezone and the calling key's scope.
 
 ### `GET /v1/sources`
-`[{"slug":"eset","label":"ESET","color":"#2f855a","is_default":false}]`
+`[{"slug":"api","label":"API","color":"#2b6cb0","is_default":false}]`
+
+`eset` is no longer seeded. It is only returned on an existing installation
+while an asset or API key still references it (the settings migration demotes it
+instead of deleting it).
 
 ### `GET /v1/fields`
 Dynamic field definitions (key, label, `label_i18n`, type, options, validation,
@@ -181,9 +185,12 @@ Both `snake_case` API names and raw database column names are accepted
 | `hds_spaces_gb`, `network_adapters`, `mac_addresses`, `eset_components` | same |
 | `primary_local_ip`, `primary_remote_ip` | same |
 | `company`, `source`, `source_ref` | same |
+| `source_slug` | alias for `source` (same slug shown on Settings → API keys) |
 
 `source` is resolved as: payload → key default → `assets.default_source`
-setting; it must exist and be allowed for the key.
+setting; it must exist and be allowed for the key. `source_slug` is accepted as
+an input alias on device writes, so a payload built from the key configuration
+can use the same name for both.
 
 ## Custom fields
 

@@ -59,7 +59,7 @@ function panel_users_rows(PDO $pdo, string $company): array
  */
 function panel_users_index(array $params = []): array
 {
-    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    $user = session_require_capability('devices.update');
     $pdo = db();
 
     $bound = trim((string) ($user['company'] ?? ''));

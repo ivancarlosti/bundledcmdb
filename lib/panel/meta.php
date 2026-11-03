@@ -133,9 +133,9 @@ function panel_delete_reason_payload(): array
  * not in `asset_column_defs()` (custom fields) are added by the SPA from
  * `/meta.fields`.
  */
-function panel_columns_payload(string $role): array
+function panel_columns_payload(string $role, ?PDO $pdo = null): array
 {
-    $editable = asset_grid_editable_columns($role);
+    $pdo ??= db_try();
     // Sortable even when hidden: the grid may sort by them without showing them.
     $alwaysSortable = ['source', 'updated_at'];
     $out = [];
@@ -149,7 +149,7 @@ function panel_columns_payload(string $role): array
             'type'      => (string) ($def['type'] ?? 'text'),
             'in_grid'   => (bool) ($def['grid'] ?? false),
             'sortable'  => (bool) ($def['grid'] ?? false) || in_array($column, $alwaysSortable, true),
-            'editable'  => in_array($column, $editable, true),
+            'editable'  => $column !== 'UUID' && permission_field_editable($role, $column, $pdo),
             'virtual'   => false,
         ];
     }
@@ -183,34 +183,33 @@ function panel_columns_payload(string $role): array
 function panel_write_columns_payload(string $role): array
 {
     $map = panel_device_input_map($role);
-    $creatable = asset_create_columns($role);
     $form = [];
     $create = [];
     foreach (asset_form_columns() as $column) {
         $key = array_search($column, $map, true);
-        if ($key === false) {
-            continue;
-        }
-        $form[] = (string) $key;
-        if (in_array($column, $creatable, true)) {
-            $create[] = (string) $key;
+        if ($key !== false) {
+            $form[] = (string) $key;
         }
     }
-    if (isset($map['source'])) {
-        $create[] = 'source';
+    foreach ($map as $key => $column) {
+        // UUID is server-generated on create even when an admin may edit it.
+        if ($column !== 'UUID') {
+            $create[] = (string) $key;
+        }
     }
 
     return ['create' => $create, 'update' => $form];
 }
 
 /** Custom field definitions (grid-visible ones become extra columns). */
-function panel_fields_payload(?PDO $pdo): array
+function panel_fields_payload(?PDO $pdo, string $role = 'user'): array
 {
     if ($pdo === null) {
         return [];
     }
     $out = [];
     foreach (field_defs($pdo) as $def) {
+        $fieldKey = 'custom:' . (string) $def['field_key'];
         $out[] = [
             'id'             => (int) $def['id'],
             'key'            => (string) $def['field_key'],
@@ -222,10 +221,11 @@ function panel_fields_payload(?PDO $pdo): array
             'unique'         => (int) $def['is_unique'] === 1,
             'searchable'     => (int) $def['is_searchable'] === 1,
             'in_grid'        => (int) $def['show_in_grid'] === 1,
-            'editable_roles' => array_values(array_filter(array_map(
-                'trim',
-                explode(',', (string) ($def['editable_roles'] ?? ''))
-            ))),
+            'editable_roles' => array_values(array_filter(
+                permission_roles(),
+                static fn (string $candidate): bool => permission_field_editable($candidate, $fieldKey, $pdo)
+            )),
+            'editable'       => permission_field_editable($role, $fieldKey, $pdo),
             'sort_order'     => (int) $def['sort_order'],
         ];
     }
@@ -265,11 +265,11 @@ function panel_meta_show(array $params = []): array
     }
 
     return ['data' => [
-        'columns'       => panel_columns_payload($user['role']),
+        'columns'       => panel_columns_payload($user['role'], $pdo),
         'statuses'      => panel_status_payload(),
         'deleteReasons' => panel_delete_reason_payload(),
         'sources'       => $sources,
-        'fields'        => panel_fields_payload($pdo),
+        'fields'        => panel_fields_payload($pdo, $user['role']),
         'companies'     => $companies,
         'locales'       => panel_locales_payload(),
         'themes'        => user_preferences_themes(),

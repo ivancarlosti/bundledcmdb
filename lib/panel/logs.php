@@ -126,7 +126,7 @@ function panel_logs_filter_options(PDO $pdo): array
 /** GET /logs */
 function panel_logs_index(array $params = []): array
 {
-    $user = session_require_role(['admin', 'superadmin']);
+    $user = session_require_capability('logs.view');
     $pdo = db();
     $filters = panel_logs_params($_GET);
 
@@ -181,7 +181,7 @@ function panel_logs_index(array $params = []): array
  */
 function panel_logs_purge(array $params = []): array
 {
-    $user = session_require_role(['superadmin']);
+    $user = session_require_capability('logs.purge');
     session_csrf_require();
     $pdo = db();
 

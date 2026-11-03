@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS asset_sources (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO asset_sources (slug, label, color, is_system, is_default) VALUES
-    ('eset', 'ESET', '#2f855a', 1, 0),
     ('api', 'API', '#2b6cb0', 1, 0),
     ('manual', 'Manual', '#6b46c1', 1, 1);
 
@@ -64,6 +63,24 @@ CREATE TABLE IF NOT EXISTS api_keys (
     PRIMARY KEY (id),
     UNIQUE KEY uq_key_hash (key_hash),
     KEY idx_prefix (prefix)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS role_capabilities (
+    role VARCHAR(32) NOT NULL,
+    capability VARCHAR(64) NOT NULL,
+    is_allowed TINYINT(1) NOT NULL DEFAULT 0,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(191) NULL,
+    PRIMARY KEY (role, capability)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS role_field_permissions (
+    role VARCHAR(32) NOT NULL,
+    field_key VARCHAR(64) NOT NULL,
+    can_edit TINYINT(1) NOT NULL DEFAULT 0,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(191) NULL,
+    PRIMARY KEY (role, field_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS asset_field_defs (
@@ -159,7 +176,7 @@ CREATE TABLE IF NOT EXISTS saved_views (
 
 -- Provenance columns (run once; each statement fails if the column exists,
 -- which is why bin/migrate.php is the recommended path).
-ALTER TABLE assets ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'eset';
+ALTER TABLE assets ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'manual';
 ALTER TABLE assets ADD COLUMN source_ref VARCHAR(191) NULL;
 ALTER TABLE assets ADD COLUMN created_at DATETIME NULL;
 ALTER TABLE assets ADD COLUMN updated_at DATETIME NULL;
@@ -167,7 +184,7 @@ ALTER TABLE assets ADD COLUMN created_by VARCHAR(191) NULL;
 ALTER TABLE assets ADD COLUMN updated_by VARCHAR(191) NULL;
 ALTER TABLE assets ADD COLUMN deleted_at DATETIME NULL;
 
-UPDATE assets SET source = 'eset' WHERE source IS NULL OR source = '';
+UPDATE assets SET source = 'manual' WHERE source IS NULL OR source = '';
 
 ALTER TABLE assets ADD INDEX idx_assets_company_source (company, source);
 ALTER TABLE assets ADD INDEX idx_assets_uuid (UUID);
@@ -194,6 +211,21 @@ ALTER TABLE assets ADD COLUMN deleted_reason VARCHAR(32) NULL;
 ALTER TABLE assets ADD COLUMN duplicate_of_id INT NULL;
 ALTER TABLE assets ADD INDEX idx_assets_deleted_reason (deleted_reason);
 
+-- 0015 adds the persisted role matrix and retires the built-in ESET source.
+-- A fresh schema never seeds ESET; existing installs only lose it when no asset
+-- or API key still references the slug.
+ALTER TABLE assets ALTER COLUMN source SET DEFAULT 'manual';
+UPDATE app_settings SET svalue = 'manual' WHERE skey = 'assets.default_source' AND svalue = 'eset';
+UPDATE asset_sources SET is_default = 0 WHERE slug = 'eset' AND is_default = 1;
+UPDATE asset_sources SET is_default = 1 WHERE slug = 'manual' AND NOT EXISTS (
+    SELECT 1 FROM (SELECT id FROM asset_sources WHERE is_default = 1) AS defaults
+);
+DELETE FROM asset_sources
+ WHERE slug = 'eset'
+   AND NOT EXISTS (SELECT 1 FROM assets WHERE source = 'eset')
+   AND NOT EXISTS (SELECT 1 FROM api_keys WHERE source_slug = 'eset' OR FIND_IN_SET('eset', allowed_sources));
+UPDATE asset_sources SET is_system = 0 WHERE slug = 'eset';
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -208,5 +240,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_04_0011_saved_views'),
     ('2026_11_05_0012_audit_entities'),
     ('2026_11_06_0013_retire_storage_local_path'),
-    ('2026_11_07_0014_asset_deletion_reason');
+    ('2026_11_07_0014_asset_deletion_reason'),
+    ('2026_11_03_0015_permissions');
 

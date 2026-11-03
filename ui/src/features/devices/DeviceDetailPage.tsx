@@ -76,6 +76,7 @@ function DeviceActions({ device, meta }: { device: DeviceDetail; meta: MetaPaylo
   const deleteDevice = useDeleteDevice();
   const restoreDevice = useRestoreDevice();
   const trashed = device.deleted_at !== null;
+  const permissions = session.capabilities.permissions;
 
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState<DeleteReasonState>(EMPTY_DELETE_REASON);
@@ -136,7 +137,7 @@ function DeviceActions({ device, meta }: { device: DeviceDetail; meta: MetaPaylo
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        {session.capabilities.can_write && !trashed ? (
+        {permissions['devices.update'] && !trashed ? (
           <Link
             to="/devices/$deviceId/edit"
             params={{ deviceId: String(device.id) }}
@@ -145,12 +146,12 @@ function DeviceActions({ device, meta }: { device: DeviceDetail; meta: MetaPaylo
             {t('edit')}
           </Link>
         ) : null}
-        {session.capabilities.can_admin && trashed ? (
+        {permissions['devices.restore'] && trashed ? (
           <Button variant="primary" disabled={restoreDevice.isPending} onClick={() => restoreDevice.mutate(device.id)}>
             {t('ui_restore')}
           </Button>
         ) : null}
-        {session.capabilities.can_admin && !trashed ? (
+        {permissions['devices.delete'] && !trashed ? (
           <Button
             variant="danger"
             disabled={deleteDevice.isPending}
@@ -160,7 +161,7 @@ function DeviceActions({ device, meta }: { device: DeviceDetail; meta: MetaPaylo
             {t('delete')}
           </Button>
         ) : null}
-        {session.capabilities.can_superadmin ? (
+        {permissions['devices.purge'] ? (
           <Button variant="ghost" disabled={deleteDevice.isPending} onClick={() => void onHardDelete()}>
             {t('ui_hard_delete')}
           </Button>
@@ -227,7 +228,7 @@ function FilesSection({ device }: { device: DeviceDetail }) {
     <div className="card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="m-0 text-base font-semibold">{t('files_title')}</h2>
-        {session.capabilities.can_write && session.features.attachments ? (
+        {session.capabilities.permissions['devices.files.upload'] && session.features.attachments ? (
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
@@ -264,7 +265,7 @@ function FilesSection({ device }: { device: DeviceDetail }) {
               </a>
               <span className="flex items-center gap-3 text-xs whitespace-nowrap text-[var(--color-muted)]">
                 {formatBytes(file.size, locale)} · {formatDateTime(file.uploaded_at, locale)}
-                {session.capabilities.can_admin ? (
+                {session.capabilities.permissions['devices.files.delete'] ? (
                   <button
                     type="button"
                     className="text-[var(--color-danger)] hover:underline"

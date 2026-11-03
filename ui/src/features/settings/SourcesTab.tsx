@@ -10,7 +10,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PanelApiError } from '@/api/client';
-import { Alert, Button, Checkbox, Input, Spinner } from '@/components/ui';
+import { Alert, Button, Checkbox, Input, Select, Spinner } from '@/components/ui';
 
 import type { SettingsSource, SourceInput } from './api';
 import { settingsErrorKey } from './settingsForm';
@@ -35,11 +35,14 @@ function formOf(source: SettingsSource): FormState {
 export function SourcesTab({ labelledBy }: { labelledBy: string }) {
   const { t } = useTranslation();
   const query = useSettingsSources();
-  const { create, update, remove } = useSourceMutations();
+  const { create, update, remove, move } = useSourceMutations();
 
   /** `null` = closed, `'new'` = create, anything else = the slug being edited. */
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
+  /** Source being drained; `null` closes the move panel. */
+  const [moving, setMoving] = useState<SettingsSource | null>(null);
+  const [moveTarget, setMoveTarget] = useState('');
 
   const mutation = editing === 'new' ? create : update;
   const fieldErrors =
@@ -55,6 +58,31 @@ export function SourcesTab({ labelledBy }: { labelledBy: string }) {
   const close = () => {
     setEditing(null);
     setForm(EMPTY);
+  };
+
+  const openMove = (source: SettingsSource) => {
+    const firstTarget = (query.data?.sources ?? []).find((candidate) => candidate.slug !== source.slug);
+    setMoving(source);
+    setMoveTarget(firstTarget?.slug ?? '');
+    move.reset();
+  };
+
+  const closeMove = () => {
+    setMoving(null);
+    setMoveTarget('');
+  };
+
+  const submitMove = (event: FormEvent) => {
+    event.preventDefault();
+    if (moving === null || moveTarget === '') {
+      return;
+    }
+    move.mutate(
+      { from: moving.slug, to: moveTarget },
+      {
+        onSuccess: closeMove,
+      },
+    );
   };
 
   const onSubmit = (event: FormEvent) => {
@@ -176,6 +204,44 @@ export function SourcesTab({ labelledBy }: { labelledBy: string }) {
         </form>
       )}
 
+      {moving === null ? null : (
+        <form onSubmit={submitMove} className="card flex flex-col gap-3 p-4">
+          <h3 className="m-0 text-sm font-semibold">{t('set_source_move_title', { source: moving.label })}</h3>
+          <p className="m-0 text-sm text-[var(--color-muted)]">{t('set_source_move_intro')}</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label
+              htmlFor="source-move-target"
+              className="flex min-w-56 flex-col gap-1 text-xs font-medium text-[var(--color-muted)]"
+            >
+              {t('set_source_move_target')}
+              <Select
+                id="source-move-target"
+                value={moveTarget}
+                onChange={(event) => setMoveTarget(event.target.value)}
+              >
+                {(query.data?.sources ?? [])
+                  .filter((candidate) => candidate.slug !== moving.slug)
+                  .map((candidate) => (
+                    <option key={candidate.slug} value={candidate.slug}>
+                      {candidate.label} ({candidate.slug})
+                    </option>
+                  ))}
+              </Select>
+            </label>
+            <Button type="submit" variant="primary" disabled={move.isPending || moveTarget === ''}>
+              {t('set_source_move_confirm')}
+            </Button>
+            <Button variant="ghost" onClick={closeMove}>
+              {t('cancel')}
+            </Button>
+            {move.isPending ? <Spinner /> : null}
+          </div>
+          {move.error instanceof PanelApiError ? (
+            <p className="m-0 text-xs text-[var(--color-danger)]">{move.error.message}</p>
+          ) : null}
+        </form>
+      )}
+
       <div className="card overflow-x-auto p-0">
         <table className="w-full border-collapse">
           <thead>
@@ -217,6 +283,9 @@ export function SourcesTab({ labelledBy }: { labelledBy: string }) {
                     <span className="flex flex-wrap items-center gap-1">
                       <Button variant="ghost" onClick={() => open(formOf(source))}>
                         {t('set_edit')}
+                      </Button>
+                      <Button variant="ghost" onClick={() => openMove(source)}>
+                        {t('set_source_move')}
                       </Button>
                       <Button
                         variant="ghost"

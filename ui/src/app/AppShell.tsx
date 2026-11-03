@@ -55,23 +55,25 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               {t('ui_devices')}
             </Link>
-            {session.capabilities.can_admin ? (
-              <>
-                <Link
-                  to="/logs"
-                  className={NAV_LINK}
-                  activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
-                >
-                  {t('logs_title')}
-                </Link>
-                <Link
-                  to="/settings"
-                  className={NAV_LINK}
-                  activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
-                >
-                  {t('set_title')}
-                </Link>
-              </>
+            {session.capabilities.permissions['logs.view'] ? (
+              <Link
+                to="/logs"
+                className={NAV_LINK}
+                activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
+              >
+                {t('logs_title')}
+              </Link>
+            ) : null}
+            {Object.entries(session.capabilities.permissions).some(
+              ([key, allowed]) => allowed && key.startsWith('settings.'),
+            ) || session.capabilities.permissions['permissions.manage'] ? (
+              <Link
+                to="/settings"
+                className={NAV_LINK}
+                activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
+              >
+                {t('set_title')}
+              </Link>
             ) : null}
           </nav>
           <div className="ms-auto flex flex-wrap items-center gap-2">

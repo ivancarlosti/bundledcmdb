@@ -4,9 +4,9 @@ declare(strict_types=1);
 /**
  * lib/sources.php — asset provenance ("source") model.
  *
- * Sources are rows, not constants: ESET and the API are seeded, admins can add
- * more (Intune, Jamf, …) from Settings → Sources. `assets.source` stores the
- * slug, so the seeded slugs must never change.
+ * Sources are rows, not constants: the API and Manual sources are seeded, and
+ * admins can add more (ESET, Intune, Jamf, …) from Settings → Sources.
+ * `assets.source` stores the slug, so seeded slugs must never change.
  */
 
 /** @return list<array> all sources ordered by label */
@@ -168,4 +168,85 @@ function source_delete(PDO $pdo, string $slug): array
     sources_all($pdo, true);
 
     return ['ok' => true, 'error' => null];
+}
+
+/**
+ * Move every reference from one source to another.
+ *
+ * This is the safe predecessor to deleting an old source: assets, API-key
+ * defaults and allowlists, and the configured default all follow the move. The
+ * source row itself is kept so the caller can decide whether to delete it.
+ *
+ * @return array{ok: bool, error: ?string, assets: int, api_keys: int, default_changed: bool}
+ */
+function source_move(PDO $pdo, string $from, string $to, string $actor): array
+{
+    $result = ['ok' => false, 'error' => null, 'assets' => 0, 'api_keys' => 0, 'default_changed' => false];
+    if ($from === $to) {
+        $result['error'] = 'same_source';
+        return $result;
+    }
+    if (!source_exists($pdo, $from)) {
+        $result['error'] = 'source_not_found';
+        return $result;
+    }
+    if (!source_exists($pdo, $to)) {
+        $result['error'] = 'target_not_found';
+        return $result;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $setUpdated = db_column_exists($pdo, 'assets', 'updated_at');
+        $sql = 'UPDATE assets SET `source` = ?' . ($setUpdated ? ', `updated_at` = ?' : '') . ' WHERE `source` = ?';
+        $params = [$to];
+        if ($setUpdated) {
+            $params[] = gmdate('Y-m-d H:i:s');
+        }
+        $params[] = $from;
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $result['assets'] = $stmt->rowCount();
+
+        if (db_table_exists($pdo, 'api_keys')) {
+            $stmt = $pdo->prepare('UPDATE api_keys SET source_slug = ? WHERE source_slug = ?');
+            $stmt->execute([$to, $from]);
+            $result['api_keys'] += $stmt->rowCount();
+
+            $keys = $pdo->prepare('SELECT id, allowed_sources FROM api_keys WHERE FIND_IN_SET(?, allowed_sources)');
+            $keys->execute([$from]);
+            $update = $pdo->prepare('UPDATE api_keys SET allowed_sources = ? WHERE id = ?');
+            foreach ($keys->fetchAll() as $row) {
+                $list = array_map('trim', explode(',', (string) $row['allowed_sources']));
+                $list = array_values(array_unique(array_filter(array_map(
+                    static fn (string $slug): string => $slug === $from ? $to : $slug,
+                    $list
+                ))));
+                $update->execute([implode(',', $list), (int) $row['id']]);
+                $result['api_keys']++;
+            }
+        }
+
+        $fromSource = source_get($pdo, $from);
+        if ($fromSource !== null && (int) $fromSource['is_default'] === 1) {
+            $pdo->exec('UPDATE asset_sources SET is_default = 0');
+            $pdo->prepare('UPDATE asset_sources SET is_default = 1 WHERE slug = ?')->execute([$to]);
+            $result['default_changed'] = true;
+        }
+        if ((string) settings_get('assets.default_source', 'manual') === $from) {
+            settings_set('assets.default_source', $to, $actor);
+            $result['default_changed'] = true;
+        }
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    sources_all($pdo, true);
+    $result['ok'] = true;
+    return $result;
 }

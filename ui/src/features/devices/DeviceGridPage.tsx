@@ -73,7 +73,11 @@ export function DeviceGridPage() {
 
   const inlineUpdate = useInlineDeviceUpdate();
   const preferences = usePreferences();
-  const canWrite = session.capabilities.can_write;
+  const canCreate = session.capabilities.permissions['devices.create'] === true;
+  const canWrite = session.capabilities.permissions['devices.update'] === true;
+  const canBulk = session.capabilities.permissions['devices.bulk'] === true;
+  const canDelete = session.capabilities.permissions['devices.delete'] === true;
+  const canRestore = session.capabilities.permissions['devices.restore'] === true;
 
   // Ids ticked in the grid. Deliberately kept across pages (a bulk action on
   // "everything I selected" is the point) and cleared only when the filters are
@@ -228,7 +232,7 @@ export function DeviceGridPage() {
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canWrite ? (
+          {canCreate ? (
             <Link
               to="/devices/new"
               className="inline-flex items-center justify-center rounded-[var(--radius-md)] border border-transparent bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-contrast)] hover:opacity-90"
@@ -352,12 +356,13 @@ export function DeviceGridPage() {
         </div>
       </div>
 
-      {selected.length > 0 && canWrite ? (
+      {selected.length > 0 && canBulk ? (
         <BulkActions
           count={selected.length}
           statuses={statusOptions}
           deleteReasons={deleteReasonOptions}
-          canAdmin={session.capabilities.can_admin}
+          canDelete={canDelete}
+          canRestore={canRestore}
           pending={bulk.isPending}
           onStatus={(status) => runBulk('status', status)}
           onByod={(value) => runBulk('byod', value)}
@@ -381,7 +386,7 @@ export function DeviceGridPage() {
         onSort={onSort}
         rowId={(row) => row.id}
         selection={
-          canWrite
+          canBulk
             ? {
                 state: pageSelection,
                 isSelected: (row) => selected.includes(row.id),

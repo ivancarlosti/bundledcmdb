@@ -85,6 +85,7 @@ foreach ([
     ['PATCH', '/settings',                          'panel_settings_update'],
     ['GET',   '/settings/sources',                  'panel_settings_sources_index'],
     ['POST',  '/settings/sources',                  'panel_settings_sources_store'],
+    ['POST',  '/settings/sources/move',             'panel_settings_sources_move'],
     ['PATCH', '/settings/sources/intune',           'panel_settings_sources_update'],
     ['GET',   '/settings/fields',                   'panel_settings_fields_index'],
     ['POST',  '/settings/fields/reorder',           'panel_settings_fields_reorder'],
@@ -93,6 +94,8 @@ foreach ([
     ['POST',  '/settings/api-keys',                 'panel_settings_keys_store'],
     ['POST',  '/settings/api-keys/9/rotate',        'panel_settings_keys_rotate'],
     ['PATCH', '/settings/api-keys/9',               'panel_settings_keys_update'],
+    ['GET',   '/settings/permissions',              'panel_settings_permissions_index'],
+    ['PUT',   '/settings/permissions',              'panel_settings_permissions_update'],
     ['GET',   '/settings/users',                    'panel_settings_users_index'],
     ['PATCH', '/settings/users/a%40example.com',    'panel_settings_users_update'],
     ['GET',   '/settings/maintenance',              'panel_settings_maintenance_show'],
@@ -110,6 +113,14 @@ foreach ([
 }
 
 check(route_for('GET', '/settings/nope') === null, 'routing: unknown settings path is 404');
+
+// The Bearer API accepts `source_slug` as an alias for the device `source`
+// column (the same slug the API-key screen stores).
+$mappedSource = asset_api_map_input(['source_slug' => 'api']);
+check(
+    ($mappedSource['data']['source'] ?? null) === 'api' && $mappedSource['unknown'] === [],
+    'api: source_slug maps to the source column'
+);
 check(route_for('DELETE', '/settings') === null, 'routing: DELETE /settings falls through to 405');
 check(
     panel_match('/settings/users/{email}', '/settings/users/a%40example.com') === ['email' => 'a%40example.com'],
@@ -1289,7 +1300,7 @@ try {
     check(($renamedSource['data']['sources'] ?? []) !== [], 'sources: update returns the full list');
 
     check_error('sources: system source cannot be deleted → 409', function (): void {
-        panel_settings_sources_delete(['slug' => 'eset']);
+        panel_settings_sources_delete(['slug' => 'api']);
     }, 'system_source', 409);
 
     $inUseSlug = null;
@@ -1313,6 +1324,114 @@ try {
     check_error('sources: unknown slug → 404', function (): void {
         panel_settings_sources_delete(['slug' => 'no_such_source']);
     }, 'not_found', 404);
+
+    // --- settings: move references between sources -------------------------
+    $moveFrom = 'panel_api_move_from';
+    $moveTo = 'panel_api_move_to';
+    $moveKeyId = 0;
+    $moveAssetId = 0;
+    foreach ([$moveFrom, $moveTo] as $slug) {
+        if (source_get($pdo, $slug) !== null) {
+            source_delete($pdo, $slug);
+        }
+        source_create($pdo, ['slug' => $slug, 'label' => $slug, 'color' => null, 'is_default' => false]);
+    }
+    try {
+        $pdo->prepare('INSERT INTO assets (SN, company, `source`) VALUES (?, ?, ?)')
+            ->execute(['MOVE-' . bin2hex(random_bytes(4)), $companyA, $moveFrom]);
+        $moveAssetId = (int) $pdo->lastInsertId();
+
+        body([
+            'label'           => 'Move test key',
+            'company'         => $companyA,
+            'source_slug'     => $moveFrom,
+            'allowed_sources' => [$moveFrom],
+            'can_read'        => true,
+            'can_write'       => true,
+        ]);
+        $moveKey = panel_settings_keys_store();
+        $moveKeyId = (int) ($moveKey['meta']['id'] ?? 0);
+        check($moveKeyId > 0, 'sources: move fixture key was created');
+
+        body(['from' => $moveFrom, 'to' => $moveTo]);
+        $moved = panel_settings_sources_move();
+        check(($moved['meta']['from'] ?? '') === $moveFrom, 'sources: move reports the source');
+        check(($moved['meta']['to'] ?? '') === $moveTo, 'sources: move reports the target');
+        check((int) ($moved['meta']['assets'] ?? 0) >= 1, 'sources: move reports the assets');
+        check((int) ($moved['meta']['api_keys'] ?? 0) >= 1, 'sources: move rewrites API-key references');
+
+        $movedAsset = asset_get($pdo, $moveAssetId, $companyA, true);
+        check(($movedAsset['source'] ?? '') === $moveTo, 'sources: move rewrites assets.source');
+
+        $afterMove = api_key_get($pdo, $moveKeyId);
+        check(($afterMove['source_slug'] ?? '') === $moveTo, 'sources: move rewrites the key default');
+        check(($afterMove['allowed_sources'] ?? '') === $moveTo, 'sources: move rewrites the key allowlist');
+
+        check_error('sources: moving to itself → 422', function () use ($moveTo): void {
+            body(['from' => $moveTo, 'to' => $moveTo]);
+            panel_settings_sources_move();
+        }, 'same_source', 422);
+    } finally {
+        if ($moveKeyId > 0) {
+            api_key_delete($pdo, $moveKeyId);
+        }
+        if ($moveAssetId > 0) {
+            $pdo->prepare('DELETE FROM assets WHERE Id = ?')->execute([$moveAssetId]);
+        }
+        foreach ([$moveFrom, $moveTo] as $slug) {
+            $pdo->prepare('DELETE FROM asset_sources WHERE slug = ?')->execute([$slug]);
+        }
+        sources_all($pdo, true);
+    }
+
+    // --- settings: permission matrix ---------------------------------------
+    as_role('superadmin', '');
+    $permissions = panel_settings_permissions_index()['data'] ?? [];
+    check(($permissions['roles'] ?? []) === array_keys(SESSION_ROLES), 'permissions: role catalogue is included');
+    check(($permissions['capabilities'] ?? []) !== [], 'permissions: capability catalogue is included');
+    check(($permissions['fields'] ?? []) !== [], 'permissions: editable fields are included');
+    $superMatrix = $permissions['matrix']['capabilities']['superadmin'] ?? [];
+    check(
+        $superMatrix !== [] && !in_array(false, $superMatrix, true),
+        'permissions: superadmin cannot be revoked'
+    );
+
+    body(['capabilities' => ['manager' => ['devices.delete' => true]]]);
+    $granted = panel_settings_permissions_update();
+    check(
+        ($granted['data']['matrix']['capabilities']['manager']['devices.delete'] ?? false) === true,
+        'permissions: a capability can be granted'
+    );
+    check(permission_capability_allowed('manager', 'devices.delete', $pdo), 'permissions: grant is effective');
+
+    body(['capabilities' => ['manager' => ['devices.delete' => false]]]);
+    $revoked = panel_settings_permissions_update();
+    check(
+        ($revoked['data']['matrix']['capabilities']['manager']['devices.delete'] ?? true) === false,
+        'permissions: a capability can be revoked'
+    );
+    check(!permission_capability_allowed('manager', 'devices.delete', $pdo), 'permissions: revoke is effective');
+
+    $notesBefore = $permissions['matrix']['fields']['Notes'] ?? [];
+    check($notesBefore !== [], 'permissions: built-in field is listed');
+    $notesAfter = array_values(array_filter($notesBefore, static fn (string $role): bool => $role !== 'manager'));
+    body(['fields' => ['Notes' => $notesAfter]]);
+    $fieldSaved = panel_settings_permissions_update();
+    check(
+        !in_array('manager', $fieldSaved['data']['matrix']['fields']['Notes'] ?? [], true),
+        'permissions: a field can be restricted'
+    );
+    check(!permission_field_editable('manager', 'Notes', $pdo), 'permissions: field restriction is effective');
+
+    body(['fields' => ['Notes' => $notesBefore]]);
+    panel_settings_permissions_update();
+    check(permission_field_editable('manager', 'Notes', $pdo), 'permissions: field restriction is restored');
+
+    as_role('admin', '');
+    check_error('permissions: an admin cannot edit the matrix → 403', function (): void {
+        panel_settings_permissions_index();
+    }, 'forbidden', 403);
+    as_role('superadmin', '');
 
     // --- settings: custom fields ------------------------------------------
     $fieldLabel = 'Panel API test field';
@@ -1366,7 +1485,7 @@ try {
     body([
         'label'           => 'Panel API test key',
         'company'         => $companyA,
-        'allowed_sources' => ['eset'],
+        'allowed_sources' => ['api'],
         'can_read'        => true,
         'can_write'       => false,
     ]);
@@ -1385,7 +1504,7 @@ try {
     }
     check($listedKey !== null, 'keys: the new key is listed');
     check($listedKey !== null && !array_key_exists('key_hash', $listedKey), 'keys: the hash is never serialised');
-    check($listedKey !== null && $listedKey['allowed_sources'] === ['eset'], 'keys: allowed sources come back as a list');
+    check($listedKey !== null && $listedKey['allowed_sources'] === ['api'], 'keys: allowed sources come back as a list');
 
     check_error('keys: no scope → 422', function () use ($companyA): void {
         body(['label' => 'No scope', 'company' => $companyA]);

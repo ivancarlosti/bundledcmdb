@@ -8,6 +8,8 @@ export type Capabilities = {
   can_write: boolean;
   can_admin: boolean;
   can_superadmin: boolean;
+  /** Explicit matrix keys, e.g. `devices.update`, `settings.sources`. */
+  permissions: Record<string, boolean>;
 };
 
 export type LocaleOption = {

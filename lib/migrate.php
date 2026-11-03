@@ -143,6 +143,10 @@ function migrations(): array
             'description' => 'Add assets.deleted_reason/duplicate_of_id + index (why a device was deleted)',
             'run' => 'migration_0014_asset_deletion_reason',
         ],
+        '2026_11_03_0015_permissions' => [
+            'description' => 'Add role capability/field matrix and retire the built-in ESET source',
+            'run' => 'migration_0015_permissions',
+        ],
     ];
 }
 
@@ -690,5 +694,89 @@ function migration_0014_asset_deletion_reason(PDO $pdo): void
     migrate_add_column($pdo, 'assets', 'duplicate_of_id', migrate_assets_id_type($pdo) . ' NULL');
     // The trash view groups by reason; the index keeps that a range scan.
     migrate_add_index($pdo, 'assets', 'idx_assets_deleted_reason', '`deleted_reason`');
+}
+
+/**
+ * Persisted role permissions and retirement of the built-in ESET source.
+ *
+ * The matrix is empty by default: `lib/permissions.php` holds the defaults, and
+ * only deviations are stored here. ESET is deleted only when nothing references
+ * it; otherwise it is demoted to a normal source that an admin can remove after
+ * moving its assets (`source_move()`).
+ */
+function migration_0015_permissions(PDO $pdo): void
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS role_capabilities (
+            role VARCHAR(32) NOT NULL,
+            capability VARCHAR(64) NOT NULL,
+            is_allowed TINYINT(1) NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_by VARCHAR(191) NULL,
+            PRIMARY KEY (role, capability)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS role_field_permissions (
+            role VARCHAR(32) NOT NULL,
+            field_key VARCHAR(64) NOT NULL,
+            can_edit TINYINT(1) NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_by VARCHAR(191) NULL,
+            PRIMARY KEY (role, field_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    migrate_note('CREATE TABLE role_capabilities, role_field_permissions');
+
+    if (db_table_exists($pdo, 'assets') && db_column_exists($pdo, 'assets', 'source')) {
+        $pdo->exec("ALTER TABLE assets ALTER COLUMN source SET DEFAULT 'manual'");
+        migrate_note('assets.source default = manual');
+    }
+
+    if (db_table_exists($pdo, 'app_settings')) {
+        $stmt = $pdo->prepare(
+            "UPDATE app_settings SET svalue = 'manual' WHERE skey = 'assets.default_source' AND svalue = 'eset'"
+        );
+        $stmt->execute();
+        if ($stmt->rowCount() > 0) {
+            migrate_note('assets.default_source = manual');
+        }
+    }
+
+    if (!db_table_exists($pdo, 'asset_sources')) {
+        return;
+    }
+
+    $eset = $pdo->query("SELECT is_default FROM asset_sources WHERE slug = 'eset'")->fetch();
+    if ($eset === false) {
+        return;
+    }
+
+    if ((int) $eset['is_default'] === 1) {
+        $pdo->exec("UPDATE asset_sources SET is_default = 0 WHERE slug = 'eset'");
+    }
+    $defaultCount = (int) $pdo->query('SELECT COUNT(*) FROM asset_sources WHERE is_default = 1')->fetchColumn();
+    if ($defaultCount === 0) {
+        $pdo->exec("UPDATE asset_sources SET is_default = 1 WHERE slug = 'manual'");
+        migrate_note('default source = manual');
+    }
+
+    $references = 0;
+    if (db_table_exists($pdo, 'assets')) {
+        $references += (int) $pdo->query("SELECT COUNT(*) FROM assets WHERE `source` = 'eset'")->fetchColumn();
+    }
+    if (db_table_exists($pdo, 'api_keys')) {
+        $references += (int) $pdo->query(
+            "SELECT COUNT(*) FROM api_keys WHERE source_slug = 'eset' OR FIND_IN_SET('eset', allowed_sources)"
+        )->fetchColumn();
+    }
+
+    if ($references === 0) {
+        $pdo->exec("DELETE FROM asset_sources WHERE slug = 'eset'");
+        migrate_note('DELETE built-in source eset');
+    } else {
+        $pdo->exec("UPDATE asset_sources SET is_system = 0 WHERE slug = 'eset'");
+        migrate_note('demote source eset (still referenced)');
+    }
 }
 

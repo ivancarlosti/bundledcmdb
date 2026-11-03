@@ -378,7 +378,7 @@ function panel_file_payload(array $row): array
 /** GET /devices */
 function panel_devices_index(array $params = []): array
 {
-    $user = session_require();
+    $user = session_require_capability('devices.view');
     $pdo = db();
 
     $filters = panel_devices_params($_GET);
@@ -431,7 +431,7 @@ function panel_devices_index(array $params = []): array
 /** GET /devices/{id} */
 function panel_devices_show(array $params = []): array
 {
-    $user = session_require();
+    $user = session_require_capability('devices.view');
     $pdo = db();
     $id = panel_device_id($params);
 
@@ -459,7 +459,7 @@ function panel_devices_show(array $params = []): array
 /** GET /devices/{id}/files */
 function panel_devices_files_index(array $params = []): array
 {
-    $user = session_require();
+    $user = session_require_capability('devices.files');
     $pdo = db();
     $id = panel_device_id($params);
 
@@ -482,7 +482,7 @@ function panel_devices_files_index(array $params = []): array
  */
 function panel_devices_files_download(array $params = []): never
 {
-    $user = session_require();
+    $user = session_require_capability('devices.files');
     $pdo = db();
     $id = panel_device_id($params);
 
@@ -539,7 +539,7 @@ function panel_devices_files_download(array $params = []): never
  */
 function panel_devices_events(array $params = []): array
 {
-    $user = session_require();
+    $user = session_require_capability('devices.events');
     $pdo = db();
     $id = panel_device_id($params);
 
@@ -665,7 +665,7 @@ function panel_devices_export_dataset(array $user): array
  */
 function panel_devices_export(array $params = []): never
 {
-    $user = session_require();
+    $user = session_require_capability('devices.export');
 
     $rawFormat = $_GET['format'] ?? 'csv';
     $format = is_string($rawFormat) ? strtolower(trim($rawFormat)) : 'csv';

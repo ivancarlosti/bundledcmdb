@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { PanelApiError } from '@/api/client';
+import { sessionQueryKey } from '@/features/auth/useSession';
 import { metaQueryKey } from '@/features/devices/useDevices';
 
 import {
@@ -24,12 +25,15 @@ import {
   fetchApiKeys,
   fetchFields,
   fetchMaintenance,
+  fetchPermissions,
   fetchSettings,
   fetchSources,
   fetchUsers,
+  moveSource,
   reorderFields,
   rotateApiKey,
   runMigrations,
+  savePermissions,
   saveSettings,
   updateApiKey,
   updateField,
@@ -41,9 +45,12 @@ import {
   type FieldInput,
   type MaintenancePayload,
   type MigrationRun,
+  type PermissionsInput,
+  type PermissionsPayload,
   type SettingsPatchBody,
   type SettingsPayload,
   type SourceInput,
+  type SourceMoveResponse,
   type SourcesPayload,
   type UsersPayload,
 } from './api';
@@ -54,6 +61,7 @@ export const settingsFieldsQueryKey = ['settings', 'fields'] as const;
 export const settingsKeysQueryKey = ['settings', 'api-keys'] as const;
 export const settingsUsersQueryKey = ['settings', 'users'] as const;
 export const settingsMaintenanceQueryKey = ['settings', 'maintenance'] as const;
+export const settingsPermissionsQueryKey = ['settings', 'permissions'] as const;
 
 function messageOf(error: unknown, fallback: string): string {
   return error instanceof PanelApiError ? error.message : fallback;
@@ -100,6 +108,15 @@ export function useSettingsUsers(enabled: boolean) {
   return useQuery({
     queryKey: settingsUsersQueryKey,
     queryFn: fetchUsers,
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function usePermissions(enabled: boolean) {
+  return useQuery({
+    queryKey: settingsPermissionsQueryKey,
+    queryFn: fetchPermissions,
     enabled,
     staleTime: 30_000,
   });
@@ -183,7 +200,47 @@ export function useSourceMutations() {
     onError,
   });
 
-  return { create, update, remove };
+  const move = useMutation({
+    mutationFn: ({ from, to }: { from: string; to: string }): Promise<SourceMoveResponse> => moveSource(from, to),
+    onSuccess: ({ payload, result }) => {
+      seed(payload);
+      toast.success(t('set_source_moved'), {
+        description: t('set_source_moved_detail', {
+          assets: result.assets,
+          keys: result.api_keys,
+        }),
+      });
+    },
+    onError,
+  });
+
+  return { create, update, remove, move };
+}
+
+/** Load and save the role matrix; a save also refreshes the session flags. */
+export function usePermissionMutations() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  return useMutation({
+    mutationFn: (input: PermissionsInput): Promise<PermissionsPayload> => savePermissions(input),
+    onSuccess: (payload) => {
+      queryClient.setQueryData(settingsPermissionsQueryKey, payload);
+      // The current user's own flags may have changed, and the sidebar/tabs read
+      // them from the session payload.
+      void queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+      void queryClient.invalidateQueries({ queryKey: metaQueryKey });
+      // Custom-field rows share `editable_roles` with the Fields tab.
+      void queryClient.invalidateQueries({ queryKey: settingsFieldsQueryKey });
+      toast.success(t('set_saved'));
+    },
+    onError: (error: unknown) => {
+      if (isFieldLevel(error)) {
+        return;
+      }
+      toast.error(t('set_error'), { description: messageOf(error, '') });
+    },
+  });
 }
 
 /** Create / update / delete / reorder for the custom-field definitions. */

@@ -45,6 +45,7 @@ function panel_device_writable_columns(string $role): array
         // Provenance is writable by managers+ (see `api.php`), never by `user`.
         ['source', 'source_ref']
     );
+    // UUID is an identity aid, not a delegated field.
     if (session_role_rank($role) >= session_role_rank('admin')) {
         $writable[] = 'UUID';
     }
@@ -53,6 +54,7 @@ function panel_device_writable_columns(string $role): array
     return array_values(array_unique(array_filter(
         $writable,
         static fn (string $column): bool => in_array($column, $known, true)
+            && ($column === 'UUID' || permission_field_editable($role, $column))
     )));
 }
 
@@ -110,7 +112,7 @@ function panel_device_input(PDO $pdo, array $user, array $body): array
     $map = panel_device_input_map($user['role']);
     $editableFields = [];
     foreach (field_defs($pdo) as $def) {
-        if (field_editable_by($def, $user['role'])) {
+        if (permission_field_editable($user['role'], 'custom:' . (string) $def['field_key'], $pdo)) {
             $editableFields[(string) $def['field_key']] = $def;
         }
     }
@@ -294,7 +296,7 @@ function panel_device_provenance(PDO $pdo, array $data): array
 /** POST /devices */
 function panel_devices_create(array $params = []): array
 {
-    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    $user = session_require_capability('devices.create');
     session_csrf_require();
     $pdo = db();
 
@@ -460,7 +462,7 @@ function panel_devices_save(PDO $pdo, array $user, array $row, array $body, bool
 /** PATCH /devices/{id} */
 function panel_devices_update(array $params = []): array
 {
-    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    $user = session_require_capability('devices.update');
     session_csrf_require();
     $pdo = db();
 
@@ -472,7 +474,7 @@ function panel_devices_update(array $params = []): array
 /** PUT /devices/{id} — full replace (parity with the Bearer API). */
 function panel_devices_replace(array $params = []): array
 {
-    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    $user = session_require_capability('devices.update');
     session_csrf_require();
     $pdo = db();
 
@@ -581,14 +583,10 @@ function panel_delete_event_changes(?string $reason, ?int $duplicateOf): array
 /** DELETE /devices/{id} */
 function panel_devices_delete(array $params = []): array
 {
-    $user = session_require_role(['admin', 'superadmin']);
+    $hard = filter_var($_GET['hard'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    $user = session_require_capability($hard ? 'devices.purge' : 'devices.delete');
     session_csrf_require();
     $pdo = db();
-
-    $hard = filter_var($_GET['hard'] ?? false, FILTER_VALIDATE_BOOLEAN);
-    if ($hard && session_role_rank($user['role']) < session_role_rank('superadmin')) {
-        throw new ApiError('forbidden', 'Only a superadmin can delete a device permanently.', 403);
-    }
 
     $id = panel_device_id($params);
     $row = panel_device_for_write($pdo, $user, $id);
@@ -642,7 +640,7 @@ function panel_devices_delete(array $params = []): array
 /** POST /devices/{id}/restore — idempotent: restoring a live row is a no-op. */
 function panel_devices_restore(array $params = []): array
 {
-    $user = session_require_role(['admin', 'superadmin']);
+    $user = session_require_capability('devices.restore');
     session_csrf_require();
     $pdo = db();
 
@@ -725,7 +723,7 @@ function panel_bulk_ids(mixed $raw): array
  */
 function panel_devices_bulk(array $params = []): array
 {
-    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    $user = session_require_capability('devices.bulk');
     session_csrf_require();
     $pdo = db();
 
@@ -735,16 +733,12 @@ function panel_devices_bulk(array $params = []): array
         throw new ApiError('validation_failed', 'Unknown bulk operation.', 422, ['op' => 'invalid']);
     }
 
-    $rank = session_role_rank($user['role']);
-    if ($op === 'delete' || $op === 'restore') {
-        if ($rank < session_role_rank('admin')) {
-            throw new ApiError('forbidden', 'Only an admin can delete or restore devices.', 403);
-        }
-    }
-
     $hard = $op === 'delete' && filter_var($body['hard'] ?? false, FILTER_VALIDATE_BOOLEAN);
-    if ($hard && $rank < session_role_rank('superadmin')) {
-        throw new ApiError('forbidden', 'Only a superadmin can delete devices permanently.', 403);
+    if ($op === 'delete' && !permission_capability_allowed($user['role'], $hard ? 'devices.purge' : 'devices.delete')) {
+        throw new ApiError('forbidden', 'Your role cannot delete devices.', 403);
+    }
+    if ($op === 'restore' && !permission_capability_allowed($user['role'], 'devices.restore')) {
+        throw new ApiError('forbidden', 'Your role cannot restore devices.', 403);
     }
 
     $ids = panel_bulk_ids($body['ids'] ?? null);
@@ -841,7 +835,7 @@ function panel_devices_bulk(array $params = []): array
  */
 function panel_devices_files_store(array $params = []): array
 {
-    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    $user = session_require_capability('devices.files.upload');
     session_csrf_require();
 
     $id = panel_device_id($params);
@@ -922,7 +916,7 @@ function panel_devices_files_store(array $params = []): array
  */
 function panel_devices_files_presign(array $params = []): array
 {
-    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    $user = session_require_capability('devices.files.upload');
     session_csrf_require();
 
     $id = panel_device_id($params);
@@ -1043,7 +1037,7 @@ function panel_devices_files_register(PDO $pdo, array $user, int $id, array $dev
 /** DELETE /devices/{id}/files/{fileId} */
 function panel_devices_files_delete(array $params = []): array
 {
-    $user = session_require_role(['admin', 'superadmin']);
+    $user = session_require_capability('devices.files.delete');
     session_csrf_require();
     $pdo = db();
 

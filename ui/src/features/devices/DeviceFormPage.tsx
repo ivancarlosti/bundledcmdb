@@ -508,6 +508,8 @@ export function DeviceFormPage() {
   const rawId = params.deviceId ?? '';
   const id = /^\d+$/.test(rawId) ? Number.parseInt(rawId, 10) : null;
   const isEdit = id !== null;
+  const session = useCurrentSession();
+  const capability = isEdit ? 'devices.update' : 'devices.create';
 
   const metaQuery = useMeta();
   const deviceQuery = useDevice(isEdit ? id : null);
@@ -526,6 +528,16 @@ export function DeviceFormPage() {
         title={t('ui_api_unavailable')}
         action={<Button onClick={() => void metaQuery.refetch()}>{t('ui_retry')}</Button>}
       >
+        <Link to="/devices" className="text-[var(--color-accent)]">
+          {t('back_to_list')}
+        </Link>
+      </Alert>
+    );
+  }
+
+  if (session.capabilities.permissions[capability] !== true) {
+    return (
+      <Alert title={t('ui_err_forbidden')}>
         <Link to="/devices" className="text-[var(--color-accent)]">
           {t('back_to_list')}
         </Link>

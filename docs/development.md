@@ -125,7 +125,8 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
 3. `php bin/migrate.php --dry-run` → 0 pending; a second real run reports
    `Applied: 0, already present: 11`.
 4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
-5. `php bin/test-panel-api.php` → 0 failed (238 assertions with a database).
+5. `php bin/test-panel-api.php` → 0 failed (requires a non-production database;
+   the suite also covers the role matrix, source move and `source_slug` alias).
 6. SPA: `./bin/check-ui.sh --e2e` (typecheck, lint, format, vitest, build, then
    Playwright against `vite preview`; `--no-install` skips `npm ci`).
 7. API smoke (`curl`):

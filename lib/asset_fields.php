@@ -158,7 +158,9 @@ function field_editable_roles(array $def): array
 
 function field_editable_by(array $def, string $role): bool
 {
-    return in_array($role, field_editable_roles($def), true);
+    $role = session_role_normalize($role);
+    // Superadmin is the recovery role: field permissions can never lock it out.
+    return $role === 'superadmin' || in_array($role, field_editable_roles($def), true);
 }
 
 /**
@@ -313,6 +315,33 @@ function field_update(PDO $pdo, int $id, array $data, string $actor): bool
 
     return true;
 }
+/**
+ * Update only the editable-role list of a definition.
+ *
+ * The permissions matrix uses this instead of `field_update()` so a role change
+ * cannot overwrite concurrent field edits. Roles are stored in rank order.
+ *
+ * @param list<string> $roles
+ */
+function field_set_editable_roles(PDO $pdo, string $fieldKey, array $roles, string $actor): bool
+{
+    $known = array_keys(SESSION_ROLES);
+    $normalized = [];
+    foreach ($known as $role) {
+        if (in_array($role, $roles, true)) {
+            $normalized[] = $role;
+        }
+    }
+    $stmt = $pdo->prepare(
+        'UPDATE asset_field_defs SET editable_roles = ?, updated_at = ?, updated_by = ? WHERE field_key = ?'
+    );
+    $stmt->execute([implode(',', $normalized), gmdate('Y-m-d H:i:s'), $actor, $fieldKey]);
+    field_defs($pdo, true, true);
+    field_defs($pdo, false, true);
+
+    return $stmt->rowCount() > 0;
+}
+
 /** Hard delete a definition and all values stored for it. */
 function field_delete(PDO $pdo, int $id): bool
 {

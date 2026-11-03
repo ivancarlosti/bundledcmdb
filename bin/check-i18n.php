@@ -63,6 +63,7 @@ const I18N_DYNAMIC_FAMILIES = [
     'role_',
     'ui_ev_',
     'ui_form_tab_',
+    'perm_',
 ];
 
 /**

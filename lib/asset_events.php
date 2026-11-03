@@ -45,6 +45,7 @@ const ASSET_EVENT_ENTITIES = [
     'user',
     'migration',
     'logs',
+    'permission',
 ];
 
 /** Columns that never count as a "change" (bookkeeping, not content). */

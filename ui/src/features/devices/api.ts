@@ -132,7 +132,14 @@ export type MetaPayload = {
   locales: { code: string; native: string; label: string; dir: 'ltr' | 'rtl' }[];
   themes: string[];
   pageSizes: number[];
-  capabilities: { role: string; rank: number; can_write: boolean; can_admin: boolean; can_superadmin: boolean };
+  capabilities: {
+    role: string;
+    rank: number;
+    can_write: boolean;
+    can_admin: boolean;
+    can_superadmin: boolean;
+    permissions: Record<string, boolean>;
+  };
   defaultSort: { sort: string; dir: 'asc' | 'desc' };
   virtualSorts: string[];
   /** Wire keys the current role may write (server-side role matrix). */

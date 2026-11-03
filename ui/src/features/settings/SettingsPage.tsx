@@ -16,6 +16,7 @@ import { useCurrentSession } from '@/features/auth/SessionContext';
 import { ApiKeysTab } from './ApiKeysTab';
 import { FieldsTab } from './FieldsTab';
 import { MaintenanceTab } from './MaintenanceTab';
+import { PermissionsTab } from './PermissionsTab';
 import { SettingsGroupPanel } from './SettingsGroupPanel';
 import { SourcesTab } from './SourcesTab';
 import { UsersTab } from './UsersTab';
@@ -23,19 +24,20 @@ import { UsersTab } from './UsersTab';
 type Tab = {
   id: string;
   label_key: string;
-  /** `false` = superadmin only. */
-  admin: boolean;
+  /** Capability that makes the tab visible (and its endpoint usable). */
+  capability: string;
 };
 
 const TABS: Tab[] = [
-  { id: 'general', label_key: 'set_tab_general', admin: true },
-  { id: 'storage', label_key: 'set_tab_storage', admin: true },
-  { id: 'sources', label_key: 'set_tab_sources', admin: true },
-  { id: 'api', label_key: 'set_tab_api', admin: true },
-  { id: 'fields', label_key: 'set_tab_fields', admin: true },
-  { id: 'logs', label_key: 'set_tab_logs', admin: true },
-  { id: 'maintenance', label_key: 'set_tab_maintenance', admin: true },
-  { id: 'users', label_key: 'set_tab_users', admin: false },
+  { id: 'general', label_key: 'set_tab_general', capability: 'settings.manage' },
+  { id: 'storage', label_key: 'set_tab_storage', capability: 'settings.manage' },
+  { id: 'sources', label_key: 'set_tab_sources', capability: 'settings.sources' },
+  { id: 'api', label_key: 'set_tab_api', capability: 'settings.api_keys' },
+  { id: 'fields', label_key: 'set_tab_fields', capability: 'settings.fields' },
+  { id: 'logs', label_key: 'set_tab_logs', capability: 'settings.manage' },
+  { id: 'maintenance', label_key: 'set_tab_maintenance', capability: 'settings.maintenance' },
+  { id: 'permissions', label_key: 'set_tab_permissions', capability: 'permissions.manage' },
+  { id: 'users', label_key: 'set_tab_users', capability: 'settings.users' },
 ];
 
 const TAB_LINK = 'rounded-[var(--radius-md)] px-3 py-1.5 text-sm';
@@ -85,13 +87,13 @@ export function SettingsPage() {
   // Memoised so the tab hook's `popstate` effect is not re-registered on every
   // render (the ids array is its dependency).
   const allowed = useMemo(
-    () => TABS.filter((tab) => tab.admin || session.capabilities.can_superadmin),
-    [session.capabilities.can_superadmin],
+    () => TABS.filter((tab) => session.capabilities.permissions[tab.capability] === true),
+    [session.capabilities.permissions],
   );
   const ids = useMemo(() => allowed.map((item) => item.id), [allowed]);
   const [tab, select] = useTab(ids);
 
-  if (!session.capabilities.can_admin) {
+  if (allowed.length === 0) {
     return <Alert title={t('ui_err_forbidden')}>{t('set_title')}</Alert>;
   }
 
@@ -139,7 +141,9 @@ export function SettingsPage() {
         {tab === 'sources' ? <SourcesTab labelledBy={headingId} /> : null}
         {tab === 'api' ? (
           <div className="flex flex-col gap-6">
-            <SettingsGroupPanel groups={['api']} intro={t('set_api_intro')} labelledBy={headingId} />
+            {session.capabilities.permissions['settings.manage'] ? (
+              <SettingsGroupPanel groups={['api']} intro={t('set_api_intro')} labelledBy={headingId} />
+            ) : null}
             <ApiKeysTab labelledBy={headingId} />
           </div>
         ) : null}
@@ -148,6 +152,7 @@ export function SettingsPage() {
           <SettingsGroupPanel groups={['logs']} intro={t('set_logs_intro')} labelledBy={headingId} />
         ) : null}
         {tab === 'maintenance' ? <MaintenanceTab labelledBy={headingId} /> : null}
+        {tab === 'permissions' ? <PermissionsTab labelledBy={headingId} /> : null}
         {tab === 'users' ? <UsersTab labelledBy={headingId} /> : null}
       </div>
     </div>
