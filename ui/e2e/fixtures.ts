@@ -23,6 +23,10 @@ export const MESSAGES: Record<string, string> = {
   ui_clear_filters: 'Clear filters',
   ui_trashed: 'Deleted only',
   ui_dev_login: 'Development sign-in',
+  ui_spa_disabled_title: 'The React panel is turned off',
+  ui_spa_disabled_hint:
+    'An administrator can turn it back on under Settings → General. The classic panel keeps working in the meantime.',
+  ui_legacy_panel: 'Open the classic panel',
   records: 'records',
   signed_in_as: 'Signed in as:',
   search_text: 'Search Text',

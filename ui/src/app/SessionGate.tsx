@@ -27,6 +27,30 @@ function BootScreen() {
 }
 
 /**
+ * Rollback screen: an administrator turned `ui.spa_enabled` off, so this build
+ * must not pretend to be the panel. The legacy pages still answer, so the notice
+ * links straight at them.
+ */
+function SpaDisabledScreen() {
+  const { t } = useTranslation();
+  return (
+    <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col justify-center p-6">
+      <Alert
+        tone="info"
+        title={t('ui_spa_disabled_title')}
+        action={
+          <a href="/main.php" className="text-sm text-[var(--color-accent)]">
+            {t('ui_legacy_panel')}
+          </a>
+        }
+      >
+        <p className="m-0">{t('ui_spa_disabled_hint')}</p>
+      </Alert>
+    </main>
+  );
+}
+
+/**
  * Session bootstrap: pending -> error -> login -> app.
  *
  * It also owns the two global side effects that must happen before any screen
@@ -88,6 +112,12 @@ export function SessionGate({ children }: { children: ReactNode }) {
 
   if (!translated) {
     return <BootScreen />;
+  }
+
+  // Checked after the catalogue loads so the notice is localised like any other
+  // screen; `spa` is false only when an administrator rolled the SPA back.
+  if (!session.features.spa) {
+    return <SpaDisabledScreen />;
   }
 
   return <SessionProvider session={session}>{children}</SessionProvider>;

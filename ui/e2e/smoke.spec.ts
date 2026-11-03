@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { mockAnonymous } from './fixtures';
+import { mockAnonymous, mockPanel, SESSION } from './fixtures';
 
 /**
  * Scaffold smoke test — the full suite (grid, dark mode, RTL, CSV) lands in
@@ -36,5 +36,26 @@ test.describe('SPA shell', () => {
 
     await page.goto('/app/');
     await expect(page.getByRole('link', { name: 'Sign in with SSO' })).toBeVisible();
+  });
+
+  /**
+   * Phase 9 rollback: `ui.spa_enabled = 0` must never leave a half-working shell
+   * on screen. The notice links at the legacy pages, which are still served.
+   */
+  test('renders the rollback notice when ui.spa_enabled is off', async ({ page }) => {
+    await mockPanel(page, {
+      session: { ...SESSION, features: { ...SESSION.features, spa: false } },
+    });
+
+    await page.goto('/app/settings');
+
+    const notice = page.getByRole('alert');
+    await expect(notice).toContainText('The React panel is turned off');
+    await expect(notice.getByRole('link', { name: 'Open the classic panel' })).toHaveAttribute(
+      'href',
+      '/main.php',
+    );
+    // The router must not have mounted any screen behind the notice.
+    await expect(page.getByRole('navigation')).toHaveCount(0);
   });
 });

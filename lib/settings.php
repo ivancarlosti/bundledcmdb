@@ -45,8 +45,11 @@ function settings_definitions(): array
         ],
 
         // --- User interface ---
+        // `1` since 10.8.0 (phase 9 cutover): `/` sends the browser to /app/.
+        // Turning it off is the rollback: `/` goes back to the legacy pages and
+        // /app/ shows a "disabled" notice instead of a half-working shell.
         'ui.spa_enabled' => [
-            'group' => 'general', 'type' => 'bool', 'default' => '0',
+            'group' => 'general', 'type' => 'bool', 'default' => '1',
             'label' => 'Serve the React panel at /app/',
         ],
 
@@ -225,6 +228,22 @@ function settings_bool(string $key): bool
         return $value;
     }
     return filter_var((string) $value, FILTER_VALIDATE_BOOLEAN);
+}
+
+/**
+ * True when `/` must send the browser to the React panel at `/app/`.
+ *
+ * Never throws: `public/index.php` calls it before anything is rendered, and a
+ * database that is not reachable yet must fall back to the legacy pages instead
+ * of a fatal error.
+ */
+function settings_spa_enabled(): bool
+{
+    try {
+        return settings_bool('ui.spa_enabled');
+    } catch (Throwable) {
+        return false;
+    }
 }
 
 function settings_int(string $key): int

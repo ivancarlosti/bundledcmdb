@@ -7,6 +7,16 @@ require_once 'lang.php';
 lang_init();
 app_boot();
 
+/**
+ * Where a browser that reached `/` belongs.
+ *
+ * Since the phase 9 cutover (10.8.0) `ui.spa_enabled` defaults to on, and `/` is
+ * only an entry point: the SPA owns the login screen, the language/theme
+ * controls and the error states, so this page exists for the SSO callback and
+ * for the rollback (`ui.spa_enabled = 0` → legacy `main.php` + login form).
+ */
+$spaHome = settings_spa_enabled() ? '/app/' : 'main.php';
+
 $debug = false;
 $message = '';
 
@@ -52,7 +62,7 @@ if (isset($_GET['code'])) {
                 $_SESSION['company'] = $company;
                 $_SESSION['role'] = $role;
 
-                header('Location: main.php');
+                header('Location: ' . $spaHome);
                 exit();
             } else {
                 $message = 'Access Denied: User not found in authorized list.';
@@ -67,7 +77,15 @@ if (isset($_GET['code'])) {
 
 // If already logged in, redirect to main
 if (isset($_SESSION['user_email'])) {
-    header('Location: main.php');
+    header('Location: ' . $spaHome);
+    exit();
+}
+
+// Anonymous visitor: with the SPA enabled `/` is not a page any more, it is a
+// redirect to the SPA's own login screen. Only the rollback renders the form
+// below.
+if ($spaHome === '/app/') {
+    header('Location: /app/');
     exit();
 }
 

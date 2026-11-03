@@ -1,9 +1,12 @@
 # Front end (React SPA)
 
-> **Status: migration in progress.** The plan, phases and acceptance criteria
-> live in [`plans/2026-11-02-spa-migration.md`](../plans/2026-11-02-spa-migration.md).
-> Until phase 9 the legacy PHP pages in `public/` remain the default UI; the SPA
-> is served from `/app/` and can be enabled with the `ui.spa_enabled` setting.
+> **Status: the SPA is the default UI since 10.8.0.** `/` redirects to `/app/`;
+> the legacy PHP pages stay reachable by direct URL for one release as the
+> rollback path. Setting `ui.spa_enabled = 0` restores the old entry point and
+> makes `/app/` show a "turned off" notice. The deletion of the legacy files
+> (`main.php`, `settings.php`, `manage_permissions.php`, `asset*.php`,
+> `save_row*.php`, `export.php`, `style.css`, `theme.js`) is the next, breaking
+> release — see [`plans/2026-11-02-spa-migration.md`](../plans/2026-11-02-spa-migration.md).
 
 ## How the pieces fit
 
@@ -24,6 +27,23 @@
 
 The SPA is same-origin with the API, so there is no CORS layer and the session
 cookie works with `SameSite=Lax`.
+
+## Cutover and rollback (phase 9)
+
+`ui.spa_enabled` defaults to `1`, so `/` and `index.php` are entry points, not
+pages: a browser without a session lands on the SPA's own login screen, and a
+browser with one lands on the grid.
+
+| Action | Effect |
+|---|---|
+| `Settings → General → Serve the React panel at /app/` off (or `ui.spa_enabled = 0`) | `/` redirects to the legacy `main.php` again, and `/app/` renders a notice linking at the classic panel instead of a half-working shell |
+| Direct URLs (`/main.php`, `/settings.php`, …) | Still served for one release; nothing links to them any more |
+| `/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/dev-login` | Unaffected — they are the SPA's own endpoints |
+
+The SPA reads the switch from `GET /panel-api/v1/session` (`features.spa`) and
+renders the notice from that flag alone, so the rollback does not need a rebuild
+or a new image. `bin/test-panel-api.php` asserts the default and
+`e2e/smoke.spec.ts` renders the notice with `features.spa: false`.
 
 ## Local development
 
@@ -169,6 +189,8 @@ PHP side (the API itself):
 php bin/check-i18n.php          # catalog coverage + unknown keys
 php bin/test-panel-api.php      # integration tests: role matrix, validation,
                                 # optimistic locking, delete/restore, isolation
+php bin/bench-devices.php       # EXPLAIN + timings on a throwaway 100k fixture
+                                # (see docs/api.md "Measured cost at 100k rows")
 ```
 
 `bin/test-panel-api.php` drives the real handlers against the configured

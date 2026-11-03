@@ -60,7 +60,7 @@ function panel_session_payload(array $user): array
     $features = [];
     try {
         $features = [
-            'spa'         => settings_bool('ui.spa_enabled'),
+            'spa'         => settings_spa_enabled(),
             'api'         => settings_bool('api.enabled'),
             'attachments' => panel_storage_configured(),
             'devLogin'    => app_dev_login_enabled(),
