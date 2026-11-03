@@ -5,12 +5,14 @@ import { toast } from 'sonner';
 import { PanelApiError } from '@/api/client';
 
 import {
+  bulkDevices,
   createDevice,
   deleteDevice,
   deleteDeviceFile,
   restoreDevice,
   updateDevice,
   uploadDeviceFile,
+  type BulkOp,
   type DeviceDetail,
   type DeviceWriteBody,
 } from './api';
@@ -91,6 +93,42 @@ export function useInlineDeviceUpdate() {
         void queryClient.invalidateQueries({ queryKey: ['devices'] });
         return;
       }
+      toast.error(t('save_failed'), { description: messageOf(error, '') });
+    },
+  });
+}
+
+/**
+ * Bulk action from the grid's selection toolbar.
+ *
+ * The response carries per-row results, so a partially failing selection still
+ * tells the user what actually happened ("2 updated, 1 skipped") and the reason
+ * for the first skip — the alternative is a silent no-op, which is exactly the
+ * class of bug the legacy grid had.
+ */
+export function useBulkDeviceAction() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  return useMutation({
+    mutationFn: ({ op, ids, value }: { op: BulkOp; ids: number[]; value?: string | boolean }) =>
+      bulkDevices(op, ids, { value }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['devices'] });
+      for (const id of result.updated) {
+        void queryClient.invalidateQueries({ queryKey: ['device', id] });
+      }
+
+      if (result.skipped.length === 0) {
+        toast.success(t('ui_bulk_done', { done: result.updated.length }));
+        return;
+      }
+      toast.warning(
+        t('ui_bulk_partial', { done: result.updated.length, skipped: result.skipped.length }),
+        { description: result.skipped[0]?.message ?? '' },
+      );
+    },
+    onError: (error: unknown) => {
       toast.error(t('save_failed'), { description: messageOf(error, '') });
     },
   });

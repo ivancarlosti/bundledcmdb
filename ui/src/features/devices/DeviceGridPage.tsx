@@ -16,12 +16,14 @@ import {
   type ByodFilter,
   type GridDefaults,
 } from '@/features/grid/gridSearch';
+import { selectionState, toggleAllOnPage, toggleSelection } from '@/features/grid/selection';
 import { useGridState } from '@/features/grid/useGridState';
 import { usePreferences } from '@/features/preferences/usePreferences';
 
-import { deviceExportUrl, type DeviceRow, type DeviceWriteBody } from './api';
+import { deviceExportUrl, type BulkOp, type DeviceRow, type DeviceWriteBody } from './api';
+import { BulkActions } from './BulkActions';
 import { buildColumns } from './columns';
-import { useInlineDeviceUpdate } from './useDeviceMutations';
+import { useBulkDeviceAction, useInlineDeviceUpdate } from './useDeviceMutations';
 import { useDevices, useMeta } from './useDevices';
 
 const EXPORT_LINK_CLASS =
@@ -70,6 +72,12 @@ export function DeviceGridPage() {
   const inlineUpdate = useInlineDeviceUpdate();
   const preferences = usePreferences();
   const canWrite = session.capabilities.can_write;
+
+  // Ids ticked in the grid. Deliberately kept across pages (a bulk action on
+  // "everything I selected" is the point) and cleared only when the filters are
+  // reset or the action succeeded.
+  const [selected, setSelected] = useState<number[]>([]);
+  const bulk = useBulkDeviceAction();
 
   const onInlineEdit = useCallback(
     (row: DeviceRow, key: string, value: string | boolean) => {
@@ -131,6 +139,42 @@ export function DeviceGridPage() {
 
   const onSort = (columnId: string) => {
     update((current) => applySort(current, nextSort(current, columnId, defaults)));
+  };
+
+  const pageIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  const pageSelection = selectionState(selected, pageIds);
+
+  const statusOptions = useMemo(
+    () => (meta?.statuses ?? []).map((status) => ({ value: status.value, label: t(status.label_key) })),
+    [meta?.statuses, t],
+  );
+
+  /**
+   * One bulk request per action; the server answers per row, so a stale or
+   * deleted row no longer swallows the whole action. The selection is cleared
+   * only after the response, so a failed request can be retried as-is.
+   */
+  const runBulk = (op: BulkOp, value?: string | boolean) => {
+    if (selected.length === 0) {
+      return;
+    }
+    bulk.mutate(
+      { op, ids: selected, value },
+      {
+        onSuccess: () => {
+          setSelected([]);
+        },
+      },
+    );
+  };
+
+  const clearSelection = () => {
+    setSelected([]);
+  };
+
+  const clearFilters = () => {
+    setSelected([]);
+    reset();
   };
 
   return (
@@ -250,7 +294,7 @@ export function DeviceGridPage() {
         />
 
         <div className="flex flex-wrap items-center gap-2 pb-0.5">
-          <Button variant="ghost" disabled={!hasActiveFilters(state)} onClick={reset}>
+          <Button variant="ghost" disabled={!hasActiveFilters(state)} onClick={clearFilters}>
             {t('ui_clear_filters')}
           </Button>
           <a className={EXPORT_LINK_CLASS} href={deviceExportUrl(state)} download>
@@ -266,6 +310,20 @@ export function DeviceGridPage() {
         </div>
       </div>
 
+      {selected.length > 0 && canWrite ? (
+        <BulkActions
+          count={selected.length}
+          statuses={statusOptions}
+          canAdmin={session.capabilities.can_admin}
+          pending={bulk.isPending}
+          onStatus={(status) => runBulk('status', status)}
+          onByod={(value) => runBulk('byod', value)}
+          onDelete={() => runBulk('delete')}
+          onRestore={() => runBulk('restore')}
+          onClear={clearSelection}
+        />
+      ) : null}
+
       <p className="sr-only" role="status" aria-live="polite">
         {t('ui_showing_range', { from, to, total })}
       </p>
@@ -279,6 +337,21 @@ export function DeviceGridPage() {
         sort={{ column: state.sort === '' ? null : state.sort, dir: sortedDir(state, state.sort) }}
         onSort={onSort}
         rowId={(row) => row.id}
+        selection={
+          canWrite
+            ? {
+                state: pageSelection,
+                isSelected: (row) => selected.includes(row.id),
+                onToggleRow: (row, checked) =>
+                  setSelected((current) => toggleSelection(current, row.id, checked)),
+                onToggleAll: (checked) =>
+                  setSelected((current) => toggleAllOnPage(current, pageIds, checked)),
+                rowLabel: (row) =>
+                  t('ui_select_row', { name: row.sn ?? row.hostname ?? String(row.id) }),
+                allLabel: t('ui_select_all'),
+              }
+            : undefined
+        }
         onRowClick={(row) => {
           void navigate({ to: '/devices/$deviceId', params: { deviceId: String(row.id) } });
         }}

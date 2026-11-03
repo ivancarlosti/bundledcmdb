@@ -49,6 +49,7 @@ export const MESSAGES: Record<string, string> = {
   theme_light: 'Light',
   theme_dark: 'Dark',
   status_in_use: 'In Use',
+  status_in_stock: 'In Stock',
   col_sn: 'Serial number',
   col_hostname: 'Hostname',
   col_status: 'Status',
@@ -72,6 +73,17 @@ export const MESSAGES: Record<string, string> = {
   custom_fields: 'Custom fields',
   edit: 'Edit',
   delete: 'Delete',
+  ui_bulk_actions: 'Bulk actions',
+  ui_selected_count: '{{total}} selected',
+  ui_select_all: 'Select all rows on this page',
+  ui_select_row: 'Select {{name}}',
+  ui_bulk_status: 'Set status',
+  ui_bulk_byod: 'Set BYOD',
+  ui_bulk_apply: 'Apply',
+  ui_bulk_clear: 'Clear selection',
+  ui_bulk_done: '{{done}} device(s) updated.',
+  ui_bulk_partial: '{{done}} updated, {{skipped}} skipped.',
+  ui_restore: 'Restore',
 };
 
 export const SESSION = {
@@ -82,7 +94,10 @@ export const SESSION = {
   theme: 'system',
   perPage: 25,
   gridState: null,
-  locales: [{ code: 'en-US', native: 'English (US)', label: 'EN', dir: 'ltr' }],
+  locales: [
+    { code: 'en-US', native: 'English (US)', label: 'EN', dir: 'ltr' },
+    { code: 'ar-SA', native: 'العربية', label: 'AR', dir: 'rtl' },
+  ],
   themes: ['system', 'light', 'dark'],
   pageSizes: [10, 25, 50],
   maxPageSize: 200,
@@ -99,7 +114,10 @@ export const META = {
     { key: 'updated_at', api_key: 'updated_at', label_key: 'col_updated_at', label: 'Updated At', type: 'datetime', in_grid: true, sortable: true, editable: false, virtual: false },
     { key: 'files', api_key: 'files_count', label_key: 'col_files', label: 'Attachments', type: 'int', in_grid: true, sortable: true, editable: false, virtual: true },
   ],
-  statuses: [{ value: 'In Use', label_key: 'status_in_use' }],
+  statuses: [
+    { value: 'In Use', label_key: 'status_in_use' },
+    { value: 'In Stock', label_key: 'status_in_stock' },
+  ],
   sources: [],
   fields: [],
   companies: [],
@@ -200,6 +218,10 @@ export type MockOptions = {
   onDevices?: (url: string) => void;
   /** Called with the JSON body of every `POST /devices`, so a test can assert it. */
   onCreate?: (body: Record<string, unknown>) => void;
+  /** Called with the JSON body of every `POST /devices/bulk`. */
+  onBulk?: (body: Record<string, unknown>) => void;
+  /** Called with the JSON body of every `PATCH /session/preferences`. */
+  onPreferences?: (patch: Record<string, unknown>) => void;
   pages?: number;
   total?: number;
 };
@@ -211,11 +233,36 @@ function json(route: Route, data: unknown, meta: Record<string, unknown> = {}) {
 export async function mockPanel(page: Page, options: MockOptions = {}): Promise<void> {
   const total = options.total ?? ROWS.length;
   const pages = options.pages ?? 1;
+  // The stubbed session is mutable so preference writes (theme, locale, column
+  // layout) behave like the real server: a reload sees what was saved.
+  let sessionState: Record<string, unknown> = { ...SESSION };
 
-  await page.route('**/panel-api/v1/session', (route) => json(route, SESSION));
-  await page.route('**/panel-api/v1/i18n**', (route) =>
-    json(route, { locale: 'en-US', dir: 'ltr', messages: MESSAGES }),
-  );
+  await page.route('**/panel-api/v1/session', (route) => json(route, sessionState));
+  await page.route('**/panel-api/v1/session/preferences', (route) => {
+    let patch: Record<string, unknown> = {};
+    try {
+      patch = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+    } catch {
+      patch = {};
+    }
+    options.onPreferences?.(patch);
+    sessionState = {
+      ...sessionState,
+      ...(patch.locale === undefined ? {} : { locale: patch.locale }),
+      ...(patch.theme === undefined ? {} : { theme: patch.theme }),
+      ...(patch.per_page === undefined ? {} : { perPage: patch.per_page }),
+      ...(patch.grid_state === undefined ? {} : { gridState: patch.grid_state }),
+    };
+    return json(route, sessionState);
+  });
+  await page.route('**/panel-api/v1/i18n**', (route) => {
+    const requested = new URL(route.request().url()).searchParams.get('locale') ?? 'en-US';
+    return json(route, {
+      locale: requested,
+      dir: requested === 'ar-SA' ? 'rtl' : 'ltr',
+      messages: MESSAGES,
+    });
+  });
   await page.route('**/panel-api/v1/meta', (route) => json(route, META));
 
   await page.route('**/panel-api/v1/devices**', (route) => {
@@ -223,6 +270,7 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     const url = request.url();
 
     // Writes: answer like `POST /devices` does (201 + the created row).
+    // `/devices/bulk` is matched by the dedicated route registered below.
     if (request.method() !== 'GET') {
       let body: Record<string, unknown> = {};
       try {
@@ -265,4 +313,17 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
       ],
     }),
   );
+
+  // ...and after that one so `POST /devices/bulk` is not read as `POST /devices/{id}`.
+  await page.route('**/panel-api/v1/devices/bulk', (route) => {
+    let body: Record<string, unknown> = {};
+    try {
+      body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
+    const ids = Array.isArray(body.ids) ? (body.ids as number[]) : [];
+    options.onBulk?.(body);
+    return json(route, { op: body.op, updated: ids, skipped: [] }, { changed: ids.length, skipped: 0 });
+  });
 }

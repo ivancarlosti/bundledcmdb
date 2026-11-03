@@ -80,7 +80,9 @@ test.describe('device grid', () => {
     await mockPanel(page);
 
     await page.goto('/app/devices');
-    await page.getByTestId('data-row').first().click();
+    // A data cell, not the row centre: inline-edit controls live there and
+    // clicking them must not navigate (see DataGrid's click guard).
+    await page.getByRole('cell', { name: 'SN-0007', exact: true }).click();
 
     await expect.poll(() => page.url()).toContain('/app/devices/7');
     await expect(page.getByRole('heading', { name: 'SN-0007' })).toBeVisible();

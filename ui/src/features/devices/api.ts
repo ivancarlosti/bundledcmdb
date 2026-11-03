@@ -198,3 +198,44 @@ export function uploadDeviceFile(id: number, file: File): Promise<DeviceFile> {
 export function deleteDeviceFile(id: number, fileId: number): Promise<{ id: number; deleted: boolean }> {
   return apiRequest<{ id: number; deleted: boolean }>(`/devices/${id}/files/${fileId}`, { method: 'DELETE' });
 }
+
+/** Operations `POST /devices/bulk` understands (`lib/panel/device_writes.php`). */
+export type BulkOp = 'status' | 'byod' | 'delete' | 'restore';
+
+/** One row the server refused to change, with the reason the UI shows back. */
+export type BulkSkipped = {
+  id: number;
+  code: string;
+  message: string;
+  errors?: Record<string, string>;
+};
+
+export type BulkResult = {
+  op: BulkOp;
+  /** Ids written by this request. */
+  updated: number[];
+  /** Ids left alone: stale, deleted, out of scope or invalid. */
+  skipped: BulkSkipped[];
+};
+
+/**
+ * Apply one operation to many devices.
+ *
+ * The server writes row by row (each in its own transaction) and answers with
+ * `updated` + `skipped`, so a partially failing selection still reports the rows
+ * it did change instead of one opaque 4xx.
+ */
+export function bulkDevices(
+  op: BulkOp,
+  ids: number[],
+  options: { value?: string | boolean; hard?: boolean } = {},
+): Promise<BulkResult> {
+  const body: Record<string, unknown> = { ids, op };
+  if (options.value !== undefined) {
+    body.value = options.value;
+  }
+  if (options.hard !== undefined) {
+    body.hard = options.hard;
+  }
+  return apiRequest<BulkResult>('/devices/bulk', { method: 'POST', body });
+}
