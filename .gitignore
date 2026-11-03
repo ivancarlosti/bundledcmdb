@@ -12,3 +12,6 @@ public/app/
 # Editors / OS
 .DS_Store
 *.local
+
+# Stray npm cache when a tool runs at the repo root
+node_modules/

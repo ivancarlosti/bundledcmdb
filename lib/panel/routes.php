@@ -30,8 +30,15 @@ function panel_routes(): array
         // Literal routes before `{id}` so /devices/export is not read as an id.
         ['GET',   '/devices',             'panel_devices_index'],
         ['GET',   '/devices/export',      'panel_devices_export'],
-        ['GET',   '/devices/{id}',        'panel_devices_show'],
+        ['POST',  '/devices',             'panel_devices_create'],
+        ['POST',  '/devices/{id}/restore', 'panel_devices_restore'],
         ['GET',   '/devices/{id}/files',  'panel_devices_files_index'],
+        ['POST',  '/devices/{id}/files',  'panel_devices_files_store'],
+        ['DELETE', '/devices/{id}/files/{fileId}', 'panel_devices_files_delete'],
+        ['GET',   '/devices/{id}',        'panel_devices_show'],
+        ['PATCH', '/devices/{id}',        'panel_devices_update'],
+        ['PUT',   '/devices/{id}',        'panel_devices_replace'],
+        ['DELETE', '/devices/{id}',       'panel_devices_delete'],
     ];
 }
 

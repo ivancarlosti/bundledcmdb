@@ -58,10 +58,19 @@ function json_fail(string $code, string $message, int $status = 400, array $erro
     json_respond(['ok' => false, 'error' => $error], $status);
 }
 
-/** Decode a JSON request body; throws ApiError('invalid_json') on garbage. */
+/**
+ * Decode a JSON request body; throws ApiError('invalid_json') on garbage.
+ *
+ * `$GLOBALS['APP_TEST_JSON_BODY']` (a JSON string) overrides `php://input` so
+ * `bin/test-panel-api.php` can drive the real handlers from the CLI without a
+ * web server. Nothing else ever sets it.
+ */
 function request_json_body(): array
 {
-    $raw = file_get_contents('php://input');
+    $raw = $GLOBALS['APP_TEST_JSON_BODY'] ?? null;
+    if (!is_string($raw)) {
+        $raw = file_get_contents('php://input');
+    }
     if ($raw === false || trim($raw) === '') {
         return [];
     }

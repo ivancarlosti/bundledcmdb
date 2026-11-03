@@ -149,6 +149,39 @@ function panel_columns_payload(string $role): array
     return $out;
 }
 
+/**
+ * Wire keys a role may write, in form order.
+ *
+ * `create` is the role-filtered subset of `asset_create_columns()` (plus
+ * `source`), `update` is everything `PATCH` accepts from `asset_form_columns()`.
+ * The SPA renders its form from these lists, so the role matrix stays a
+ * server-side decision.
+ *
+ * @return array{create: list<string>, update: list<string>}
+ */
+function panel_write_columns_payload(string $role): array
+{
+    $map = panel_device_input_map($role);
+    $creatable = asset_create_columns($role);
+    $form = [];
+    $create = [];
+    foreach (asset_form_columns() as $column) {
+        $key = array_search($column, $map, true);
+        if ($key === false) {
+            continue;
+        }
+        $form[] = (string) $key;
+        if (in_array($column, $creatable, true)) {
+            $create[] = (string) $key;
+        }
+    }
+    if (isset($map['source'])) {
+        $create[] = 'source';
+    }
+
+    return ['create' => $create, 'update' => $form];
+}
+
 /** Custom field definitions (grid-visible ones become extra columns). */
 function panel_fields_payload(?PDO $pdo): array
 {
@@ -203,6 +236,13 @@ function panel_meta_show(array $params = []): array
         $companies = asset_companies($pdo);
     }
 
+    $requireSn = true;
+    try {
+        $requireSn = settings_bool('assets.require_sn');
+    } catch (Throwable) {
+        // keep the default
+    }
+
     return ['data' => [
         'columns'      => panel_columns_payload($user['role']),
         'statuses'     => panel_status_payload(),
@@ -215,6 +255,11 @@ function panel_meta_show(array $params = []): array
         'capabilities' => panel_capabilities($user['role']),
         'defaultSort'  => ['sort' => 'updated_at', 'dir' => 'desc'],
         'virtualSorts' => ['files'],
+        'writeColumns' => panel_write_columns_payload($user['role']),
+        'limits'       => [
+            'requireSn'      => $requireSn,
+            'maxUploadBytes' => defined('PANEL_MAX_UPLOAD_BYTES') ? PANEL_MAX_UPLOAD_BYTES : 26214400,
+        ],
         'schemaReady'  => app_schema_ready(),
     ]];
 }
