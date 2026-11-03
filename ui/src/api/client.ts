@@ -84,6 +84,8 @@ export function buildQuery(params: Record<string, string | number | boolean | nu
 export type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
+  /** Multipart body (uploads). Takes precedence over `body`; the browser sets the boundary. */
+  form?: FormData;
   signal?: AbortSignal;
   /** Skip the JSON envelope and return the raw Response (e.g. CSV downloads). */
   raw?: boolean;
@@ -120,7 +122,8 @@ export async function apiRequestEnvelope<T>(path: string, options: RequestOption
     headers,
     credentials: 'same-origin',
     signal: options.signal,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body:
+      options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
   });
 
   if (options.raw) {

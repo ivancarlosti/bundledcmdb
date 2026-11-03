@@ -1,9 +1,11 @@
-import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, Button, Checkbox, Field, Input, Select, Spinner } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
+import { ColumnPicker } from '@/features/grid/ColumnPicker';
+import { applyColumnLayout, resolveOrder, resolveVisible } from '@/features/grid/columnLayout';
 import { DataGrid } from '@/features/grid/DataGrid';
 import {
   applyFilters,
@@ -15,9 +17,11 @@ import {
   type GridDefaults,
 } from '@/features/grid/gridSearch';
 import { useGridState } from '@/features/grid/useGridState';
+import { usePreferences } from '@/features/preferences/usePreferences';
 
-import { deviceExportUrl } from './api';
+import { deviceExportUrl, type DeviceRow, type DeviceWriteBody } from './api';
 import { buildColumns } from './columns';
+import { useInlineDeviceUpdate } from './useDeviceMutations';
 import { useDevices, useMeta } from './useDevices';
 
 const EXPORT_LINK_CLASS =
@@ -63,11 +67,52 @@ export function DeviceGridPage() {
     return () => window.clearTimeout(timer);
   }, [search, state.q, update]);
 
-  const columns = useMemo(
-    () => (metaQuery.data === undefined ? [] : buildColumns(metaQuery.data, t, locale)),
-    [metaQuery.data, t, locale],
+  const inlineUpdate = useInlineDeviceUpdate();
+  const preferences = usePreferences();
+  const canWrite = session.capabilities.can_write;
+
+  const onInlineEdit = useCallback(
+    (row: DeviceRow, key: string, value: string | boolean) => {
+      const body: DeviceWriteBody = { [key]: value };
+      if (row.updated_at !== null) {
+        body.expected_updated_at = row.updated_at;
+      }
+      inlineUpdate.mutate({ id: row.id, body });
+    },
+    [inlineUpdate],
   );
 
+  const allColumns = useMemo(
+    () =>
+      metaQuery.data === undefined
+        ? []
+        : buildColumns(
+            metaQuery.data,
+            t,
+            locale,
+            canWrite ? { busy: inlineUpdate.isPending, onEdit: onInlineEdit } : undefined,
+          ),
+    [metaQuery.data, t, locale, canWrite, inlineUpdate.isPending, onInlineEdit],
+  );
+
+  const columnIds = useMemo(() => allColumns.map((column) => String(column.id)), [allColumns]);
+  const layout = session.gridState;
+  const order = useMemo(() => resolveOrder(columnIds, layout), [columnIds, layout]);
+  const visible = useMemo(() => resolveVisible(columnIds, layout), [columnIds, layout]);
+  const columns = useMemo(() => applyColumnLayout(allColumns, { order, visible }), [allColumns, order, visible]);
+
+  const pickerItems = useMemo(
+    () =>
+      order.map((id) => ({
+        id,
+        label: String(allColumns.find((column) => String(column.id) === id)?.header ?? id),
+      })),
+    [order, allColumns],
+  );
+
+  const onLayoutChange = (next: { order: string[]; visible: string[] }) => {
+    preferences.mutate({ grid_state: { order: next.order, visible: next.visible } });
+  };
   const meta = metaQuery.data;
   const payload = devicesQuery.data?.payload;
   const rows = payload?.rows ?? [];
@@ -98,11 +143,20 @@ export function DeviceGridPage() {
             {t('records')}: {total}
           </span>
         </div>
-        <span className="text-xs text-[var(--color-muted)]">
-          {t('signed_in_as')} {session.user.email}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {canWrite ? (
+            <Link
+              to="/devices/new"
+              className="inline-flex items-center justify-center rounded-[var(--radius-md)] border border-transparent bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-contrast)] hover:opacity-90"
+            >
+              {t('ui_new_device')}
+            </Link>
+          ) : null}
+          <span className="text-xs text-[var(--color-muted)]">
+            {t('signed_in_as')} {session.user.email}
+          </span>
+        </div>
       </header>
-
       {metaQuery.isError ? (
         <Alert
           title={t('ui_api_unavailable')}
@@ -202,8 +256,19 @@ export function DeviceGridPage() {
           <a className={EXPORT_LINK_CLASS} href={deviceExportUrl(state)} download>
             {t('export_btn')}
           </a>
+          <ColumnPicker
+            items={pickerItems}
+            order={order}
+            visible={visible}
+            disabled={preferences.isPending}
+            onChange={onLayoutChange}
+          />
         </div>
       </div>
+
+      <p className="sr-only" role="status" aria-live="polite">
+        {t('ui_showing_range', { from, to, total })}
+      </p>
 
       <DataGrid
         aria-label={t('ui_devices')}

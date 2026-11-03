@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/ui';
 import { DeviceDetailPage } from '@/features/devices/DeviceDetailPage';
+import { DeviceFormPage } from '@/features/devices/DeviceFormPage';
 import { DeviceGridPage } from '@/features/devices/DeviceGridPage';
 
 import { AppShell } from './AppShell';
@@ -55,7 +56,27 @@ const deviceRoute = createRoute({
   component: DeviceDetailPage,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, devicesRoute, deviceRoute]);
+// Static segments win over the `$deviceId` param in TanStack Router, so
+// `/devices/new` is never read as a device id.
+const newDeviceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/devices/new',
+  component: DeviceFormPage,
+});
+
+const editDeviceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/devices/$deviceId/edit',
+  component: DeviceFormPage,
+});
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  devicesRoute,
+  newDeviceRoute,
+  editDeviceRoute,
+  deviceRoute,
+]);
 
 /** `basepath` matches the nginx mount point, so links stay `/app/...`. */
 export const router = createRouter({

@@ -69,9 +69,22 @@ the server-side guard.
 | `GET /panel-api/v1/devices` | list with filters, server-side sort, paging |
 | `GET /panel-api/v1/devices/export` | CSV with the same filters/sort |
 | `GET /panel-api/v1/devices/{id}` | one device + custom values + attachments |
+| `POST /panel-api/v1/devices` | create (manager+), `201` + the created row |
+| `PATCH /panel-api/v1/devices/{id}` | partial update (manager+); `expected_updated_at` → `409 stale_record` |
+| `PUT /panel-api/v1/devices/{id}` | full replace (manager+, parity with the Bearer API) |
+| `DELETE /panel-api/v1/devices/{id}` | soft delete (admin+); `?hard=1` is superadmin-only |
+| `POST /panel-api/v1/devices/{id}/restore` | undo a soft delete (admin+, idempotent) |
+| `POST /panel-api/v1/devices/{id}/files` | multipart upload, server-side to S3 (manager+) |
+| `DELETE /panel-api/v1/devices/{id}/files/{fileId}` | remove object + row (admin+) |
 
-Everything else (writes, settings, users, attachments upload) is still phase 3
-and phase 6–7 work; until then the legacy pages remain available at `/`.
+Writes go through the same helpers as `public/api.php` (`asset_validate()`,
+`asset_create/update/soft_delete/restore/hard_delete()`,
+`custom_values_save()`), so the two APIs cannot disagree about what a valid
+device is. Role rules come from the server: `/meta.writeColumns` lists the keys
+the signed-in role may send, and the API rejects everything else with `422`.
+
+Settings, sources, custom-field definitions, API keys and user management are
+still phase 7; the legacy pages remain available at `/` until they land.
 
 ## Scripts
 
@@ -85,6 +98,18 @@ and phase 6–7 work; until then the legacy pages remain available at `/`.
 | `npm run test` | Vitest (jsdom) |
 | `npm run e2e` | Playwright (`vite preview` on :4173, panel API stubbed per test) |
 
+PHP side (the API itself):
+
+```bash
+php bin/check-i18n.php          # catalog coverage + unknown keys
+php bin/test-panel-api.php      # integration tests: role matrix, validation,
+                                # optimistic locking, delete/restore, isolation
+```
+
+`bin/test-panel-api.php` drives the real handlers against the configured
+database and hard-deletes everything it creates, so it is safe to run against a
+development database. It refuses to run with `APP_ENV=production`.
+
 ## Conventions
 
 * **Server owns the truth.** Sorting, filtering, paging and CSV export run in
@@ -95,6 +120,18 @@ and phase 6–7 work; until then the legacy pages remain available at `/`.
 * **URL is the state.** `?sort=&dir=&page=&per_page=&q=&source=&status=&company=&byod=&trashed=`
   is written with `history.replaceState` on every change, so a reload, a shared
   link and back/forward all reproduce the view (see `features/grid/gridSearch.ts`).
+* **Column layout is server-side.** The `Columns` picker writes `grid_state`
+  (`order`, `visible`) through `PATCH /session/preferences`; `applyColumnLayout()`
+  merges it with what `/meta` publishes, so a stored layout can never hide a
+  column the server stopped sending or lose a new one. Reordering is done with
+  `Move up` / `Move down` buttons, which keeps the picker keyboard-only.
+* **Writes are optimistic-locked.** `PATCH` carries `expected_updated_at`; a
+  `409 stale_record` leaves the form untouched, shows a "reload before saving"
+  alert and refreshes the cached row instead of overwriting someone else's edit.
+  Inline grid edits (Status, BYOD) use the same contract.
+* **Forms are generated from `/meta`.** `writeColumns.create|update` decide which
+  inputs exist for the current role — a manager's form has no `cypher_id` field,
+  and the API would reject it anyway.
 * **Sorting cycle:** unsorted → `asc` → `desc` → back to the server default
   (`updated_at DESC`, which leaves `sort` out of the URL). Every sort or filter
   change resets the page. `/meta` says which columns are sortable and what their
@@ -107,7 +144,11 @@ and phase 6–7 work; until then the legacy pages remain available at `/`.
 * **One theme mechanism**: `data-theme` on `<html>`; Tailwind's `dark:` variant
   is bound to that attribute in `styles/tokens.css`.
 * **Accessibility is not optional**: real table semantics, `aria-sort`,
-  keyboard-operable drag-and-drop, visible focus, AA contrast in both themes.
+  keyboard-operable column picker (checkbox + move buttons), an `aria-live`
+  result summary, visible focus, AA contrast in both themes.
+* **Failures are visible.** A render error is caught by `app/ErrorBoundary.tsx`
+  (message + retry + a way back) instead of blanking the mount point, and every
+  mutation reports its outcome through a toast.
 
 ## How translations reach the SPA
 

@@ -1,11 +1,19 @@
-import { Link, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, Button, Spinner } from '@/components/ui';
+import { useCurrentSession } from '@/features/auth/SessionContext';
 import { formatBytes, formatDateTime } from '@/lib/format';
 
 import type { DeviceDetail, MetaPayload } from './api';
 import { cellContext, cellValue, GridCell } from './columns';
+import {
+  useDeleteDevice,
+  useDeleteDeviceFile,
+  useRestoreDevice,
+  useUploadDeviceFile,
+} from './useDeviceMutations';
 import { useDevice, useMeta } from './useDevices';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -45,6 +53,147 @@ function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayloa
         </Row>
       ))}
     </dl>
+  );
+}
+
+/** Edit / delete / restore actions, gated by the server-published capabilities. */
+function DeviceActions({ device }: { device: DeviceDetail }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const session = useCurrentSession();
+  const deleteDevice = useDeleteDevice();
+  const restoreDevice = useRestoreDevice();
+  const trashed = device.deleted_at !== null;
+
+  const onDelete = async (hard: boolean) => {
+    const message = hard ? t('ui_confirm_hard_delete') : t('delete_confirm');
+    if (!window.confirm(message)) {
+      return;
+    }
+    try {
+      await deleteDevice.mutateAsync({ id: device.id, hard });
+      void navigate({ to: '/devices' });
+    } catch {
+      // the mutation already toasted the error
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {session.capabilities.can_write && !trashed ? (
+        <Link
+          to="/devices/$deviceId/edit"
+          params={{ deviceId: String(device.id) }}
+          className="inline-flex items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-surface-2)]"
+        >
+          {t('edit')}
+        </Link>
+      ) : null}
+      {session.capabilities.can_admin && trashed ? (
+        <Button
+          variant="primary"
+          disabled={restoreDevice.isPending}
+          onClick={() => restoreDevice.mutate(device.id)}
+        >
+          {t('ui_restore')}
+        </Button>
+      ) : null}
+      {session.capabilities.can_admin && !trashed ? (
+        <Button variant="danger" disabled={deleteDevice.isPending} onClick={() => void onDelete(false)}>
+          {t('delete')}
+        </Button>
+      ) : null}
+      {session.capabilities.can_superadmin ? (
+        <Button variant="ghost" disabled={deleteDevice.isPending} onClick={() => void onDelete(true)}>
+          {t('ui_hard_delete')}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Attachment list + upload/remove controls. */
+function FilesSection({ device }: { device: DeviceDetail }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? 'en-US';
+  const session = useCurrentSession();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const upload = useUploadDeviceFile(device.id);
+  const remove = useDeleteDeviceFile(device.id);
+
+  const onFileChange = async (file: File | null) => {
+    if (file === null) {
+      return;
+    }
+    setPendingName(file.name);
+    try {
+      await upload.mutateAsync(file);
+    } catch {
+      // the mutation already toasted the error
+    } finally {
+      setPendingName(null);
+      if (inputRef.current !== null) {
+        inputRef.current.value = '';
+      }
+    }
+  };
+
+  return (
+    <div className="card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="m-0 text-base font-semibold">{t('files_title')}</h2>
+        {session.capabilities.can_write && session.features.attachments ? (
+          <div className="flex items-center gap-2">
+            <input
+              ref={inputRef}
+              type="file"
+              aria-label={t('upload_title')}
+              className="max-w-[14rem] text-xs file:me-2 file:rounded-[var(--radius-md)] file:border file:border-[var(--color-border)] file:bg-[var(--color-surface-2)] file:px-2 file:py-1 file:text-xs"
+              onChange={(event) => void onFileChange(event.target.files?.[0] ?? null)}
+            />
+            {upload.isPending ? (
+              <span className="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+                <Spinner className="size-3" /> {t('ui_uploading')}
+                {pendingName === null ? null : <span className="max-w-[12ch] truncate">{pendingName}</span>}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {device.files.length === 0 ? (
+        <p className="m-0 mt-2 text-sm text-[var(--color-muted)]">{t('no_files')}</p>
+      ) : (
+        <ul className="m-0 mt-2 list-none p-0">
+          {device.files.map((file) => (
+            <li
+              key={file.id}
+              className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--color-border)] py-2 last:border-b-0"
+            >
+              <span className="min-w-0 break-all">{file.name}</span>
+              <span className="flex items-center gap-3 text-xs whitespace-nowrap text-[var(--color-muted)]">
+                {formatBytes(file.size, locale)} · {formatDateTime(file.uploaded_at, locale)}
+                {session.capabilities.can_admin ? (
+                  <button
+                    type="button"
+                    className="text-[var(--color-danger)] hover:underline"
+                    disabled={remove.isPending}
+                    onClick={() => {
+                      if (window.confirm(t('ui_confirm_remove_file'))) {
+                        remove.mutate(file.id);
+                      }
+                    }}
+                  >
+                    {t('ui_remove_file')}
+                  </button>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -116,32 +265,23 @@ export function DeviceDetailPage() {
             {device.company !== null && device.company !== '' ? ` · ${device.company}` : ''}
           </p>
         </div>
+        <DeviceActions device={device} />
       </div>
+
+      {device.deleted_at !== null ? (
+        <Alert tone="warning" title={t('ui_trashed')}>
+          <p className="m-0">
+            {t('col_deleted_at')}: {formatDateTime(device.deleted_at, locale)}
+          </p>
+        </Alert>
+      ) : null}
 
       <div className="card p-4">
         <DetailFields device={device} meta={metaQuery.data} />
       </div>
 
-      <div className="card p-4">
-        <h2 className="m-0 text-base font-semibold">{t('files_title')}</h2>
-        {device.files.length === 0 ? (
-          <p className="m-0 mt-2 text-sm text-[var(--color-muted)]">{t('no_files')}</p>
-        ) : (
-          <ul className="m-0 mt-2 list-none p-0">
-            {device.files.map((file) => (
-              <li
-                key={file.id}
-                className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--color-border)] py-2 last:border-b-0"
-              >
-                <span className="min-w-0 break-all">{file.name}</span>
-                <span className="text-xs whitespace-nowrap text-[var(--color-muted)]">
-                  {formatBytes(file.size, locale)} · {formatDateTime(file.uploaded_at, locale)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <FilesSection device={device} />
     </section>
   );
 }
+

@@ -4,7 +4,8 @@
 > starts by re-reading it. Update it at the end of each phase (mark progress,
 > record deviations in §17) so context is never lost.
 >
-> Status: **in progress** — phase 0/1 (plan + session auth layer).
+> Status: **in progress** — phases 0–3 done, phase 4 shell done (settings routes
+> moved to 7), phase 5 grid mostly done (selection/bulk pending), phase 6 core done.
 
 ## 1. Goals
 
@@ -405,14 +406,29 @@ Estimates are focus days for one developer.
   Globex, Globex admin cannot read Acme), CSV with `Anexos`/`Não` in pt-BR — all
   verified against the dev stack on 2026-11-02.
 
-### Phase 3 — devices write API (3–4 d)
+### Phase 3 — devices write API (3–4 d) ✅ done
 
-* `POST`, `PATCH` (+`expected_updated_at`, `409 stale_record`), `PUT`,
-  `DELETE` (soft/hard), `POST /restore`, attachments presign/register/delete.
-* All writes go through `asset_create/update/soft_delete` +
-  `field_validate`/`custom_values_save` so both APIs validate identically.
-* Done when: role matrix enforced (user/manager/admin/superadmin) and covered by
-  PHP integration tests (`bin/test-panel-api.php` or `tests/` w/ PHPUnit).
+* [x] `POST /devices` (manager+), `PATCH` (+`expected_updated_at`,
+  `409 stale_record`), `PUT` (full replace), `DELETE` (soft by default, `?hard=1`
+  superadmin-only), `POST /devices/{id}/restore` (idempotent).
+* [x] `lib/panel/device_writes.php`: all writes go through `asset_validate()` +
+  `asset_create/update/soft_delete/restore/hard_delete()` +
+  `custom_values_save()`, so both APIs validate identically; unknown/forbidden
+  keys become `422` with snake_case field names (`panel_device_error_keys()`).
+* [x] Role matrix from `panel_device_writable_columns()` (create columns ∪ grid
+  inline columns ∪ `source`/`source_ref`, `UUID` for admin+); company-bound
+  accounts can never widen or move the scope, unrestricted ones must name a
+  company on create.
+* [x] Attachments: `POST /devices/{id}/files` (multipart → server-side S3 put,
+  `503 storage_not_configured` when the bucket/key is missing) and
+  `DELETE /devices/{id}/files/{fileId}` (object best effort + row).
+* [x] `/meta` publishes `writeColumns` (create/update) and `limits`
+  (`requireSn`, `maxUploadBytes`) so the SPA renders the right form.
+* [x] `bin/test-panel-api.php`: 49 assertions covering the role matrix, validation
+  (unknown/forbidden field, required SN, unknown source, invalid status, duplicate
+  SN), optimistic locking, company isolation, soft delete → hidden → `trashed=1`
+  → restore → hard delete, CSRF `419`, and the read-sort contract.
+  Verified in the dev image on 2026-11-02 (`49 passed, 0 failed`).
 
 ### Phase 4 — SPA shell + design system (4–5 d) 🚧 scaffold done
 
@@ -436,7 +452,10 @@ Estimates are focus days for one developer.
 * [x] `GET /panel-api/v1/i18n` + `src/i18n/index.ts`: the SPA loads the merged
   catalogue at runtime (PHP catalogs stay the only source of truth) and applies
   `lang`/`dir` on `<html>`.
-* [ ] `/settings/*` routes, error boundary, keyboard-only walkthrough — next.
+* [x] `/settings/*` routes — **not started**, moved to phase 7; the error boundary
+  (`app/ErrorBoundary.tsx`) and the keyboard walkthrough landed instead.
+* [x] Error boundary: a render error shows a message, "Try again" and a way back
+  instead of blanking the mount point.
 * [x] Multi-stage Dockerfile (`vendor` → `ui` on `node:24-alpine` → runtime) and
   nginx `/app/` locations (immutable assets, `no-store` shell, history fallback) —
   landed with phase 4 so the scaffold could be verified end-to-end.
@@ -452,22 +471,33 @@ Estimates are focus days for one developer.
   headers with `aria-sort`, attachments column, CSV export with the same query,
   debounced search, paging + page-size control, loading skeleton, empty and error
   states, keyboard-activatable rows.
-* [x] Tests: 16 unit tests for the state machine (`gridSearch`) + 4 component
-  tests for the table + 2 Playwright specs (sort cycle and URL persistence,
-  filters/paging) against the real bundle.
-* [ ] Column picker (drag + keyboard) with persisted `grid_state`, inline edit with
-  optimistic locking, selection + bulk actions, `aria-live` result announcements,
-  360 px viewport audit.
+* [x] Tests: 16 unit tests for the state machine (`gridSearch`) + 12 for the column
+  layout (`columnLayout`) + 4 component tests for the table + 4 Playwright specs
+  (sort cycle/URL persistence, filters/paging, create form payload, column layout
+  persistence) against the real bundle.
+* [x] Column picker persisted in `grid_state` (`order`, `visible`) with checkbox +
+  `Move up`/`Move down` buttons (keyboard-only; pointer drag is deferred).
+* [x] Inline edit with optimistic locking: Status (`select`) and boolean columns
+  (`checkbox`) PATCH the row with `expected_updated_at`; a `409` shows
+  "changed by someone else" and refreshes the page data.
+* [x] `aria-live` result summary (`ui_showing_range`) next to the table.
+* [ ] Selection + bulk actions, 360 px viewport audit.
 * Done when: each §2.1 regression has a test (see §10) and the grid is usable on
   a 360 px viewport.
 
-### Phase 6 — device detail, create/edit, attachments (4–5 d)
+### Phase 6 — device detail, create/edit, attachments (4–5 d) ✅ core done
 
 * [x] Read-only detail page (`/app/devices/:id`): every published column, custom
   values, attachment list (name/size/date), back to the grid.
-* [ ] Edit drawer with tabs (Overview / Custom fields / Attachments / History),
-  `react-hook-form` + `zod` schemas derived from `/meta` field defs, presigned
-  upload with progress, delete/restore.
+* [x] Create/edit form (`/app/devices/new`, `/app/devices/:id/edit`) generated
+  from `/meta.writeColumns` (role matrix stays on the server), with per-field
+  `422` errors, required/duplicate custom-field handling, and a `409`
+  "reload before saving" state.
+* [x] Delete (soft) / restore / hard delete (superadmin) from the detail page,
+  gated by `capabilities`; attachments upload + remove (server-side S3 put).
+* [ ] Tabbed edit drawer, `react-hook-form` + `zod` client schemas, upload
+  progress — the controlled form covers the same fields today; revisit if the
+  field count grows.
 
 ### Phase 7 — settings, sources, fields, API keys, users (5–6 d)
 
@@ -504,7 +534,7 @@ Estimates are focus days for one developer.
 | PHP syntax | `php -l <file>` on every changed PHP file | every commit |
 | PHP behaviour | `php bin/migrate.php --dry-run`, `php bin/check-i18n.php` | every commit touching `lib/`, `bin/`, `public/lang/` |
 | Panel API (manual) | `curl -i -c /tmp/c -b /tmp/c …` (§10.1) | phase 1+ |
-| Panel API (auto) | `php bin/test-panel-api.php` (integration, temp DB) | phase 2+ |
+| Panel API (auto) | `php bin/test-panel-api.php` (integration, dev DB, self-cleaning) | phase 2+ |
 | SPA types | `npm --prefix ui run typecheck` | every UI commit |
 | SPA lint | `npm --prefix ui run lint` | every UI commit |
 | SPA unit | `npm --prefix ui run test` (`vitest run --coverage`) | every UI commit |
@@ -648,4 +678,11 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 4 | `nextSort` returns to the server default (empty `sort`) on the third click instead of cycling to "unsorted" | there is no client-side ordering to fall back to; the default is `updated_at DESC` and is echoed in `/devices` `meta.sort` |
 | 2026-11-02 | 4 | Physical inline-axis utilities stay banned, so the ESLint rule needed a documented exception for `_`-prefixed unused args | `nextSort(state, column, defaults)` keeps the defaults parameter for symmetry with the other helpers |
 | 2026-11-02 | fix | `curl_close()` removed from `auth_keycloak.php` (PHP 8.5 deprecation) and `display_errors` forced off in `public/auth.php` | the notice was printed *before* the `Location:` header on the OIDC callback, which broke the Keycloak login with "Deprecated: Function curl_close() is deprecated…". Handles are objects freed at scope end since PHP 8.0, and a browser-facing redirect endpoint must never emit diagnostics |
-
+| 2026-11-02 | 3 | Attachments are uploaded as multipart `POST /devices/{id}/files` (server-side S3 put) instead of presign + browser-to-bucket | `S3Client` only presigns GET URLs, and the legacy page already uploaded server-side; this reuses the working path and keeps credentials out of JavaScript. A presigned PUT can be added behind the same route later |
+| 2026-11-02 | 3 | `expected_updated_at` stays optional on `PATCH` | scripts and the Bearer API keep the simple contract while the SPA always sends it; documented in `docs/frontend.md` |
+| 2026-11-02 | 3 | Moving a device between companies is rejected (`company: immutable`) | the read paths scope every query by company, so allowing a move from one form would silently expose the row to the other tenant |
+| 2026-11-02 | 3 | `bin/test-panel-api.php` drives the real handlers through a `$GLOBALS['APP_TEST_JSON_BODY']` seam in `request_json_body()` | gives CLI coverage of the real write path (role matrix, locking, cascade) without a web server or a second copy of the logic; only that script sets the global |
+| 2026-11-02 | 4 | `/meta.writeColumns` (`create`/`update`) added instead of reusing `columns[].editable` | `editable` describes grid cells (7 role-filtered columns); a form needs create-vs-update plus every form column, and the role matrix must stay server-side |
+| 2026-11-02 | 4 | The error boundary renders untranslated English | the failure may be the i18n catalogue itself, so a hard-coded fallback is the only message guaranteed to paint |
+| 2026-11-02 | 5 | Column reordering uses `Move up`/`Move down` buttons, not pointer drag | keyboard-first, screen-reader friendly and directly testable; `@dnd-kit` stays pinned for the selection/bulk work |
+| 2026-11-02 | 5 | Inline editing is limited to Status and boolean columns | the other editable columns (dates, e-mail, notes) need per-type editors; the edit form already covers them, and the grid keeps the two fields that are actually toggled in bulk |

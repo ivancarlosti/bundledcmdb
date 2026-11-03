@@ -117,6 +117,9 @@ export type MetaPayload = {
   capabilities: { role: string; rank: number; can_write: boolean; can_admin: boolean; can_superadmin: boolean };
   defaultSort: { sort: string; dir: 'asc' | 'desc' };
   virtualSorts: string[];
+  /** Wire keys the current role may write (server-side role matrix). */
+  writeColumns: { create: string[]; update: string[] };
+  limits: { requireSn: boolean; maxUploadBytes: number };
   schemaReady: boolean;
 };
 
@@ -149,4 +152,49 @@ export function fetchDevice(id: number): Promise<DeviceDetail> {
 /** Direct link for the CSV export — same filters and sort, no paging. */
 export function deviceExportUrl(state: GridState): string {
   return apiUrl(`/devices/export${devicesFilterQuery(state)}`);
+}
+
+/**
+ * Body of a write call: snake_case keys (the same ones `/meta` publishes as
+ * `api_key`), an optional `custom` map and — for `PATCH` — the timestamp the
+ * form was rendered from, so a concurrent edit becomes a `409 stale_record`
+ * instead of a lost update.
+ */
+export type DeviceWriteBody = {
+  custom?: Record<string, unknown>;
+  expected_updated_at?: string;
+  [key: string]: unknown;
+};
+
+export type DeviceDeleteResult = { id: number; deleted: boolean; hard: boolean };
+
+export function createDevice(body: DeviceWriteBody): Promise<DeviceDetail> {
+  return apiRequest<DeviceDetail>('/devices', { method: 'POST', body });
+}
+
+export function updateDevice(id: number, body: DeviceWriteBody): Promise<DeviceDetail> {
+  return apiRequest<DeviceDetail>(`/devices/${id}`, { method: 'PATCH', body });
+}
+
+export function deleteDevice(id: number, hard = false): Promise<DeviceDeleteResult> {
+  return apiRequest<DeviceDeleteResult>(`/devices/${id}${hard ? '?hard=1' : ''}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Restore a soft-deleted device; the payload is the refreshed device. */
+export async function restoreDevice(id: number): Promise<{ device: DeviceDetail; restored: boolean }> {
+  const result = await apiRequestEnvelope<DeviceDetail>(`/devices/${id}/restore`, { method: 'POST' });
+  return { device: result.data, restored: result.meta.restored === true };
+}
+
+/** Upload one attachment (multipart; the server puts the object in S3). */
+export function uploadDeviceFile(id: number, file: File): Promise<DeviceFile> {
+  const form = new FormData();
+  form.set('file', file);
+  return apiRequest<DeviceFile>(`/devices/${id}/files`, { method: 'POST', form });
+}
+
+export function deleteDeviceFile(id: number, fileId: number): Promise<{ id: number; deleted: boolean }> {
+  return apiRequest<{ id: number; deleted: boolean }>(`/devices/${id}/files/${fileId}`, { method: 'DELETE' });
 }

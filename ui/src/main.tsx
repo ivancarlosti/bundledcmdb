@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { App } from '@/App';
+import { ErrorBoundary } from '@/app/ErrorBoundary';
 import '@/styles/tokens.css';
 
 const container = document.getElementById('root');
@@ -21,8 +22,10 @@ const queryClient = new QueryClient({
 
 createRoot(container).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

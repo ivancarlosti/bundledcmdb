@@ -91,6 +91,82 @@ export function GridCell({ value, columnKey, type, locale, t, statusLabels, sour
   );
 }
 
+/** Inline editing of a cell (Status / BYOD) inside the grid. */
+export type InlineEditOptions = {
+  /** True while a write is in flight — the controls are disabled meanwhile. */
+  busy: boolean;
+  onEdit: (row: DeviceRow, key: string, value: string | boolean) => void;
+};
+
+function InlineSelect({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const known = options.some((option) => option.value === value);
+  return (
+    <select
+      aria-label={label}
+      className="h-7 max-w-[12rem] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-xs text-[var(--color-text)]"
+      value={value}
+      disabled={disabled}
+      // The row itself is a click target (it opens the detail page); editing a
+      // cell must not navigate away or activate the row from the keyboard.
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      onChange={(event) => {
+        event.stopPropagation();
+        onChange(event.target.value);
+      }}
+    >
+      {known ? null : <option value={value}>{value}</option>}
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function InlineCheckbox({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      className="size-4 accent-[var(--color-accent)]"
+      checked={checked}
+      disabled={disabled}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      onChange={(event) => {
+        event.stopPropagation();
+        onChange(event.target.checked);
+      }}
+    />
+  );
+}
+
+/**
+
 /**
  * Build the TanStack Table column model from `/meta`.
  *
@@ -106,7 +182,12 @@ export function cellContext(meta: MetaPayload, t: TFunction, locale: string) {
   };
 }
 
-export function buildColumns(meta: MetaPayload, t: TFunction, locale: string): GridColumn[] {
+export function buildColumns(
+  meta: MetaPayload,
+  t: TFunction,
+  locale: string,
+  inline?: InlineEditOptions,
+): GridColumn[] {
   const context = cellContext(meta, t, locale);
   const columns: GridColumn[] = [];
 
@@ -114,19 +195,53 @@ export function buildColumns(meta: MetaPayload, t: TFunction, locale: string): G
     if (!column.in_grid) {
       continue;
     }
+
+    const editable = inline !== undefined && column.editable && !column.virtual;
+    const label = t(column.label_key, { defaultValue: column.label });
+
     columns.push({
       id: column.key,
       accessorFn: (row) => cellValue(row, column),
-      header: t(column.label_key, { defaultValue: column.label }),
+      header: label,
       enableSorting: column.sortable,
-      cell: ({ getValue }) => (
-        <GridCell
-          value={getValue()}
-          columnKey={column.key}
-          type={column.type}
-          {...context}
-        />
-      ),
+      cell: ({ getValue, row }) => {
+        if (!editable) {
+          return (
+            <GridCell value={getValue()} columnKey={column.key} type={column.type} {...context} />
+          );
+        }
+
+        if (column.key === 'Status') {
+          const value = typeof getValue() === 'string' ? (getValue() as string) : '';
+          return (
+            <InlineSelect
+              label={label}
+              value={value}
+              disabled={inline.busy}
+              options={meta.statuses.map((status) => ({
+                value: status.value,
+                label: t(status.label_key),
+              }))}
+              onChange={(next) => inline.onEdit(row.original, column.api_key, next)}
+            />
+          );
+        }
+
+        if (column.type === 'bool') {
+          return (
+            <InlineCheckbox
+              label={label}
+              checked={getValue() === true}
+              disabled={inline.busy}
+              onChange={(next) => inline.onEdit(row.original, column.api_key, next)}
+            />
+          );
+        }
+
+        return (
+          <GridCell value={getValue()} columnKey={column.key} type={column.type} {...context} />
+        );
+      },
       meta: { align: column.type === 'int' ? 'end' : 'start' },
     });
   }

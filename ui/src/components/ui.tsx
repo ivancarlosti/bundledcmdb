@@ -7,7 +7,13 @@
  * grid came from hand-rolled widgets).
  */
 
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from 'react';
 
 import { cn } from '@/lib/cn';
 
@@ -61,6 +67,21 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
     >
       {children}
     </select>
+  );
+}
+
+export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>;
+
+export function Textarea({ className, rows = 3, ...props }: TextareaProps) {
+  return (
+    <textarea
+      rows={rows}
+      className={cn(
+        'w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)]',
+        className,
+      )}
+      {...props}
+    />
   );
 }
 

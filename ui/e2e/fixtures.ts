@@ -56,6 +56,22 @@ export const MESSAGES: Record<string, string> = {
   col_updated_at: 'Updated at',
   col_company: 'Company',
   col_byod: 'BYOD',
+  ui_new_device: 'New device',
+  ui_edit_device: 'Edit device',
+  ui_columns: 'Columns',
+  ui_columns_hint: 'Choose the columns to show, and their order.',
+  ui_move_up: 'Move {{name}} up',
+  ui_move_down: 'Move {{name}} down',
+  ui_reset_columns: 'Reset columns',
+  ui_saved: 'Saved.',
+  ui_stale_record: 'This device was changed by someone else. Reload before saving.',
+  ui_reload: 'Reload',
+  create_asset: 'Create asset',
+  save_changes: 'Save Changes',
+  cancel: 'Cancel',
+  custom_fields: 'Custom fields',
+  edit: 'Edit',
+  delete: 'Delete',
 };
 
 export const SESSION = {
@@ -93,6 +109,8 @@ export const META = {
   capabilities: SESSION.capabilities,
   defaultSort: { sort: 'updated_at', dir: 'desc' },
   virtualSorts: ['files'],
+  writeColumns: { create: ['sn', 'hostname', 'status', 'source'], update: ['sn', 'hostname', 'status'] },
+  limits: { requireSn: true, maxUploadBytes: 26214400 },
   schemaReady: true,
 };
 
@@ -180,6 +198,8 @@ export const ROWS = [
 export type MockOptions = {
   /** Called with every list URL, so a test can assert the server-side query. */
   onDevices?: (url: string) => void;
+  /** Called with the JSON body of every `POST /devices`, so a test can assert it. */
+  onCreate?: (body: Record<string, unknown>) => void;
   pages?: number;
   total?: number;
 };
@@ -199,7 +219,24 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
   await page.route('**/panel-api/v1/meta', (route) => json(route, META));
 
   await page.route('**/panel-api/v1/devices**', (route) => {
-    const url = route.request().url();
+    const request = route.request();
+    const url = request.url();
+
+    // Writes: answer like `POST /devices` does (201 + the created row).
+    if (request.method() !== 'GET') {
+      let body: Record<string, unknown> = {};
+      try {
+        body = (request.postDataJSON() ?? {}) as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+      options.onCreate?.(body);
+      return route.fulfill({
+        status: 201,
+        json: { ok: true, data: { ...ROWS[0], ...body, id: 99, files: [] }, meta: { created: true } },
+      });
+    }
+
     if (url.includes('/devices/export')) {
       return route.fulfill({ status: 200, contentType: 'text/csv', body: 'SN;Hostname\n' });
     }
