@@ -365,6 +365,100 @@ try {
     as_role('user', $companyA);
     check_error('files: user cannot upload → 403', fn () => panel_devices_files_store(['id' => (string) $id]), 'forbidden', 403);
 
+    // --- bulk --------------------------------------------------------------
+    // Bulk actions are the grid's "select some rows" path: one request, one
+    // operation, per-row results even when some rows are stale or out of scope.
+    as_role('manager', $companyA);
+    $secondBody = $createBody;
+    $secondBody['sn'] = $sn . '-2';
+    $secondBody['hostname'] = 'TEST-HOST-2';
+    body($secondBody);
+    $second = panel_devices_create();
+    $secondId = (int) $second['data']['id'];
+    $createdIds[] = $secondId;
+
+    as_role('manager', $companyA);
+    body(['ids' => [$id, $secondId], 'op' => 'status', 'value' => $statusB]);
+    $bulkStatus = panel_devices_bulk();
+    check(($bulkStatus['meta']['changed'] ?? 0) === 2, 'bulk: status applies to every id');
+    $freshRow = asset_get($pdo, $id, null, true);
+    check(($freshRow['Status'] ?? null) === $statusB, 'bulk: status written to the row');
+
+    body(['ids' => [$id], 'op' => 'byod', 'value' => false]);
+    panel_devices_bulk();
+    $freshRow = asset_get($pdo, $id, null, true);
+    check(asset_bool_parse($freshRow['BYOD'] ?? null) === false, 'bulk: byod written to the row');
+
+    check_error('bulk: unknown op → 422', function (): void {
+        body(['ids' => [1], 'op' => 'explode']);
+        panel_devices_bulk();
+    }, 'validation_failed', 422, ['op' => 'invalid']);
+
+    check_error('bulk: unknown status → 422', function (): void {
+        body(['ids' => [1], 'op' => 'status', 'value' => 'Not A Status']);
+        panel_devices_bulk();
+    }, 'validation_failed', 422, ['value' => 'invalid_status']);
+
+    check_error('bulk: empty ids → 422', function (): void {
+        body(['ids' => [], 'op' => 'status', 'value' => 'In Use']);
+        panel_devices_bulk();
+    }, 'validation_failed', 422, ['ids' => 'required']);
+
+    check_error('bulk: non-numeric ids → 422', function (): void {
+        body(['ids' => ['abc'], 'op' => 'status', 'value' => 'In Use']);
+        panel_devices_bulk();
+    }, 'validation_failed', 422, ['ids' => 'invalid']);
+
+    check_error('bulk: too many ids → 422', function (): void {
+        body(['ids' => range(1, PANEL_BULK_MAX_IDS + 1), 'op' => 'status', 'value' => 'In Use']);
+        panel_devices_bulk();
+    }, 'validation_failed', 422, ['ids' => 'too_many']);
+
+    check_error('bulk: manager cannot delete → 403', function (): void {
+        body(['ids' => [1], 'op' => 'delete']);
+        panel_devices_bulk();
+    }, 'forbidden', 403);
+
+    as_role('manager', $companyA);
+    $_SERVER['HTTP_X_CSRF_TOKEN'] = 'not-the-token';
+    body(['ids' => [$id], 'op' => 'status', 'value' => 'In Use']);
+    check_error('bulk: CSRF required → 419', fn () => panel_devices_bulk(), 'invalid_csrf', 419);
+    $_SERVER['HTTP_X_CSRF_TOKEN'] = $csrfHeader;
+
+    as_role('admin', $companyA);
+    body(['ids' => [$id, $secondId], 'op' => 'delete']);
+    $bulkDeleted = panel_devices_bulk();
+    check(($bulkDeleted['meta']['changed'] ?? 0) === 2, 'bulk: admin soft deletes every id');
+    $trashedRow = asset_get($pdo, $id, null, true);
+    check($trashedRow !== null && $trashedRow['deleted_at'] !== null, 'bulk: delete sets deleted_at');
+
+    body(['ids' => [$id, $secondId], 'op' => 'delete']);
+    $bulkAgain = panel_devices_bulk();
+    check(($bulkAgain['meta']['skipped'] ?? 0) === 2, 'bulk: deleting twice is reported as skipped');
+    check(($bulkAgain['data']['skipped'][0]['code'] ?? '') === 'already_deleted', 'bulk: skip code is already_deleted');
+
+    as_role('manager', $companyA);
+    body(['ids' => [$id], 'op' => 'status', 'value' => $statusA]);
+    $bulkTrashed = panel_devices_bulk();
+    check(($bulkTrashed['data']['skipped'][0]['code'] ?? '') === 'conflict', 'bulk: deleted rows are skipped, not updated');
+
+    as_role('admin', $companyA);
+    body(['ids' => [$id, $secondId], 'op' => 'restore']);
+    $bulkRestored = panel_devices_bulk();
+    check(($bulkRestored['meta']['changed'] ?? 0) === 2, 'bulk: restore every id');
+
+    body(['ids' => [$id], 'op' => 'restore']);
+    $bulkNoop = panel_devices_bulk();
+    check(($bulkNoop['data']['skipped'][0]['code'] ?? '') === 'unchanged', 'bulk: restoring a live row is skipped');
+
+    if ($companyB !== '') {
+        as_role('manager', $companyB, 'other-company@example.com');
+        body(['ids' => [$id], 'op' => 'status', 'value' => $statusB]);
+        $bulkForeign = panel_devices_bulk();
+        check(($bulkForeign['meta']['changed'] ?? -1) === 0, 'bulk: other company rows are not changed');
+        check(($bulkForeign['data']['skipped'][0]['code'] ?? '') === 'not_found', 'bulk: other company rows skip as not_found');
+    }
+
     // --- hard delete -------------------------------------------------------
     as_role('superadmin', '');
     $_GET = ['hard' => '1'];

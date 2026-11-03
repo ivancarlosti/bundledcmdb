@@ -31,6 +31,7 @@ function panel_routes(): array
         ['GET',   '/devices',             'panel_devices_index'],
         ['GET',   '/devices/export',      'panel_devices_export'],
         ['POST',  '/devices',             'panel_devices_create'],
+        ['POST',  '/devices/bulk',        'panel_devices_bulk'],
         ['POST',  '/devices/{id}/restore', 'panel_devices_restore'],
         ['GET',   '/devices/{id}/files',  'panel_devices_files_index'],
         ['POST',  '/devices/{id}/files',  'panel_devices_files_store'],

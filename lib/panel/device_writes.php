@@ -5,6 +5,8 @@ declare(strict_types=1);
  * lib/panel/device_writes.php — device mutations for the panel API.
  *
  *   POST   /panel-api/v1/devices                     create            (manager+)
+ *   POST   /panel-api/v1/devices/bulk                bulk status/byod/delete/restore
+ *                                                    (manager+ / admin+ / superadmin)
  *   PATCH  /panel-api/v1/devices/{id}                partial update    (manager+)
  *   PUT    /panel-api/v1/devices/{id}                full replace      (manager+)
  *   DELETE /panel-api/v1/devices/{id}                soft/hard delete  (admin+, hard = superadmin)
@@ -521,6 +523,149 @@ function panel_devices_restore(array $params = []): array
     }
 
     return ['data' => panel_device_write_payload($pdo, $fresh), 'meta' => ['restored' => $restored]];
+}
+
+
+/** Rows one bulk request may touch (the SPA never sends more than a page). */
+const PANEL_BULK_MAX_IDS = 200;
+
+/**
+ * Validate the `ids` list of a bulk request.
+ *
+ * @return list<int> unique ids, in the order they were sent
+ *
+ * @throws ApiError('validation_failed', …, 422)
+ */
+function panel_bulk_ids(mixed $raw): array
+{
+    if (!is_array($raw) || $raw === []) {
+        throw new ApiError('validation_failed', 'Send a non-empty ids array.', 422, ['ids' => 'required']);
+    }
+
+    $ids = [];
+    foreach ($raw as $value) {
+        $valid = is_int($value) || (is_string($value) && ctype_digit($value));
+        if (!$valid || (int) $value <= 0) {
+            throw new ApiError('validation_failed', 'ids must be a list of device ids.', 422, ['ids' => 'invalid']);
+        }
+        // Keyed assignment dedupes while keeping the original order.
+        $ids[(int) $value] = (int) $value;
+    }
+
+    $ids = array_values($ids);
+    if (count($ids) > PANEL_BULK_MAX_IDS) {
+        throw new ApiError(
+            'validation_failed',
+            'A bulk request may touch at most ' . PANEL_BULK_MAX_IDS . ' devices.',
+            422,
+            ['ids' => 'too_many']
+        );
+    }
+
+    return $ids;
+}
+
+/**
+ * POST /devices/bulk — apply one operation to several devices.
+ *
+ *   {"ids": [1, 2], "op": "status", "value": "In Use"}   manager+
+ *   {"ids": [1, 2], "op": "byod",   "value": true}       manager+
+ *   {"ids": [1, 2], "op": "delete", "hard": false}       admin+
+ *   {"ids": [1, 2], "op": "restore"}                     admin+
+ *
+ * Each row goes through the same single-row helpers in its own transaction, so
+ * a stale, deleted or out-of-scope row cannot roll back the others. The answer
+ * says exactly what changed and why the rest did not (`skipped`), which the grid
+ * shows as "N updated, M skipped" instead of failing a 25-row action silently.
+ *
+ * The shared value is validated once: every row would fail identically and 200
+ * copies of one error is not a useful response.
+ */
+function panel_devices_bulk(array $params = []): array
+{
+    $user = session_require_role(['manager', 'admin', 'superadmin']);
+    session_csrf_require();
+    $pdo = db();
+
+    $body = request_json_body();
+    $op = trim((string) ($body['op'] ?? ''));
+    if (!in_array($op, ['status', 'byod', 'delete', 'restore'], true)) {
+        throw new ApiError('validation_failed', 'Unknown bulk operation.', 422, ['op' => 'invalid']);
+    }
+
+    $rank = session_role_rank($user['role']);
+    if ($op === 'delete' || $op === 'restore') {
+        if ($rank < session_role_rank('admin')) {
+            throw new ApiError('forbidden', 'Only an admin can delete or restore devices.', 403);
+        }
+    }
+
+    $hard = $op === 'delete' && filter_var($body['hard'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    if ($hard && $rank < session_role_rank('superadmin')) {
+        throw new ApiError('forbidden', 'Only a superadmin can delete devices permanently.', 403);
+    }
+
+    $ids = panel_bulk_ids($body['ids'] ?? null);
+
+    $value = null;
+    if ($op === 'status') {
+        $value = (string) ($body['value'] ?? '');
+        if (!in_array($value, asset_status_values(), true)) {
+            throw new ApiError('validation_failed', 'Unknown status.', 422, ['value' => 'invalid_status']);
+        }
+    } elseif ($op === 'byod') {
+        $raw = $body['value'] ?? null;
+        if (!is_bool($raw) && !in_array($raw, [0, 1, '0', '1', 'true', 'false'], true)) {
+            throw new ApiError('validation_failed', 'BYOD must be true or false.', 422, ['value' => 'invalid_boolean']);
+        }
+        $value = asset_bool_parse($raw);
+    }
+
+    $company = $user['company'] !== '' ? $user['company'] : null;
+    $changed = [];
+    $skipped = [];
+
+    foreach ($ids as $id) {
+        try {
+            $row = panel_device_for_write($pdo, $user, $id);
+
+            if ($op === 'delete') {
+                if (!empty($row['deleted_at'])) {
+                    $skipped[] = ['id' => $id, 'code' => 'already_deleted', 'message' => 'This device is already deleted.'];
+                    continue;
+                }
+                if ($hard) {
+                    asset_hard_delete($pdo, $id, $company);
+                } else {
+                    asset_soft_delete($pdo, $id, $user['email'], $company);
+                }
+            } elseif ($op === 'restore') {
+                if (empty($row['deleted_at'])) {
+                    $skipped[] = ['id' => $id, 'code' => 'unchanged', 'message' => 'This device is not deleted.'];
+                    continue;
+                }
+                asset_restore($pdo, $id, $user['email'], $company);
+            } else {
+                // Reuses PATCH: same validation, same company scope, same
+                // "deleted rows are read-only" rule.
+                panel_devices_save($pdo, $user, $row, [$op => $value], false);
+            }
+
+            $changed[] = $id;
+        } catch (ApiError $e) {
+            $skipped[] = [
+                'id'      => $id,
+                'code'    => $e->errorCode,
+                'message' => $e->getMessage(),
+                'errors'  => $e->errors,
+            ];
+        }
+    }
+
+    return [
+        'data' => ['op' => $op, 'updated' => $changed, 'skipped' => $skipped],
+        'meta' => ['changed' => count($changed), 'skipped' => count($skipped)],
+    ];
 }
 
 
