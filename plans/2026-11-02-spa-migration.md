@@ -365,14 +365,14 @@ generated directories above.
 
 Estimates are focus days for one developer.
 
-### Phase 0 — this plan (0.5 d) ✅ in progress
+### Phase 0 — this plan (0.5 d) ✅ done
 
 * [x] Baseline verified, regressions root-caused (§2.1)
 * [x] Endpoint inventory (§4), stack locked (§13)
 * [x] `plans/2026-11-02-spa-migration.md` + `docs/frontend.md` + README pointer
 * Done when: plan committed; no code changes yet.
 
-### Phase 1 — session auth + preferences (2–3 d)
+### Phase 1 — session auth + preferences (2–3 d) ✅ done
 
 * [x] `lib/session_auth.php`: `session_boot()`, `session_user()`,
   `session_require()`, `session_require_role()`, `session_csrf_require()`,
@@ -448,7 +448,7 @@ Estimates are focus days for one developer.
   → restore → hard delete, CSRF `419`, and the read-sort contract.
   plus bulk actions; verified in the dev image on 2026-11-02 (`68 passed, 0 failed`).
 
-### Phase 4 — SPA shell + design system (4–5 d) 🚧 scaffold done
+### Phase 4 — SPA shell + design system (4–5 d) ✅ done
 
 * [x] Vite scaffold with the pinned stack (§13), `base: '/app/'`,
   `build.outDir: '../public/app'`, dev proxy for `/panel-api`, `/auth`, `/api`;
@@ -483,7 +483,7 @@ Estimates are focus days for one developer.
 * Done when: light/dark/system switch with no flash and no reload; all 7 locales
   switch instantly incl. `ar-SA` RTL; shell passes a keyboard-only walkthrough.
 
-### Phase 5 — data grid (6–8 d)
+### Phase 5 — data grid (6–8 d) ✅ done
 
 * [x] Server-driven sort/filter/page through TanStack Table v8 (`manualSorting`),
   URL as state (`?sort=&dir=&page=&per_page=&q=&source=&status=&company=&byod=&trashed=`),
@@ -516,7 +516,7 @@ Estimates are focus days for one developer.
 * Done when: each §2.1 regression has a test (see §10) and the grid is usable on
   a 360 px viewport.
 
-### Phase 6 — device detail, create/edit, attachments (4–5 d) ✅ core done
+### Phase 6 — device detail, create/edit, attachments (4–5 d) ✅ done
 
 * [x] Read-only detail page (`/app/devices/:id`): every published column, custom
   values, attachment list (name/size/date), back to the grid.
@@ -557,7 +557,7 @@ Estimates are focus days for one developer.
   (blank secret = unchanged, `clear` to wipe) and `e2e/settings.spec.ts` covers a
   save, a per-key `422`, the roster gating and the `can_admin` guard.
 
-### Phase 8 — tests, CI, docs (3–4 d) 🚧 mostly done
+### Phase 8 — tests, CI, docs (3–4 d) ✅ done
 
 * [x] Vitest: `gridSearch` (16), `columnLayout` (12), `selection` (13),
   `deviceForm` (8), `DataGrid` component (4), `theme` (5) — 58 tests.
