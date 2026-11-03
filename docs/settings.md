@@ -83,6 +83,55 @@ Schema status (applied/pending migrations), secret-encryption state, a *Run
 migrations* button (with dry-run), and diagnostics (version, PHP, DB, timezone,
 counts).
 
+### Users (superadmin)
+The `users` roster with one role per e-mail. The e-mail is the identity of the
+row, so it is the path parameter of the write. A superadmin cannot change their
+own role (`409 self_role_change`): that would lock the instance out of user
+management with no way back in from the panel.
+
+## REST API (`/panel-api/v1/settings*`)
+
+The SPA renders the same tabs against these endpoints; the handlers are thin
+wrappers over `lib/settings.php`, so the legacy page and `/app/settings` cannot
+disagree about validation, defaults or protection rules.
+
+| Method + path | Role | Notes |
+|---|---|---|
+| `GET /settings` | admin | Settings grouped for the tabs + sources, locales, timezones and themes |
+| `PATCH /settings` | admin | `{ "values": {...}, "clear": [...] }`; answers the refreshed payload + `meta.saved` |
+| `GET /settings/sources` | admin | Includes `usage` (assets per source) |
+| `POST /settings/sources` | admin | `{ slug, label, color, is_default }` |
+| `PATCH /settings/sources/{slug}` | admin | `slug` is immutable |
+| `DELETE /settings/sources/{slug}` | admin | `409 system_source` / `409 in_use` |
+| `GET /settings/fields` | admin | Definitions + `usage` + the type/role lists |
+| `POST /settings/fields` | admin | `{ key, label, type, options, default, validation, required, unique, searchable, in_grid, editable_roles, sort_order, active }` |
+| `PATCH /settings/fields/{id}` | admin | Same body; omitted keys keep their stored value |
+| `DELETE /settings/fields/{id}` | admin | Also drops the stored EAV values |
+| `POST /settings/fields/reorder` | admin | `{ "ids": [3, 1, 2] }` — literal path, registered before `{id}` |
+| `GET /settings/api-keys` | admin | Keys (prefix only, never the hash) + sources |
+| `POST /settings/api-keys` | admin | The token is in `meta.token` **once** |
+| `PATCH /settings/api-keys/{id}` | admin | Scopes/label only, the token is untouched |
+| `POST /settings/api-keys/{id}/rotate` | admin | New token in `meta.token`; the old one dies immediately |
+| `DELETE /settings/api-keys/{id}` | admin | |
+| `GET /settings/users` | superadmin | `email`, `company`, `role`, `is_self` |
+| `PATCH /settings/users/{email}` | superadmin | `{ "role": "manager" }`, URL-encoded e-mail |
+| `GET /settings/maintenance` | admin | Migrations + diagnostics (no credentials) |
+| `POST /settings/maintenance/migrate` | admin | `{ "dry_run": true }` is the default; `meta.log` carries the steps |
+
+Two rules are worth calling out because they protect working installations:
+
+* **Secrets are write-only.** `GET` returns `value: ""` and `configured: true`, so
+  the SPA never holds a stored secret. `PATCH` treats an empty string on a
+  `secret` key as "unchanged"; wiping one is explicit (`{"clear": ["s3.secret_key"]}`).
+* **Validation is per key.** A rejected write answers
+  `422 { "error": { "code": "validation_failed", "errors": { "<key or field>": "<code>" } } }`,
+  the same envelope the device writes use, and the SPA renders each code next to
+  its input (`set_err_*` catalogue keys).
+
+`bin/test-panel-api.php` covers the whole surface, including the route ordering
+(`/settings/fields/reorder` versus `/settings/fields/{id}`) that keeps a literal
+segment from being read as an id.
+
 ## Migrations
 
 `bin/migrate.php` is idempotent and also callable from the panel:
@@ -111,6 +160,6 @@ on unknown keys or missing en-US keys used in code:
 php bin/check-i18n.php
 ```
 
-Current coverage: en-US 100 %, pt-BR 95 %, es-MX 83 %, fr-FR/zh-CN/hi-IN/ar-SA
+Current coverage: en-US 100 %, pt-BR 96 %, es-MX 87 %, fr-FR/zh-CN/hi-IN/ar-SA
 core UI (~20 %) with English fallback for the rest — extend the catalogues as
 needed.

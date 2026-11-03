@@ -20,6 +20,7 @@
 | `ui/src/app/*` | `SessionGate` (boot/failure/login/app), `AppShell`, router |
 | `ui/src/features/grid/*` | Grid state machine, URL binding, TanStack Table renderer |
 | `ui/src/features/devices/*` | Device list/detail screens, column model built from `/meta` |
+| `ui/src/features/settings/*` | `/app/settings` screens (one tab per settings group, sources, custom fields, API keys, users, maintenance) |
 
 The SPA is same-origin with the API, so there is no CORS layer and the session
 cookie works with `SameSite=Lax`.
@@ -105,6 +106,29 @@ two front ends cannot drift. Secrets (keys flagged `secret`, i.e.
 `s3.secret_key`, and the API key hashes) never leave the server: they come back
 as an empty `value` plus `configured: true`, sending an empty string back means
 "unchanged", and a deliberate wipe is `{"clear": ["s3.secret_key"]}`.
+
+## Settings screens
+
+`/app/settings` is one screen with tabs, and the tab lives in the URL
+(`?tab=general|storage|sources|api|fields|maintenance|users`) so it can be
+bookmarked and survives a reload. The link in the header and the `users` tab are
+gated by the capabilities `GET /session` publishes (`can_admin` opens the screen,
+`can_superadmin` adds the roster) — and the server enforces the same matrix, so a
+hidden tab is never a security boundary on its own.
+
+The three behaviours worth knowing when you touch this screen:
+
+* **Secrets blank means unchanged.** `settingsFormFrom()` starts every `secret`
+  input empty and `buildSettingsPatch()` only includes it when it has text;
+  wiping a stored secret is an explicit `clear` entry, never an empty value.
+  `settingsForm.test.ts` pins that down.
+* **Errors land on the input.** A `422 validation_failed` carries a code per
+  setting key / field name; the form maps it through `settingsErrorKey()` to a
+  `set_err_*` string (unknown codes are shown verbatim) instead of a single
+  banner.
+* **Writes seed the cache.** Every settings mutation answers the refreshed list
+  and the hook writes it into the query cache, so nothing re-fetches and the
+  stale value cannot flash back (the same rule as the device writes).
 
 ### Bulk actions
 

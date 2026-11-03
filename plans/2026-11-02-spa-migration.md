@@ -6,8 +6,9 @@
 >
 > Status: **in progress** — phases 0–6 done (phase 5 complete: selection/bulk
 > actions, 360 px audit; phase 4 keyboard walkthrough), phase 8 CI in place
-> (`ui.yml`, SPA build in the release ZIP). Phase 7 (`/app/settings/*`) is the
-> remaining feature work.
+> (`ui.yml`, SPA build in the release ZIP). Phase 7 is complete: the settings API
+> and the `/app/settings` React screens are both shipped. Phase 9 (cutover:
+> `ui.spa_enabled`, deleting the legacy pages) is next.
 
 ## 1. Goals
 
@@ -515,7 +516,7 @@ Estimates are focus days for one developer.
   progress — the controlled form covers the same fields today; revisit if the
   field count grows.
 
-### Phase 7 — settings, sources, fields, API keys, users (5–6 d) ✅ API done
+### Phase 7 — settings, sources, fields, API keys, users (5–6 d) ✅ done
 
 * [x] Server contract for the whole surface: `lib/panel/settings.php` exposes
   `GET/PATCH /settings`, `sources` CRUD, `fields` CRUD + `reorder`, `api-keys`
@@ -529,8 +530,12 @@ Estimates are focus days for one developer.
 * [x] `bin/test-panel-api.php` covers the role gates (manager `403`, users
   superadmin-only), validation/storage, sources, fields + reorder, keys
   (create/rotate/delete, hash never serialised) and maintenance.
-* [ ] SPA screens (`/app/settings/*`) — the endpoints are ready, the React tabs
-  are still phase 9 work; the legacy page remains the only UI.
+* [x] SPA screens: `/app/settings` with one tab per group (`?tab=general`,
+  `storage`, `sources`, `api` + keys, `fields`, `maintenance`, `users`), the
+  header link and the `users` tab gated on `can_admin`/`can_superadmin`.
+  `features/settings/settingsForm.ts` keeps the two risky rules unit-tested
+  (blank secret = unchanged, `clear` to wipe) and `e2e/settings.spec.ts` covers a
+  save, a per-key `422`, the roster gating and the `can_admin` guard.
 
 ### Phase 8 — tests, CI, docs (3–4 d) 🚧 mostly done
 
@@ -754,3 +759,6 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-03 | 8 | `smoke.spec.ts` stubs `/session` through a new `mockAnonymous()` fixture, and the CI reporter is `github` with `webServer.stdout/stderr` piped | the shell test was the only spec that touched the real backend: on the runner the preview proxy answers 502, Chromium reports it as a console error and the gate goes red; the annotations are also the only way to read a failure without an authenticated job log |
 | 2026-11-03 | 8 | The CSV export assertion stays on the download URL, not the body | `page.route()` and `context.route()` do not intercept a download navigation (verified against a dead proxy), so the request really leaves the browser |
 | 2026-11-03 | 7 | Route-table assertions live in `bin/test-panel-api.php` and run before the `db_try()` check | the literal-before-`{placeholder}` rule is pure logic; tying it to a database would hide it on machines without MySQL (it reports 25 checks and exits 0 there) |
+| 2026-11-03 | 7 | `/app/settings` is one route with `?tab=`, not seven nested routes | the legacy page already models the tabs as `?tab=`, and a bookmark/reload keeps the tab either way; `settingsForm.ts` stays testable without a router |
+| 2026-11-03 | 7 | The custom-field body uses the model's short keys (`key`, `type`, `default`, `required`, …) | `panel_settings_field_apply()` only copies the names it knows, so database column names would be accepted and silently ignored |
+| 2026-11-03 | 7 | New catalogue keys (`set_tab_users`, `set_user_*`, `set_err_self_role`) in en-US, pt-BR and es-MX | the settings screens need a Users tab and the self-role hint; the other four locales fall back to en-US and stay above their coverage floor |
