@@ -1,5 +1,12 @@
 # Development guide
 
+## Requirements
+
+* PHP 8.5 with `pdo_mysql`, `mbstring` (the model helpers use it for length
+  checks) and `json`; the Docker image already has all three.
+* MariaDB 11 / MySQL 8 for the database and 100k-row benchmarks.
+* Node 24 for the SPA (`ui/`): `npm ci && npm run dev`.
+
 ## Layout
 
 ```
