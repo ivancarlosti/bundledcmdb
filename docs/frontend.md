@@ -149,13 +149,25 @@ php bin/test-panel-api.php      # integration tests: role matrix, validation,
 
 `bin/test-panel-api.php` drives the real handlers against the configured
 database and hard-deletes everything it creates, so it is safe to run against a
-development database. It refuses to run with `APP_ENV=production`.
+development database. It refuses to run with `APP_ENV=production`. The route
+table and `panel_request_path()` are asserted before the database check, so a
+broken route ordering still fails the gate on a machine without MySQL.
 
 CI: `.github/workflows/ui.yml` runs the SPA gates (`typecheck`, `lint`, `vitest`,
 `build`, then Playwright against `vite preview`) for changes under `ui/`,
 `public/lang/` and `lib/panel/`, and uploads the built `public/app` bundle. The
 release ZIP (`.github/workflows/build.yml`) builds the SPA before zipping, so a
 zip deployment does not need Node.
+
+The Playwright suite is **hermetic**: every `/panel-api/v1/*` call is stubbed per
+test (`e2e/fixtures.ts` — `mockPanel()` for a signed-in role, `mockAnonymous()`
+for the 401 shell), because the runner has no PHP backend and an unstubbed
+request would come back as a 502 from the preview proxy. A download started by
+an `<a href>` is the one exception — `page.route()`/`context.route()` do not see
+it, so the CSV test asserts the URL instead of the body. Under CI the reporter
+is `github`, which turns a failure into an annotation on the commit (readable
+without an authenticated job log) and `webServer.stdout/stderr` are piped so
+Vite's own errors show up in the job output.
 
 ## Conventions
 

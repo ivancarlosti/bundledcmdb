@@ -10,6 +10,9 @@ declare(strict_types=1);
  * run against a development database as often as needed.
  *
  * What it covers (the phase 3 acceptance list):
+ *   - routing: the literal paths that could be read as a `{placeholder}`
+ *     (`/settings/fields/reorder`, `/settings/api-keys/{id}/rotate`, …) — these
+ *     run without a database, so a broken route table still fails the gate;
  *   - role matrix: user/manager/admin/superadmin for create, update, delete,
  *     restore, hard delete and attachment upload;
  *   - validation: unknown fields, forbidden fields, required SN, unknown source
@@ -38,15 +41,6 @@ if (app_env() === 'production') {
     exit(2);
 }
 
-$pdo = db_try();
-if ($pdo === null) {
-    fwrite(STDOUT, "SKIP: no database reachable — panel API write tests not run.\n");
-    exit(0);
-}
-
-ini_set('session.cache_limiter', '');
-session_boot();
-
 $GLOBALS['passes'] = 0;
 $GLOBALS['failures'] = 0;
 
@@ -60,6 +54,82 @@ function check(bool $ok, string $label, string $detail = ''): void
     $GLOBALS['failures']++;
     fwrite(STDOUT, "  FAIL {$label}" . ($detail === '' ? '' : "  ({$detail})") . "\n");
 }
+
+/**
+ * The handler a request would reach, or null when no route matches.
+ *
+ * Mirrors `panel_dispatch()`: the table is walked in order and the first
+ * pattern+method hit wins, so a placeholder registered before a literal path
+ * silently swallows it.
+ */
+function route_for(string $method, string $path): ?string
+{
+    foreach (panel_routes() as [$routeMethod, $pattern, $handler]) {
+        if ($routeMethod === $method && panel_match($pattern, $path) !== null) {
+            return $handler;
+        }
+    }
+    return null;
+}
+
+// --- routing (no database needed) -------------------------------------------
+// Every literal segment that could also be read as a `{placeholder}` is pinned
+// here: `/settings/fields/reorder` must not be routed as field id "reorder",
+// and `/settings/api-keys/{id}/rotate` must not fall through to `{id}`.
+$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+foreach ([
+    ['GET',   '/settings',                          'panel_settings_show'],
+    ['PATCH', '/settings',                          'panel_settings_update'],
+    ['GET',   '/settings/sources',                  'panel_settings_sources_index'],
+    ['POST',  '/settings/sources',                  'panel_settings_sources_store'],
+    ['PATCH', '/settings/sources/intune',           'panel_settings_sources_update'],
+    ['GET',   '/settings/fields',                   'panel_settings_fields_index'],
+    ['POST',  '/settings/fields/reorder',           'panel_settings_fields_reorder'],
+    ['PATCH', '/settings/fields/12',                'panel_settings_fields_update'],
+    ['DELETE', '/settings/fields/12',               'panel_settings_fields_delete'],
+    ['POST',  '/settings/api-keys',                 'panel_settings_keys_store'],
+    ['POST',  '/settings/api-keys/9/rotate',        'panel_settings_keys_rotate'],
+    ['PATCH', '/settings/api-keys/9',               'panel_settings_keys_update'],
+    ['GET',   '/settings/users',                    'panel_settings_users_index'],
+    ['PATCH', '/settings/users/a%40example.com',    'panel_settings_users_update'],
+    ['GET',   '/settings/maintenance',              'panel_settings_maintenance_show'],
+    ['POST',  '/settings/maintenance/migrate',      'panel_settings_maintenance_migrate'],
+    // Pre-existing literals, kept here so the ordering rule has one home.
+    ['GET',   '/devices/export',                    'panel_devices_export'],
+    ['POST',  '/devices/bulk',                      'panel_devices_bulk'],
+    ['PATCH', '/devices/7',                         'panel_devices_update'],
+] as [$method, $path, $expected]) {
+    $actual = route_for($method, $path);
+    check($actual === $expected, "routing: {$method} {$path}", (string) $actual);
+}
+
+check(route_for('GET', '/settings/nope') === null, 'routing: unknown settings path is 404');
+check(route_for('DELETE', '/settings') === null, 'routing: DELETE /settings falls through to 405');
+check(
+    panel_match('/settings/users/{email}', '/settings/users/a%40example.com') === ['email' => 'a%40example.com'],
+    'routing: placeholders keep the encoded segment (the handler decodes it)'
+);
+
+$_SERVER['REQUEST_URI'] = '/panel-api/v1/settings/fields/reorder';
+check(panel_request_path() === '/settings/fields/reorder', 'routing: path drops the mount point and version');
+$_SERVER['REQUEST_URI'] = '/panel-api/v1/settings/';
+check(panel_request_path() === '/settings', 'routing: trailing slash is normalised');
+$_SERVER['REQUEST_URI'] = '/panel-api/v1/';
+check(panel_request_path() === '/', 'routing: bare version path is /');
+// Leave the CLI server superglobal as it was found.
+$_SERVER['REQUEST_URI'] = $requestUri ?? '/';
+
+$pdo = db_try();
+if ($pdo === null) {
+    $passes = (int) $GLOBALS['passes'];
+    $failures = (int) $GLOBALS['failures'];
+    fwrite(STDOUT, "\nSKIP: no database reachable — write tests not run (routing only).\n");
+    fwrite(STDOUT, "{$passes} passed, {$failures} failed\n");
+    exit($failures === 0 ? 0 : 1);
+}
+
+ini_set('session.cache_limiter', '');
+session_boot();
 
 /**
  * @param array<string, string> $fields expected `errors` subset
