@@ -526,13 +526,15 @@ Estimates are focus days for one developer.
   "reload before saving" state.
 * [x] Delete (soft) / restore / hard delete (superadmin) from the detail page,
   gated by `capabilities`; attachments upload + remove (server-side S3 put).
-* [~] Deferred by design: tabbed edit drawer, `react-hook-form` + `zod` client
-  schemas, upload progress. The controlled form covers the same fields (they come
-  from `/meta.writeColumns`, so nothing is missing), `deviceForm.ts` owns the
-  payload/normalisation rules and is unit-tested, and the 422/409 paths are
-  covered by e2e. Both libraries are installed and pinned, so the drawer is a
-  contained change; the trigger to do it is the field count growing (or the need
-  for per-file upload state, which `fetch` cannot report — that needs XHR).
+* [x] `react-hook-form` + `zod`, tabbed form, upload progress. The form model is
+  `{values, custom, company}`, the schema is built from `/meta`
+  (`deviceSchema.ts`: required `sn` when `limits.requireSn`, numbers, dates,
+  required custom fields) and applied through a 30-line zod resolver
+  (`lib/zodResolver.ts`) instead of pinning `@hookform/resolvers`. Fields are
+  grouped into tabs (`identity`, `hardware`, `assignment`, `admin`, `more`) with
+  unknown keys landing in `more`, and a server `422` switches to the tab that
+  holds the offending field. Attachment uploads report real progress through the
+  presigned-PUT path (§14.9).
 
 ### Phase 7 — settings, sources, fields, API keys, users (5–6 d) ✅ done
 
@@ -865,3 +867,5 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 5 | Column reordering ships with `@dnd-kit` **and** keeps the up/down buttons | the picker is the only place where a pointer drag is the natural gesture, but a drag-only control is unusable with a keyboard and invisible to a screen reader; keeping both is one component and no extra state |
 | 2026-11-04 | 5 | A saved view stores only the grid state + column layout, keyed by e-mail, and `POST /views` upserts on the name | the URL is already the grid's source of truth, so a view is a bookmark with a label — no new state machine in the SPA, and applying one is a normal `update()`. Upsert on `(email, name)` matches the toolbar gesture ("save" on an existing label overwrites) and keeps the id stable for an open tab |
 | 2026-11-04 | 3 | `POST /devices/{id}/files/presign` answers `{mode: "server"}` instead of an error when it cannot presign | CORS on the bucket, the `local` driver and a signing failure all mean the same thing to the client ("upload through PHP"); a 4xx would force the SPA to duplicate the fallback logic per error code, and a bucket without CORS is a *supported* deployment, not a fault |
+| 2026-11-04 | 6 | The form tabs are derived from the *wire* keys (`sn`, `cypher_id`, …) and unknown keys go to a `more` tab | `/meta.writeColumns` publishes `api_key` spellings, not schema columns; mapping the other way round left the create form with only the keys no tab claimed (a real bug the first e2e run caught). A `more` bucket means a column added server-side can never silently disappear from the form |
+| 2026-11-04 | 6 | `@hookform/resolvers` is **not** added; `lib/zodResolver.ts` is 30 lines and unit-tested | the stack lock (§13) is a promise about versions; a hand-written adapter for one schema shape does not justify another pinned dependency, and the nesting rule it has to get right is pinned by `zodResolver.test.ts` |

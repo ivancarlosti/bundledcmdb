@@ -1,21 +1,16 @@
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { PanelApiError } from '@/api/client';
 import { Alert, Button, Checkbox, Input, Select, Spinner, Textarea } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
-import { cn } from '@/lib/cn';
+import { zodResolver } from '@/lib/zodResolver';
 
 import type { DeviceDetail, MetaColumn, MetaField, MetaPayload } from './api';
-import {
-  buildDevicePayload,
-  formFields,
-  formKeys,
-  initialFormValues,
-  type FormValue,
-  type FormValues,
-} from './deviceForm';
+import { buildDevicePayload, formFields, formKeys, initialFormValues, type FormValue } from './deviceForm';
+import { buildDeviceSchema, formTabs, requireSn, type DeviceFormModel } from './deviceSchema';
 import { useCreateDevice, useUpdateDevice } from './useDeviceMutations';
 import { useDevice, useMeta } from './useDevices';
 
@@ -154,7 +149,8 @@ type FormProps = {
  * visible conflict instead of a silent overwrite.
  */
 function DeviceForm({ device, meta }: FormProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? 'en-US';
   const navigate = useNavigate();
   const session = useCurrentSession();
   const mode = device === null ? 'create' : 'update';
@@ -163,50 +159,36 @@ function DeviceForm({ device, meta }: FormProps) {
   const fields = formFields(meta, session.user.role);
   const types = Object.fromEntries(meta.columns.map((column) => [column.api_key, column.type]));
   const columns = new Map(meta.columns.map((column) => [column.api_key, column]));
-
   const initial = initialFormValues(keys, device, fields, types);
-  const [values, setValues] = useState<FormValues>(initial.values);
-  const [custom, setCustom] = useState<FormValues>(initial.custom);
-  const [company, setCompany] = useState<string>(device?.company ?? meta.companies[0] ?? '');
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const baseCompany = device?.company ?? meta.companies[0] ?? '';
+
+  // Cheap to rebuild (it only declares rules); a memo would have to track the
+  // column and field lists by value for no measurable gain.
+  const schema = buildDeviceSchema(keys, columns, fields, { requireSn: requireSn(meta) });
+
+  const form = useForm<DeviceFormModel>({
+    defaultValues: { values: initial.values, custom: initial.custom, company: baseCompany },
+    resolver: zodResolver(schema),
+    mode: 'onSubmit',
+  });
+  const { control, handleSubmit, setError, formState } = form;
   const [conflict, setConflict] = useState(false);
 
   const createDevice = useCreateDevice();
   const updateDevice = useUpdateDevice(device?.id ?? null);
   const pending = createDevice.isPending || updateDevice.isPending;
 
-  const setValue = (key: string, value: FormValue) => {
-    setValues((current) => ({ ...current, [key]: value }));
-  };
-  const setCustomValue = (key: string, value: FormValue) => {
-    setCustom((current) => ({ ...current, [key]: value }));
-  };
+  const tabs = useMemo(() => formTabs(keys), [keys]);
+  const [activeTab, setActiveTab] = useState(tabs[0]?.id ?? 'more');
+  // The server may answer `422` for a field on another tab; switching there makes
+  // the message findable instead of invisible.
+  const tabForProblem = (key: string): string | null => tabs.find((tab) => tab.keys.includes(key))?.id ?? null;
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setErrors({});
+  const onSubmit = async (model: DeviceFormModel) => {
     setConflict(false);
-
-    // Required custom fields are enforced here as well, so an obviously
-    // incomplete form does not need a round-trip to be told what is missing.
-    const missing: Record<string, string> = {};
-    for (const field of fields) {
-      if (!field.required) {
-        continue;
-      }
-      const value = custom[field.key];
-      if (value === undefined || value === '' || (typeof value === 'string' && value.trim() === '')) {
-        missing[`custom.${field.key}`] = 'required';
-      }
-    }
-    if (Object.keys(missing).length > 0) {
-      setErrors(missing);
-      return;
-    }
-
-    const body = buildDevicePayload(values, custom, fields);
-    if (mode === 'create' && company !== '') {
-      body.company = company;
+    const body = buildDevicePayload(model.values, model.custom, fields);
+    if (mode === 'create' && model.company !== '') {
+      body.company = model.company;
     }
     if (mode === 'update' && device?.updated_at != null) {
       body.expected_updated_at = device.updated_at;
@@ -222,7 +204,16 @@ function DeviceForm({ device, meta }: FormProps) {
           return;
         }
         if (error.isValidation) {
-          setErrors(error.errors);
+          let firstTab: string | null = null;
+          for (const [key, code] of Object.entries(error.errors)) {
+            const [root, fieldKey] = key.includes('.') ? (key.split('.') as [string, string]) : ['values', key];
+            const path = root === 'custom' ? (`custom.${fieldKey}` as const) : (`values.${fieldKey}` as const);
+            setError(path, { type: 'server', message: describeError(code) });
+            firstTab = firstTab ?? tabForProblem(fieldKey);
+          }
+          if (firstTab !== null) {
+            setActiveTab(firstTab);
+          }
           return;
         }
       }
@@ -230,17 +221,20 @@ function DeviceForm({ device, meta }: FormProps) {
     }
   };
 
-  const errorFor = (key: string): string | null => {
-    const code = errors[key];
-    if (code === undefined) {
-      return null;
-    }
+  const describeError = (code: string): string => {
     const label = ERROR_KEYS[code];
     return label === undefined ? code : t(label);
   };
 
+  // The summary lists every message react-hook-form holds, client or server.
+  const allErrors = { ...(formState.errors.values ?? {}), ...(formState.errors.custom ?? {}) } as Record<
+    string,
+    { message?: string }
+  >;
+  const serverErrors = Object.entries(allErrors).filter(([, value]) => value?.message !== undefined);
+
   return (
-    <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+    <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <Link to="/devices" className="text-sm text-[var(--color-accent)]">
@@ -270,61 +264,108 @@ function DeviceForm({ device, meta }: FormProps) {
         />
       ) : null}
 
-      {Object.keys(errors).length > 0 ? (
+      {serverErrors.length > 0 ? (
         <Alert tone="danger" title={t('validation_failed')}>
           <ul className="m-0 list-disc ps-5">
-            {Object.entries(errors).map(([key, code]) => (
+            {serverErrors.map(([key, value]) => (
               <li key={key}>
-                {columns.get(key)?.label ?? key}: {ERROR_KEYS[code] === undefined ? code : t(ERROR_KEYS[code])}
+                {columns.get(key)?.label ?? key}: {value.message}
               </li>
             ))}
           </ul>
         </Alert>
       ) : null}
 
-      <div className="card grid gap-3 p-4 sm:grid-cols-2">
-        {meta.companies.length > 0 && mode === 'create' ? (
-          <div className="flex flex-col gap-1">
-            <label htmlFor="field-company" className="text-xs font-medium text-[var(--color-muted)]">
-              {t('col_company')}
-            </label>
-            <Select id="field-company" value={company} onChange={(event) => setCompany(event.target.value)}>
-              <option value="">—</option>
-              {meta.companies.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-            {errorFor('company') === null ? null : (
-              <p className="m-0 text-xs text-[var(--color-danger)]">{errorFor('company')}</p>
-            )}
-          </div>
-        ) : null}
+      <div className="card p-4">
+        <div
+          role="tablist"
+          aria-label={t('ui_form_tabs')}
+          className="mb-3 flex flex-wrap gap-1 border-b border-[var(--color-border)] pb-2"
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`form-tab-${tab.id}`}
+              aria-selected={activeTab === tab.id}
+              aria-controls={`form-panel-${tab.id}`}
+              className={`rounded-[var(--radius-md)] px-2.5 py-1 text-sm ${
+                activeTab === tab.id
+                  ? 'bg-[var(--color-surface-3)] font-medium'
+                  : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]'
+              }`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {t(`ui_form_tab_${tab.id}`)}
+            </button>
+          ))}
+        </div>
 
-        {keys.map((key) => {
-          const column = columns.get(key);
-          const label = column === undefined ? key : t(column.label_key, { defaultValue: column.label });
-          const id = `field-${key}`;
-          const error = errorFor(key);
-          return (
-            <div key={key} className={cn('flex flex-col gap-1', key === 'notes' && 'sm:col-span-2')}>
-              <label htmlFor={id} className="text-xs font-medium text-[var(--color-muted)]">
-                {label}
-              </label>
-              <DeviceControl
-                id={id}
-                value={values[key] ?? ''}
-                column={column}
-                meta={meta}
-                invalid={error !== null}
-                onChange={(value) => setValue(key, value)}
-              />
-              {error === null ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{error}</p>}
-            </div>
-          );
-        })}
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            role="tabpanel"
+            id={`form-panel-${tab.id}`}
+            aria-labelledby={`form-tab-${tab.id}`}
+            hidden={activeTab !== tab.id}
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            {tab.keys.map((key) => {
+              const column = columns.get(key);
+              const id = `field-${key.replace(/\./g, '-')}`;
+              const path = `values.${key}` as const;
+              const message = (formState.errors.values as Record<string, { message?: string } | undefined>)?.[key]
+                ?.message;
+              return (
+                <div key={key} className="flex flex-col gap-1">
+                  <label htmlFor={id} className="text-xs font-medium text-[var(--color-muted)]">
+                    {column === undefined ? key : t(column.label_key, { defaultValue: column.label })}
+                  </label>
+                  <Controller
+                    control={control}
+                    name={path}
+                    render={({ field }) => (
+                      <DeviceControl
+                        id={id}
+                        value={field.value as FormValue}
+                        column={column}
+                        meta={meta}
+                        invalid={message !== undefined}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
+                  {message === undefined ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{message}</p>}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
+
+      {mode === 'create' && meta.companies.length > 0 ? (
+        <div className="card p-4">
+          <Controller
+            control={control}
+            name="company"
+            render={({ field }) => (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="field-company" className="text-xs font-medium text-[var(--color-muted)]">
+                  {t('col_company')}
+                </label>
+                <Select id="field-company" value={field.value} onChange={(event) => field.onChange(event.target.value)}>
+                  {meta.companies.map((company) => (
+                    <option key={company} value={company}>
+                      {company}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          />
+        </div>
+      ) : null}
 
       {fields.length > 0 ? (
         <div className="card flex flex-col gap-3 p-4">
@@ -332,22 +373,31 @@ function DeviceForm({ device, meta }: FormProps) {
           <div className="grid gap-3 sm:grid-cols-2">
             {fields.map((field) => {
               const id = `field-custom-${field.key}`;
-              const error = errorFor(`custom.${field.key}`);
+              const path = `custom.${field.key}` as const;
+              const message = (
+                formState.errors.custom as Record<string, { message?: string } | undefined> | undefined
+              )?.[field.key]?.message;
               return (
                 <div key={field.key} className="flex flex-col gap-1">
                   <label htmlFor={id} className="text-xs font-medium text-[var(--color-muted)]">
-                    {field.label_i18n?.[session.locale] ?? field.label}
+                    {field.label_i18n?.[locale] ?? field.label}
                     {field.required ? ' *' : ''}
                   </label>
-                  <DeviceControl
-                    id={id}
-                    value={custom[field.key] ?? ''}
-                    field={field}
-                    meta={meta}
-                    invalid={error !== null}
-                    onChange={(value) => setCustomValue(field.key, value)}
+                  <Controller
+                    control={control}
+                    name={path}
+                    render={({ field: control_ }) => (
+                      <DeviceControl
+                        id={id}
+                        value={control_.value as FormValue}
+                        field={field}
+                        meta={meta}
+                        invalid={message !== undefined}
+                        onChange={control_.onChange}
+                      />
+                    )}
                   />
-                  {error === null ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{error}</p>}
+                  {message === undefined ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{message}</p>}
                 </div>
               );
             })}
