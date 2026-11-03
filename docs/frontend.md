@@ -179,7 +179,7 @@ ids: too_many`.
 | `npm run build` | Type-check + production build into `public/app/` |
 | `npm run typecheck` | `tsc -b --noEmit` |
 | `npm run lint` | ESLint (flat config) |
-| `npm run format` | Prettier check (use `--write` to fix) |
+| `npm run format` | Prettier check (`.prettierrc.json`: single quotes, 120 columns; `--write` fixes) |
 | `npm run test` | Vitest (jsdom) |
 | `npm run e2e` | Playwright (`vite preview` on :4173, panel API stubbed per test) |
 

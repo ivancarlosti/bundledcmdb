@@ -276,9 +276,7 @@ export function DeviceGridPage() {
         <Field label={t('col_byod')}>
           <Select
             value={state.byod}
-            onChange={(event) =>
-              update((current) => applyFilters(current, { byod: event.target.value as ByodFilter }))
-            }
+            onChange={(event) => update((current) => applyFilters(current, { byod: event.target.value as ByodFilter }))}
           >
             <option value="">{t('all')}</option>
             <option value="true">{t('yes')}</option>
@@ -342,12 +340,9 @@ export function DeviceGridPage() {
             ? {
                 state: pageSelection,
                 isSelected: (row) => selected.includes(row.id),
-                onToggleRow: (row, checked) =>
-                  setSelected((current) => toggleSelection(current, row.id, checked)),
-                onToggleAll: (checked) =>
-                  setSelected((current) => toggleAllOnPage(current, pageIds, checked)),
-                rowLabel: (row) =>
-                  t('ui_select_row', { name: row.sn ?? row.hostname ?? String(row.id) }),
+                onToggleRow: (row, checked) => setSelected((current) => toggleSelection(current, row.id, checked)),
+                onToggleAll: (checked) => setSelected((current) => toggleAllOnPage(current, pageIds, checked)),
+                rowLabel: (row) => t('ui_select_row', { name: row.sn ?? row.hostname ?? String(row.id) }),
                 allLabel: t('ui_select_all'),
               }
             : undefined
@@ -363,9 +358,7 @@ export function DeviceGridPage() {
           <Field label={t('ui_rows_per_page')}>
             <Select
               value={String(state.perPage)}
-              onChange={(event) =>
-                update((current) => ({ ...current, perPage: Number(event.target.value), page: 1 }))
-              }
+              onChange={(event) => update((current) => ({ ...current, perPage: Number(event.target.value), page: 1 }))}
             >
               {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>

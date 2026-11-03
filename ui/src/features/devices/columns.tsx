@@ -206,9 +206,7 @@ export function buildColumns(
       enableSorting: column.sortable,
       cell: ({ getValue, row }) => {
         if (!editable) {
-          return (
-            <GridCell value={getValue()} columnKey={column.key} type={column.type} {...context} />
-          );
+          return <GridCell value={getValue()} columnKey={column.key} type={column.type} {...context} />;
         }
 
         if (column.key === 'Status') {
@@ -238,9 +236,7 @@ export function buildColumns(
           );
         }
 
-        return (
-          <GridCell value={getValue()} columnKey={column.key} type={column.type} {...context} />
-        );
+        return <GridCell value={getValue()} columnKey={column.key} type={column.type} {...context} />;
       },
       meta: { align: column.type === 'int' ? 'end' : 'start' },
     });
@@ -256,9 +252,7 @@ export function buildColumns(
       accessorFn: (row) => cellValue(row, { key }),
       header: field.label_i18n?.[locale] ?? field.label,
       enableSorting: true,
-      cell: ({ getValue }) => (
-        <GridCell value={getValue()} columnKey={key} type={field.type} {...context} />
-      ),
+      cell: ({ getValue }) => <GridCell value={getValue()} columnKey={key} type={field.type} {...context} />,
       meta: { align: field.type === 'int' ? 'end' : 'start' },
     });
   }

@@ -15,9 +15,7 @@ import { mockPanel } from './fixtures';
 test.use({ viewport: { width: 360, height: 740 } });
 
 async function pageOverflow(page: import('@playwright/test').Page): Promise<number> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
+  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 }
 
 test.describe('360 px viewport', () => {

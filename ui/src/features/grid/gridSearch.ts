@@ -70,7 +70,6 @@ export function defaultGridState(defaults: GridDefaults = GRID_DEFAULTS): GridSt
   };
 }
 
-
 /** Parse a query string (with or without a leading `?`). Never throws. */
 export function parseGridSearch(search: string, defaults: GridDefaults = GRID_DEFAULTS): GridState {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
@@ -232,4 +231,3 @@ export function devicesFilterQuery(state: GridState, defaults: GridDefaults = GR
 export function devicesPageQuery(state: GridState, defaults: GridDefaults = GRID_DEFAULTS): string {
   return `${devicesFilterQuery(state, defaults)}&page=${state.page}&per_page=${state.perPage}`;
 }
-

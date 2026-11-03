@@ -1,10 +1,4 @@
-import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-  type SortingState,
-} from '@tanstack/react-table';
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type SortingState } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { useEffect, useRef, type InputHTMLAttributes } from 'react';
 
@@ -69,16 +63,9 @@ function IndeterminateCheckbox({
   }, [indeterminate]);
 
   return (
-    <input
-      ref={ref}
-      type="checkbox"
-      className="size-4 accent-[var(--color-accent)]"
-      checked={checked}
-      {...props}
-    />
+    <input ref={ref} type="checkbox" className="size-4 accent-[var(--color-accent)]" checked={checked} {...props} />
   );
 }
-
 
 /**
  * Headless table (TanStack Table v8) rendered with the panel's tokens.
@@ -121,20 +108,13 @@ export function DataGrid<T>({
 
   return (
     <div className="card overflow-hidden">
-      <div
-        className="max-h-[calc(100dvh-18rem)] overflow-auto"
-        data-testid="data-grid-scroll"
-        aria-busy={isLoading}
-      >
+      <div className="max-h-[calc(100dvh-18rem)] overflow-auto" data-testid="data-grid-scroll" aria-busy={isLoading}>
         <table aria-label={ariaLabel} className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10">
             {headerGroups.map((headerGroup) => (
               <tr key={headerGroup.id} className="bg-[var(--color-surface-2)]">
                 {selection !== undefined ? (
-                  <th
-                    scope="col"
-                    className="border-b border-[var(--color-border)] px-3 py-2 text-start"
-                  >
+                  <th scope="col" className="border-b border-[var(--color-border)] px-3 py-2 text-start">
                     <IndeterminateCheckbox
                       checked={selection.state === 'all'}
                       indeterminate={selection.state === 'some'}
@@ -216,7 +196,8 @@ export function DataGrid<T>({
                 key={row.id}
                 className={cn(
                   'border-b border-[var(--color-border)] last:border-b-0',
-                  onRowClick && 'cursor-pointer hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]',
+                  onRowClick &&
+                    'cursor-pointer hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]',
                 )}
                 tabIndex={onRowClick ? 0 : undefined}
                 aria-label={rowLabel?.(row.original)}

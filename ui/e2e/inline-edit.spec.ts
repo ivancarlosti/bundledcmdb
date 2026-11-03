@@ -37,9 +37,7 @@ test.describe('inline edit', () => {
 
     await status.selectOption('In Stock');
 
-    await expect(
-      page.getByText('This device was changed by someone else. Reload before saving.'),
-    ).toBeVisible();
+    await expect(page.getByText('This device was changed by someone else. Reload before saving.')).toBeVisible();
   });
 
   test('patches the row with expected_updated_at', async ({ page }) => {
@@ -59,9 +57,11 @@ test.describe('inline edit', () => {
     await page.goto('/app/devices');
     await page.getByRole('combobox', { name: 'Status' }).first().selectOption('In Stock');
 
-    await expect.poll(() => patched).toMatchObject({
-      status: 'In Stock',
-      expected_updated_at: ROWS[0].updated_at,
-    });
+    await expect
+      .poll(() => patched)
+      .toMatchObject({
+        status: 'In Stock',
+        expected_updated_at: ROWS[0].updated_at,
+      });
   });
 });

@@ -27,9 +27,7 @@ function applyPatch(session: Session, patch: PreferencesPatch): Session {
     ...(patch.locale === undefined ? {} : { locale: patch.locale }),
     ...(patch.theme === undefined ? {} : { theme: patch.theme as Session['theme'] }),
     ...(patch.per_page === undefined ? {} : { perPage: patch.per_page }),
-    ...(patch.grid_state === undefined
-      ? {}
-      : { gridState: patch.grid_state as Session['gridState'] }),
+    ...(patch.grid_state === undefined ? {} : { gridState: patch.grid_state as Session['gridState'] }),
   };
 }
 

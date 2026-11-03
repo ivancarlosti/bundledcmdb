@@ -166,8 +166,7 @@ export function useSourceMutations() {
   });
 
   const update = useMutation({
-    mutationFn: ({ slug, input }: { slug: string; input: Omit<SourceInput, 'slug'> }) =>
-      updateSource(slug, input),
+    mutationFn: ({ slug, input }: { slug: string; input: Omit<SourceInput, 'slug'> }) => updateSource(slug, input),
     onSuccess: (payload) => {
       seed(payload);
       toast.success(t('set_saved'));
@@ -323,8 +322,7 @@ export function useMigration() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (dryRun: boolean): Promise<{ payload: MaintenancePayload; run: MigrationRun }> =>
-      runMigrations(dryRun),
+    mutationFn: (dryRun: boolean): Promise<{ payload: MaintenancePayload; run: MigrationRun }> => runMigrations(dryRun),
     onSuccess: ({ payload, run }) => {
       queryClient.setQueryData(settingsMaintenanceQueryKey, payload);
       toast.success(t('set_maint_applied'), {

@@ -16,16 +16,7 @@ import { apiRequest, apiRequestEnvelope } from '@/api/client';
 export type SettingOption = { value: string; label: string };
 
 /** `type` mirrors `settings_definitions()` in `lib/settings.php`. */
-export type SettingType =
-  | 'bool'
-  | 'int'
-  | 'timezone'
-  | 'locale'
-  | 'select'
-  | 'source'
-  | 'secret'
-  | 'textarea'
-  | 'text';
+export type SettingType = 'bool' | 'int' | 'timezone' | 'locale' | 'select' | 'source' | 'secret' | 'textarea' | 'text';
 
 /**
  * One setting. `label_key` is the `setting_*` catalogue key the server resolved;
@@ -321,9 +312,7 @@ export function fetchMaintenance(): Promise<MaintenancePayload> {
 }
 
 /** `dryRun` defaults to the server's own default: list, do not apply. */
-export async function runMigrations(
-  dryRun: boolean,
-): Promise<{ payload: MaintenancePayload; run: MigrationRun }> {
+export async function runMigrations(dryRun: boolean): Promise<{ payload: MaintenancePayload; run: MigrationRun }> {
   const result = await apiRequestEnvelope<MaintenancePayload>('/settings/maintenance/migrate', {
     method: 'POST',
     body: { dry_run: dryRun },

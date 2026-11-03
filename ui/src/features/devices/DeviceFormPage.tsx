@@ -66,12 +66,7 @@ function DeviceControl({ id, value, column, field, meta, invalid, onChange }: Co
 
   if (field !== undefined && field.options.length > 0) {
     return (
-      <Select
-        id={id}
-        className={invalidClass}
-        value={String(value)}
-        onChange={(event) => onChange(event.target.value)}
-      >
+      <Select id={id} className={invalidClass} value={String(value)} onChange={(event) => onChange(event.target.value)}>
         <option value="">—</option>
         {field.options.map((option) => (
           <option key={option} value={option}>
@@ -84,12 +79,7 @@ function DeviceControl({ id, value, column, field, meta, invalid, onChange }: Co
 
   if (column?.key === 'Status') {
     return (
-      <Select
-        id={id}
-        className={invalidClass}
-        value={String(value)}
-        onChange={(event) => onChange(event.target.value)}
-      >
+      <Select id={id} className={invalidClass} value={String(value)} onChange={(event) => onChange(event.target.value)}>
         <option value="">—</option>
         {meta.statuses.map((status) => (
           <option key={status.value} value={status.value}>
@@ -102,12 +92,7 @@ function DeviceControl({ id, value, column, field, meta, invalid, onChange }: Co
 
   if (column?.key === 'source') {
     return (
-      <Select
-        id={id}
-        className={invalidClass}
-        value={String(value)}
-        onChange={(event) => onChange(event.target.value)}
-      >
+      <Select id={id} className={invalidClass} value={String(value)} onChange={(event) => onChange(event.target.value)}>
         <option value="">—</option>
         {meta.sources.map((source) => (
           <option key={source.slug} value={source.slug}>
@@ -228,9 +213,7 @@ function DeviceForm({ device, meta }: FormProps) {
     }
 
     try {
-      const saved = mode === 'create'
-        ? await createDevice.mutateAsync(body)
-        : await updateDevice.mutateAsync(body);
+      const saved = mode === 'create' ? await createDevice.mutateAsync(body) : await updateDevice.mutateAsync(body);
       void navigate({ to: '/devices/$deviceId', params: { deviceId: String(saved.id) } });
     } catch (error) {
       if (error instanceof PanelApiError) {
@@ -263,9 +246,7 @@ function DeviceForm({ device, meta }: FormProps) {
           <Link to="/devices" className="text-sm text-[var(--color-accent)]">
             {t('back_to_list')}
           </Link>
-          <h1 className="m-0 text-xl font-semibold">
-            {mode === 'create' ? t('ui_new_device') : t('ui_edit_device')}
-          </h1>
+          <h1 className="m-0 text-xl font-semibold">{mode === 'create' ? t('ui_new_device') : t('ui_edit_device')}</h1>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -294,14 +275,12 @@ function DeviceForm({ device, meta }: FormProps) {
           <ul className="m-0 list-disc ps-5">
             {Object.entries(errors).map(([key, code]) => (
               <li key={key}>
-                {columns.get(key)?.label ?? key}:{' '}
-                {ERROR_KEYS[code] === undefined ? code : t(ERROR_KEYS[code])}
+                {columns.get(key)?.label ?? key}: {ERROR_KEYS[code] === undefined ? code : t(ERROR_KEYS[code])}
               </li>
             ))}
           </ul>
         </Alert>
       ) : null}
-
 
       <div className="card grid gap-3 p-4 sm:grid-cols-2">
         {meta.companies.length > 0 && mode === 'create' ? (
@@ -309,11 +288,7 @@ function DeviceForm({ device, meta }: FormProps) {
             <label htmlFor="field-company" className="text-xs font-medium text-[var(--color-muted)]">
               {t('col_company')}
             </label>
-            <Select
-              id="field-company"
-              value={company}
-              onChange={(event) => setCompany(event.target.value)}
-            >
+            <Select id="field-company" value={company} onChange={(event) => setCompany(event.target.value)}>
               <option value="">—</option>
               {meta.companies.map((name) => (
                 <option key={name} value={name}>
@@ -345,9 +320,7 @@ function DeviceForm({ device, meta }: FormProps) {
                 invalid={error !== null}
                 onChange={(value) => setValue(key, value)}
               />
-              {error === null ? null : (
-                <p className="m-0 text-xs text-[var(--color-danger)]">{error}</p>
-              )}
+              {error === null ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{error}</p>}
             </div>
           );
         })}
@@ -374,9 +347,7 @@ function DeviceForm({ device, meta }: FormProps) {
                     invalid={error !== null}
                     onChange={(value) => setCustomValue(field.key, value)}
                   />
-                  {error === null ? null : (
-                    <p className="m-0 text-xs text-[var(--color-danger)]">{error}</p>
-                  )}
+                  {error === null ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{error}</p>}
                 </div>
               );
             })}
@@ -443,4 +414,3 @@ export function DeviceFormPage() {
     />
   );
 }
-

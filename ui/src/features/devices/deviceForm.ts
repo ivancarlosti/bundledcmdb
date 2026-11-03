@@ -59,11 +59,7 @@ export function initialFormValues(
  * server normalises both to `NULL`, but `null` keeps the intent explicit), and
  * booleans stay booleans because the schema stores `BYOD`/`Mobile` as flags.
  */
-export function buildDevicePayload(
-  values: FormValues,
-  custom: FormValues,
-  fields: MetaField[],
-): DeviceWriteBody {
+export function buildDevicePayload(values: FormValues, custom: FormValues, fields: MetaField[]): DeviceWriteBody {
   const body: DeviceWriteBody = {};
 
   for (const [key, value] of Object.entries(values)) {

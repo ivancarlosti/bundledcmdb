@@ -51,10 +51,7 @@ test.describe('SPA shell', () => {
 
     const notice = page.getByRole('alert');
     await expect(notice).toContainText('The React panel is turned off');
-    await expect(notice.getByRole('link', { name: 'Open the classic panel' })).toHaveAttribute(
-      'href',
-      '/main.php',
-    );
+    await expect(notice.getByRole('link', { name: 'Open the classic panel' })).toHaveAttribute('href', '/main.php');
     // The router must not have mounted any screen behind the notice.
     await expect(page.getByRole('navigation')).toHaveCount(0);
   });

@@ -67,14 +67,9 @@ export function MaintenanceTab({ labelledBy }: { labelledBy: string }) {
             <Row label={t('set_maint_timezone')} value={`${diagnostics.timezone} · ${diagnostics.now}`} />
             <Row
               label={t('set_maint_encryption')}
-              value={
-                diagnostics.encryption ? t('set_maint_encryption_ok') : t('set_maint_encryption_missing')
-              }
+              value={diagnostics.encryption ? t('set_maint_encryption_ok') : t('set_maint_encryption_missing')}
             />
-            <Row
-              label={t('set_maint_ready')}
-              value={migrations.ready ? t('set_maint_ready') : t('set_maint_none')}
-            />
+            <Row label={t('set_maint_ready')} value={migrations.ready ? t('set_maint_ready') : t('set_maint_none')} />
           </tbody>
         </table>
       </div>

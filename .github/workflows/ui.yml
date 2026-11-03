@@ -56,6 +56,11 @@ jobs:
       - name: 🧹 Lint
         run: npm run lint
 
+      # `.prettierrc.json` pins the house style (single quotes, 120 columns);
+      # the check keeps `git blame` meaningful instead of reformat-on-touch.
+      - name: 🎨 Format check
+        run: npm run format
+
       - name: 🧪 Unit tests
         run: npm run test
 

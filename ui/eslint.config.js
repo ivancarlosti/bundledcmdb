@@ -28,7 +28,7 @@ export default tseslint.config(
         'error',
         {
           selector:
-            "Literal[value=/(^|\\s)(m[lr]|p[lr]|left-|right-|border-l|border-r|rounded-l|rounded-r|text-left|text-right)(-|$|\\s)/]",
+            'Literal[value=/(^|\\s)(m[lr]|p[lr]|left-|right-|border-l|border-r|rounded-l|rounded-r|text-left|text-right)(-|$|\\s)/]',
           message:
             'Use logical utilities (ms-/me-/ps-/pe-/start-/end-/text-start/text-end) so ar-SA (RTL) keeps working.',
         },

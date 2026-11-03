@@ -25,19 +25,13 @@ test.describe('device grid', () => {
     await serialHeader.click();
     await expect.poll(() => page.url()).toContain('sort=SN&dir=asc');
     await expect.poll(() => requested.at(-1) ?? '').toContain('sort=SN&dir=asc');
-    await expect(page.getByRole('columnheader', { name: /Serial number/ })).toHaveAttribute(
-      'aria-sort',
-      'ascending',
-    );
+    await expect(page.getByRole('columnheader', { name: /Serial number/ })).toHaveAttribute('aria-sort', 'ascending');
 
     // 2nd click: descending.
     await serialHeader.click();
     await expect.poll(() => page.url()).toContain('sort=SN&dir=desc');
     await expect.poll(() => requested.at(-1) ?? '').toContain('dir=desc');
-    await expect(page.getByRole('columnheader', { name: /Serial number/ })).toHaveAttribute(
-      'aria-sort',
-      'descending',
-    );
+    await expect(page.getByRole('columnheader', { name: /Serial number/ })).toHaveAttribute('aria-sort', 'descending');
 
     // 3rd click: back to the server default, which leaves no sort in the URL
     // (the default query is the one already cached from the first load).
@@ -49,10 +43,7 @@ test.describe('device grid', () => {
     await serialHeader.click();
     await expect.poll(() => page.url()).toContain('sort=SN&dir=asc');
     await page.reload();
-    await expect(page.getByRole('columnheader', { name: /Serial number/ })).toHaveAttribute(
-      'aria-sort',
-      'ascending',
-    );
+    await expect(page.getByRole('columnheader', { name: /Serial number/ })).toHaveAttribute('aria-sort', 'ascending');
   });
 
   test('writes filters and paging to the URL and to the request', async ({ page }) => {

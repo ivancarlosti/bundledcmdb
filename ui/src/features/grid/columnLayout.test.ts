@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  applyColumnLayout,
-  moveColumn,
-  resolveOrder,
-  resolveVisible,
-  toggleColumn,
-} from './columnLayout';
+import { applyColumnLayout, moveColumn, resolveOrder, resolveVisible, toggleColumn } from './columnLayout';
 
 const columns = [{ id: 'sn' }, { id: 'hostname' }, { id: 'status' }, { id: 'files' }];
 const ids = columns.map((column) => column.id);

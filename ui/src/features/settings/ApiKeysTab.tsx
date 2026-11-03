@@ -125,9 +125,7 @@ export function ApiKeysTab({ labelledBy }: { labelledBy: string }) {
 
       {editing === null ? null : (
         <form onSubmit={onSubmit} className="card flex flex-col gap-3 p-4">
-          <h3 className="m-0 text-sm font-semibold">
-            {editing === 'new' ? t('set_key_create') : t('set_key_edit')}
-          </h3>
+          <h3 className="m-0 text-sm font-semibold">{editing === 'new' ? t('set_key_create') : t('set_key_edit')}</h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1">
               <label htmlFor="key-label" className="text-xs font-medium text-[var(--color-muted)]">

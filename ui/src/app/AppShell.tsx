@@ -11,8 +11,7 @@ import { sessionQueryKey } from '@/features/auth/useSession';
 import { LocaleSwitcher } from '@/features/locale/LocaleSwitcher';
 import { ThemeSwitcher } from '@/features/theme/ThemeSwitcher';
 
-const NAV_LINK =
-  'rounded-[var(--radius-md)] px-2 py-1 hover:bg-[var(--color-surface-2)]';
+const NAV_LINK = 'rounded-[var(--radius-md)] px-2 py-1 hover:bg-[var(--color-surface-2)]';
 
 /**
  * Application shell: brand, navigation, theme/locale switchers and sign-out.

@@ -65,11 +65,7 @@ export function BulkActions({
           </option>
         ))}
       </Select>
-      <Button
-        variant="secondary"
-        disabled={pending || status === ''}
-        onClick={() => onStatus(status)}
-      >
+      <Button variant="secondary" disabled={pending || status === ''} onClick={() => onStatus(status)}>
         {t('ui_bulk_apply')}
       </Button>
 

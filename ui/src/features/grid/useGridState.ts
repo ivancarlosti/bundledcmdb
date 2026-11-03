@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import {
-  GRID_DEFAULTS,
-  gridSearchString,
-  parseGridSearch,
-  type GridDefaults,
-  type GridState,
-} from './gridSearch';
+import { GRID_DEFAULTS, gridSearchString, parseGridSearch, type GridDefaults, type GridState } from './gridSearch';
 
 /**
  * Bind the grid state to the address bar.

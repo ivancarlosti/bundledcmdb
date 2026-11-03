@@ -129,11 +129,61 @@ export const SESSION = {
 
 export const META = {
   columns: [
-    { key: 'SN', api_key: 'sn', label_key: 'col_sn', label: 'Serial Number', type: 'text', in_grid: true, sortable: true, editable: true, virtual: false },
-    { key: 'Hostname', api_key: 'hostname', label_key: 'col_hostname', label: 'Hostname', type: 'text', in_grid: true, sortable: true, editable: true, virtual: false },
-    { key: 'Status', api_key: 'status', label_key: 'col_status', label: 'Status', type: 'status', in_grid: true, sortable: true, editable: true, virtual: false },
-    { key: 'updated_at', api_key: 'updated_at', label_key: 'col_updated_at', label: 'Updated At', type: 'datetime', in_grid: true, sortable: true, editable: false, virtual: false },
-    { key: 'files', api_key: 'files_count', label_key: 'col_files', label: 'Attachments', type: 'int', in_grid: true, sortable: true, editable: false, virtual: true },
+    {
+      key: 'SN',
+      api_key: 'sn',
+      label_key: 'col_sn',
+      label: 'Serial Number',
+      type: 'text',
+      in_grid: true,
+      sortable: true,
+      editable: true,
+      virtual: false,
+    },
+    {
+      key: 'Hostname',
+      api_key: 'hostname',
+      label_key: 'col_hostname',
+      label: 'Hostname',
+      type: 'text',
+      in_grid: true,
+      sortable: true,
+      editable: true,
+      virtual: false,
+    },
+    {
+      key: 'Status',
+      api_key: 'status',
+      label_key: 'col_status',
+      label: 'Status',
+      type: 'status',
+      in_grid: true,
+      sortable: true,
+      editable: true,
+      virtual: false,
+    },
+    {
+      key: 'updated_at',
+      api_key: 'updated_at',
+      label_key: 'col_updated_at',
+      label: 'Updated At',
+      type: 'datetime',
+      in_grid: true,
+      sortable: true,
+      editable: false,
+      virtual: false,
+    },
+    {
+      key: 'files',
+      api_key: 'files_count',
+      label_key: 'col_files',
+      label: 'Attachments',
+      type: 'int',
+      in_grid: true,
+      sortable: true,
+      editable: false,
+      virtual: true,
+    },
   ],
   statuses: [
     { value: 'In Use', label_key: 'status_in_use' },
@@ -330,11 +380,7 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     }
     options.onDevices?.(url);
     const pageNumber = Number(new URL(url).searchParams.get('page') ?? '1');
-    return json(
-      route,
-      { rows: ROWS, total, page: pageNumber, per_page: 25, pages },
-      { sort: 'SN', dir: 'asc' },
-    );
+    return json(route, { rows: ROWS, total, page: pageNumber, per_page: 25, pages }, { sort: 'SN', dir: 'asc' });
   });
 
   // Registered last so it wins over the generic list route for /devices/{id}.

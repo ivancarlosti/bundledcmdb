@@ -5,15 +5,91 @@ import { buildDevicePayload, formFields, formKeys, initialFormValues, normalizeF
 
 const meta = {
   columns: [
-    { key: 'SN', api_key: 'sn', label_key: 'col_sn', label: 'SN', type: 'text', in_grid: true, sortable: true, editable: true, virtual: false },
-    { key: 'LastSeen', api_key: 'last_seen', label_key: 'col_last_seen', label: 'Last seen', type: 'datetime', in_grid: false, sortable: false, editable: false, virtual: false },
-    { key: 'BYOD', api_key: 'byod', label_key: 'col_byod', label: 'BYOD', type: 'bool', in_grid: true, sortable: true, editable: true, virtual: false },
-    { key: 'source', api_key: 'source', label_key: 'col_source', label: 'Source', type: 'text', in_grid: true, sortable: true, editable: false, virtual: false },
-    { key: 'files', api_key: 'files_count', label_key: 'col_files', label: 'Files', type: 'int', in_grid: true, sortable: true, editable: false, virtual: true },
+    {
+      key: 'SN',
+      api_key: 'sn',
+      label_key: 'col_sn',
+      label: 'SN',
+      type: 'text',
+      in_grid: true,
+      sortable: true,
+      editable: true,
+      virtual: false,
+    },
+    {
+      key: 'LastSeen',
+      api_key: 'last_seen',
+      label_key: 'col_last_seen',
+      label: 'Last seen',
+      type: 'datetime',
+      in_grid: false,
+      sortable: false,
+      editable: false,
+      virtual: false,
+    },
+    {
+      key: 'BYOD',
+      api_key: 'byod',
+      label_key: 'col_byod',
+      label: 'BYOD',
+      type: 'bool',
+      in_grid: true,
+      sortable: true,
+      editable: true,
+      virtual: false,
+    },
+    {
+      key: 'source',
+      api_key: 'source',
+      label_key: 'col_source',
+      label: 'Source',
+      type: 'text',
+      in_grid: true,
+      sortable: true,
+      editable: false,
+      virtual: false,
+    },
+    {
+      key: 'files',
+      api_key: 'files_count',
+      label_key: 'col_files',
+      label: 'Files',
+      type: 'int',
+      in_grid: true,
+      sortable: true,
+      editable: false,
+      virtual: true,
+    },
   ],
   fields: [
-    { id: 1, key: 'cost_center', label: 'Cost center', label_i18n: null, type: 'text', options: [], required: false, unique: false, searchable: true, in_grid: true, editable_roles: ['manager'], sort_order: 0 },
-    { id: 2, key: 'admin_only', label: 'Admin only', label_i18n: null, type: 'text', options: [], required: false, unique: false, searchable: false, in_grid: false, editable_roles: ['admin'], sort_order: 1 },
+    {
+      id: 1,
+      key: 'cost_center',
+      label: 'Cost center',
+      label_i18n: null,
+      type: 'text',
+      options: [],
+      required: false,
+      unique: false,
+      searchable: true,
+      in_grid: true,
+      editable_roles: ['manager'],
+      sort_order: 0,
+    },
+    {
+      id: 2,
+      key: 'admin_only',
+      label: 'Admin only',
+      label_i18n: null,
+      type: 'text',
+      options: [],
+      required: false,
+      unique: false,
+      searchable: false,
+      in_grid: false,
+      editable_roles: ['admin'],
+      sort_order: 1,
+    },
   ],
   writeColumns: { create: ['sn', 'byod', 'source'], update: ['sn', 'byod'] },
 } as unknown as MetaPayload;
@@ -64,11 +140,7 @@ describe('initialFormValues', () => {
 
 describe('buildDevicePayload', () => {
   it('sends nulls for cleared text and keeps booleans', () => {
-    const body = buildDevicePayload(
-      { sn: '  SN-9  ', byod: false },
-      { cost_center: '' },
-      formFields(meta, 'manager'),
-    );
+    const body = buildDevicePayload({ sn: '  SN-9  ', byod: false }, { cost_center: '' }, formFields(meta, 'manager'));
     expect(body.sn).toBe('SN-9');
     expect(body.byod).toBe(false);
     expect(body.custom).toEqual({ cost_center: null });

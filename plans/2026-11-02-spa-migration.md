@@ -709,11 +709,13 @@ bumps by hand.
     need to bypass PHP-FPM; today the server puts the object itself (§16, phase 3).
 10. **Pointer drag-and-drop** for the column picker (buttons already cover the
     keyboard path; `@dnd-kit` is pinned).
-11. **Prettier**: `npm --prefix ui run format` fails on ~50 files that predate
-    this work (it is not part of the gate set yet). Reformatting is a separate,
-    no-behaviour-change commit.
-12. **`api/client.ts` + i18n coverage unit tests** and an RTL screenshot
-    snapshot — the last unchecked phase 8 items.
+11. ~~**Prettier**~~ — done: `.prettierrc.json` (single quotes, 120 columns) and
+    `.prettierignore` pin the house style, the tree is reformatted in one
+    no-behaviour-change commit, and `npm run format` is now a CI gate.
+12. ~~**`api/client.ts` + i18n coverage unit tests** and an RTL screenshot
+    snapshot~~ — done: `src/api/client.test.ts`, `src/i18n/coverage.test.ts`
+    (including the per-locale panel-family gate) and the opt-in
+    `VISUAL_SNAPSHOTS=1` RTL snapshot in `e2e/rtl.spec.ts` all shipped.
 
 ## 15. Context recovery protocol
 

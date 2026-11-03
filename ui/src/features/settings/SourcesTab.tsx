@@ -188,11 +188,7 @@ export function SourcesTab({ labelledBy }: { labelledBy: string }) {
           </thead>
           <tbody>
             {(query.data?.sources ?? []).map((source) => {
-              const blocked = source.is_system
-                ? 'set_err_system_source'
-                : source.usage > 0
-                  ? 'set_err_in_use'
-                  : null;
+              const blocked = source.is_system ? 'set_err_system_source' : source.usage > 0 ? 'set_err_in_use' : null;
               return (
                 <tr key={source.slug} className="border-b border-[var(--color-border)] last:border-0">
                   <td className={TD}>

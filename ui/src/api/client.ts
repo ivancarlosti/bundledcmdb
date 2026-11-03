@@ -124,8 +124,7 @@ export async function apiRequestEnvelope<T>(path: string, options: RequestOption
     headers,
     credentials: 'same-origin',
     signal: options.signal,
-    body:
-      options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
+    body: options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
   });
 
   if (options.raw) {

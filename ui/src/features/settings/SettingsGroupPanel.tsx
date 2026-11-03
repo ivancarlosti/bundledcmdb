@@ -193,8 +193,7 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
   }
 
   const payload = query.data;
-  const fieldErrors =
-    save.error instanceof PanelApiError && save.error.isValidation ? save.error.errors : {};
+  const fieldErrors = save.error instanceof PanelApiError && save.error.isValidation ? save.error.errors : {};
 
   const setValue = (key: string, value: string) => {
     setForm((current) => ({ ...current, values: { ...current.values, [key]: value } }));
@@ -245,9 +244,7 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
                   ) : null}
                 </div>
                 {code === undefined ? null : (
-                  <p className="m-0 text-xs text-[var(--color-danger)]">
-                    {errorKey === null ? code : t(errorKey)}
-                  </p>
+                  <p className="m-0 text-xs text-[var(--color-danger)]">{errorKey === null ? code : t(errorKey)}</p>
                 )}
               </div>
             );

@@ -20,8 +20,7 @@ import { cn } from '@/lib/cn';
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 const VARIANTS: Record<Variant, string> = {
-  primary:
-    'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:opacity-90 border-transparent',
+  primary: 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:opacity-90 border-transparent',
   secondary:
     'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-2)]',
   ghost: 'bg-transparent text-[var(--color-text)] border-transparent hover:bg-[var(--color-surface-2)]',
@@ -150,9 +149,7 @@ export function Alert({
   return (
     <div role="alert" className={cn('card border p-4', tones[tone])}>
       <p className="m-0 font-semibold">{title}</p>
-      {children === undefined ? null : (
-        <div className="mt-1 text-sm text-[var(--color-text)]">{children}</div>
-      )}
+      {children === undefined ? null : <div className="mt-1 text-sm text-[var(--color-text)]">{children}</div>}
       {action === undefined ? null : <div className="mt-3">{action}</div>}
     </div>
   );

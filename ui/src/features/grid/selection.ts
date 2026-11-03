@@ -24,11 +24,7 @@ export function toggleSelection(selected: readonly number[], id: number, checked
  * unchecking removes only the ids of the current page, so "select 3 on page 1,
  * select all on page 2" behaves the way people expect.
  */
-export function toggleAllOnPage(
-  selected: readonly number[],
-  pageIds: readonly number[],
-  checked: boolean,
-): number[] {
+export function toggleAllOnPage(selected: readonly number[], pageIds: readonly number[], checked: boolean): number[] {
   if (!checked) {
     return selected.filter((id) => !pageIds.includes(id));
   }

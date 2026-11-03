@@ -38,10 +38,7 @@ export function LoginScreen() {
         </a>
 
         {showDevLogin ? (
-          <form
-            className="mt-6 flex flex-col gap-2 border-t border-[var(--color-border)] pt-4"
-            onSubmit={onDevLogin}
-          >
+          <form className="mt-6 flex flex-col gap-2 border-t border-[var(--color-border)] pt-4" onSubmit={onDevLogin}>
             <Field label={t('ui_dev_login', { defaultValue: 'Development sign-in' })} htmlFor="dev-login-email">
               <Input
                 id="dev-login-email"

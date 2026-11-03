@@ -102,13 +102,9 @@ describe('apiRequest', () => {
   });
 
   it('turns an error envelope into a typed PanelApiError', async () => {
-    stubFetch(() =>
-      respond({ ok: false, error: { code: 'stale_record', message: 'Reload first.' } }, 409, 'Conflict'),
-    );
+    stubFetch(() => respond({ ok: false, error: { code: 'stale_record', message: 'Reload first.' } }, 409, 'Conflict'));
 
-    const error = await apiRequest('/devices/1', { method: 'PATCH', body: {} }).catch(
-      (caught: unknown) => caught,
-    );
+    const error = await apiRequest('/devices/1', { method: 'PATCH', body: {} }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(PanelApiError);
     const apiError = error as PanelApiError;
@@ -145,9 +141,7 @@ describe('apiRequest', () => {
   });
 
   it('flags a 401 so the shell can show the login screen', async () => {
-    stubFetch(() =>
-      respond({ ok: false, error: { code: 'unauthorized', message: 'Sign in.' } }, 401, 'Unauthorized'),
-    );
+    stubFetch(() => respond({ ok: false, error: { code: 'unauthorized', message: 'Sign in.' } }, 401, 'Unauthorized'));
 
     const error = (await apiRequest('/session').catch((caught: unknown) => caught)) as PanelApiError;
 
@@ -192,9 +186,9 @@ describe('apiRequest', () => {
 
 describe('buildQuery', () => {
   it('skips empty values so URLs stay readable', () => {
-    expect(
-      buildQuery({ q: 'laptop', page: 2, status: '', source: null, trashed: false, byod: undefined }),
-    ).toBe('?q=laptop&page=2&trashed=false');
+    expect(buildQuery({ q: 'laptop', page: 2, status: '', source: null, trashed: false, byod: undefined })).toBe(
+      '?q=laptop&page=2&trashed=false',
+    );
   });
 
   it('returns an empty string when nothing is set', () => {
@@ -211,4 +205,3 @@ describe('apiUrl', () => {
     expect(apiUrl('/devices/export?sort=SN')).toBe('/panel-api/v1/devices/export?sort=SN');
   });
 });
-

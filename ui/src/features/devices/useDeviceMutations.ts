@@ -123,10 +123,9 @@ export function useBulkDeviceAction() {
         toast.success(t('ui_bulk_done', { done: result.updated.length }));
         return;
       }
-      toast.warning(
-        t('ui_bulk_partial', { done: result.updated.length, skipped: result.skipped.length }),
-        { description: result.skipped[0]?.message ?? '' },
-      );
+      toast.warning(t('ui_bulk_partial', { done: result.updated.length, skipped: result.skipped.length }), {
+        description: result.skipped[0]?.message ?? '',
+      });
     },
     onError: (error: unknown) => {
       toast.error(t('save_failed'), { description: messageOf(error, '') });

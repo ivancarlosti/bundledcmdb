@@ -8,12 +8,7 @@ import { formatBytes, formatDateTime } from '@/lib/format';
 
 import type { DeviceDetail, MetaPayload } from './api';
 import { cellContext, cellValue, GridCell } from './columns';
-import {
-  useDeleteDevice,
-  useDeleteDeviceFile,
-  useRestoreDevice,
-  useUploadDeviceFile,
-} from './useDeviceMutations';
+import { useDeleteDevice, useDeleteDeviceFile, useRestoreDevice, useUploadDeviceFile } from './useDeviceMutations';
 import { useDevice, useMeta } from './useDevices';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -34,12 +29,7 @@ function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayloa
     <dl className="m-0">
       {meta.columns.map((column) => (
         <Row key={column.key} label={t(column.label_key, { defaultValue: column.label })}>
-          <GridCell
-            value={cellValue(device, column)}
-            columnKey={column.key}
-            type={column.type}
-            {...context}
-          />
+          <GridCell value={cellValue(device, column)} columnKey={column.key} type={column.type} {...context} />
         </Row>
       ))}
       {meta.fields.map((field) => (
@@ -90,11 +80,7 @@ function DeviceActions({ device }: { device: DeviceDetail }) {
         </Link>
       ) : null}
       {session.capabilities.can_admin && trashed ? (
-        <Button
-          variant="primary"
-          disabled={restoreDevice.isPending}
-          onClick={() => restoreDevice.mutate(device.id)}
-        >
+        <Button variant="primary" disabled={restoreDevice.isPending} onClick={() => restoreDevice.mutate(device.id)}>
           {t('ui_restore')}
         </Button>
       ) : null}
@@ -242,9 +228,7 @@ export function DeviceDetailPage() {
           </div>
         }
       >
-        <p className="m-0">
-          {deviceQuery.error instanceof Error ? deviceQuery.error.message : null}
-        </p>
+        <p className="m-0">{deviceQuery.error instanceof Error ? deviceQuery.error.message : null}</p>
       </Alert>
     );
   }
@@ -284,4 +268,3 @@ export function DeviceDetailPage() {
     </section>
   );
 }
-

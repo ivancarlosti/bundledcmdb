@@ -15,7 +15,8 @@
         try {
           var stored = localStorage.getItem('bcmdb.theme');
           var mode = stored === 'light' || stored === 'dark' ? stored : 'system';
-          var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var dark =
+            mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           var root = document.documentElement;
           root.setAttribute('data-theme', dark ? 'dark' : 'light');
           root.setAttribute('data-theme-source', stored ? 'user' : 'system');

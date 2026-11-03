@@ -115,9 +115,7 @@ export function SettingsPage() {
             aria-selected={tab === item.id}
             aria-controls={`settings-panel-${item.id}`}
             className={`${TAB_LINK} ${
-              tab === item.id
-                ? 'bg-[var(--color-surface-3)] font-semibold'
-                : 'hover:bg-[var(--color-surface-2)]'
+              tab === item.id ? 'bg-[var(--color-surface-3)] font-semibold' : 'hover:bg-[var(--color-surface-2)]'
             }`}
             onClick={() => select(item.id)}
           >
