@@ -70,6 +70,7 @@ the server-side guard.
 | `GET /panel-api/v1/devices/export` | CSV with the same filters/sort |
 | `GET /panel-api/v1/devices/{id}` | one device + custom values + attachments |
 | `POST /panel-api/v1/devices` | create (manager+), `201` + the created row |
+| `POST /panel-api/v1/devices/bulk` | one operation (`status`, `byod`, `delete`, `restore`) on up to 200 ids, per-row results |
 | `PATCH /panel-api/v1/devices/{id}` | partial update (manager+); `expected_updated_at` → `409 stale_record` |
 | `PUT /panel-api/v1/devices/{id}` | full replace (manager+, parity with the Bearer API) |
 | `DELETE /panel-api/v1/devices/{id}` | soft delete (admin+); `?hard=1` is superadmin-only |
@@ -85,6 +86,27 @@ the signed-in role may send, and the API rejects everything else with `422`.
 
 Settings, sources, custom-field definitions, API keys and user management are
 still phase 7; the legacy pages remain available at `/` until they land.
+
+### Bulk actions
+
+Selecting rows adds a checkbox column and a toolbar. The selection is a list of
+ids held by `DeviceGridPage` (it survives paging, and is cleared by "Clear
+selection", by "Clear filters", and once an action succeeded), and it is sent as
+**one** `POST /devices/bulk` request:
+
+```json
+{"ids": [7, 8], "op": "status", "value": "In Stock"}
+{"ids": [7, 8], "op": "delete"}
+{"ids": [7, 8], "op": "restore"}
+```
+
+The server writes each row through the same single-row helpers in its own
+transaction, so a stale, already-deleted or out-of-company row is *skipped* (with
+a `code` and `message`) instead of aborting the whole action; the grid reports
+`ui_bulk_partial` ("2 updated, 1 skipped") plus the first reason. `status`/`byod`
+need manager+, `delete`/`restore` admin+, `hard` superadmin. The shared value is
+validated once (`422 value: invalid_status`), and more than 200 ids is `422
+ids: too_many`.
 
 ## Scripts
 
@@ -109,6 +131,12 @@ php bin/test-panel-api.php      # integration tests: role matrix, validation,
 `bin/test-panel-api.php` drives the real handlers against the configured
 database and hard-deletes everything it creates, so it is safe to run against a
 development database. It refuses to run with `APP_ENV=production`.
+
+CI: `.github/workflows/ui.yml` runs the SPA gates (`typecheck`, `lint`, `vitest`,
+`build`, then Playwright against `vite preview`) for changes under `ui/`,
+`public/lang/` and `lib/panel/`, and uploads the built `public/app` bundle. The
+release ZIP (`.github/workflows/build.yml`) builds the SPA before zipping, so a
+zip deployment does not need Node.
 
 ## Conventions
 

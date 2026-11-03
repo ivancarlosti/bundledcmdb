@@ -4,8 +4,10 @@
 > starts by re-reading it. Update it at the end of each phase (mark progress,
 > record deviations in §17) so context is never lost.
 >
-> Status: **in progress** — phases 0–3 done, phase 4 shell done (settings routes
-> moved to 7), phase 5 grid mostly done (selection/bulk pending), phase 6 core done.
+> Status: **in progress** — phases 0–6 done (phase 5 complete: selection/bulk
+> actions, 360 px audit; phase 4 keyboard walkthrough), phase 8 CI in place
+> (`ui.yml`, SPA build in the release ZIP). Phase 7 (`/app/settings/*`) is the
+> remaining feature work.
 
 ## 1. Goals
 
@@ -144,6 +146,7 @@ no-store`. Auth: session cookie; mutations additionally require `X-CSRF-Token`.
 | GET | `/meta` | any | column defs (translated), status values, sources, custom fields, capabilities |
 | GET | `/devices` | any | `q, source, company, status, byod, sort, dir, page, per_page, trashed, custom:<key>` |
 | POST | `/devices` | manager+ | create |
+| POST | `/devices/bulk` | manager+ / admin+ | one op (`status`, `byod`, `delete`, `restore`) for ≤200 ids, per-row `updated`/`skipped` |
 | GET | `/devices/{id}` | any | full row + `files[]` + `custom{}` + `updated_at` |
 | PATCH | `/devices/{id}` | manager+ | partial update, `expected_updated_at` → `409 stale_record` |
 | PUT | `/devices/{id}` | manager+ | full replace (parity with `api.php`) |
@@ -424,11 +427,11 @@ Estimates are focus days for one developer.
   `DELETE /devices/{id}/files/{fileId}` (object best effort + row).
 * [x] `/meta` publishes `writeColumns` (create/update) and `limits`
   (`requireSn`, `maxUploadBytes`) so the SPA renders the right form.
-* [x] `bin/test-panel-api.php`: 49 assertions covering the role matrix, validation
+* [x] `bin/test-panel-api.php`: 68 assertions covering the role matrix, validation
   (unknown/forbidden field, required SN, unknown source, invalid status, duplicate
   SN), optimistic locking, company isolation, soft delete → hidden → `trashed=1`
   → restore → hard delete, CSRF `419`, and the read-sort contract.
-  Verified in the dev image on 2026-11-02 (`49 passed, 0 failed`).
+  plus bulk actions; verified in the dev image on 2026-11-02 (`68 passed, 0 failed`).
 
 ### Phase 4 — SPA shell + design system (4–5 d) 🚧 scaffold done
 
@@ -459,7 +462,9 @@ Estimates are focus days for one developer.
 * [x] Multi-stage Dockerfile (`vendor` → `ui` on `node:24-alpine` → runtime) and
   nginx `/app/` locations (immutable assets, `no-store` shell, history fallback) —
   landed with phase 4 so the scaffold could be verified end-to-end.
-* [ ] Release ZIP (`build.yml`) builds the SPA before `zip -r` (still pending).
+* [x] Release ZIP (`build.yml`) builds the SPA before `zip -r`
+  (`npm ci --prefix ui && npm run build --prefix ui`, then `public/app` is
+  included and `ui/node_modules`/`ui/dist`/test output excluded).
 * Done when: light/dark/system switch with no flash and no reload; all 7 locales
   switch instantly incl. `ar-SA` RTL; shell passes a keyboard-only walkthrough.
 
@@ -481,7 +486,18 @@ Estimates are focus days for one developer.
   (`checkbox`) PATCH the row with `expected_updated_at`; a `409` shows
   "changed by someone else" and refreshes the page data.
 * [x] `aria-live` result summary (`ui_showing_range`) next to the table.
-* [ ] Selection + bulk actions, 360 px viewport audit.
+* [x] Selection + bulk actions: a leading checkbox column (header checkbox with
+  the `indeterminate` half-state), a toolbar that sends **one**
+  `POST /devices/bulk` for the whole selection (`status`, `byod`, `delete`,
+  `restore`; manager+/admin+/superadmin) and reports per-row results
+  (`ui_bulk_partial` = "2 updated, 1 skipped"). `features/grid/selection.ts` is a
+  pure reducer with 13 unit tests; `e2e/bulk.spec.ts` covers the payload and the
+  clearing rules.
+* [x] 360 px audit: `e2e/responsive.spec.ts` asserts the *page* never scrolls
+  sideways (grid and detail) and that the table scrolls inside its own container;
+  the live stack reports `overflow = 0 px` and the toolbar wraps.
+* [x] Keyboard walkthrough (`e2e/keyboard.spec.ts`): sort with Enter on the
+  header button, activate a row with Enter, toggle a row checkbox with Space.
 * Done when: each §2.1 regression has a test (see §10) and the grid is usable on
   a 360 px viewport.
 
@@ -506,13 +522,23 @@ Estimates are focus days for one developer.
   labels, validation options), API keys (create-once secret, rotate, revoke),
   maintenance (status + migrate button), users (superadmin).
 
-### Phase 8 — tests, CI, docs (3–4 d)
+### Phase 8 — tests, CI, docs (3–4 d) 🚧 mostly done
 
-* Vitest: api client, `useDataGrid`, column persistence, theme, i18n coverage.
-* Playwright: login, sort/filter/paging, inline edit + conflict, column reorder
-  persistence, dark mode, RTL snapshot, CSV download, keyboard a11y.
-* `docs/frontend.md` finalised, `docs/api.md` cross-links the panel API,
-  `docs/development.md` documents `npm run dev` + proxy.
+* [x] Vitest: `gridSearch` (16), `columnLayout` (12), `selection` (13),
+  `deviceForm` (8), `DataGrid` component (4), `theme` (5) — 58 tests.
+* [x] Playwright (20 specs): sort/filter/paging + URL persistence, inline edit +
+  `409` conflict, column layout persistence, bulk actions, dark mode, RTL
+  switch, CSV download, keyboard a11y, 360 px layout, create payload, shell
+  smoke.
+* [x] `.github/workflows/ui.yml`: `npm ci` → typecheck → lint → vitest → build
+  (+ `public/app` artifact) and a Playwright job against `vite preview` with the
+  stubbed panel API; `build.yml` builds the SPA before zipping.
+* [ ] Vitest for `api/client.ts` (envelope → `PanelApiError`, CSRF header) and an
+  i18n coverage assertion in the SPA.
+* [ ] RTL screenshot snapshot (the direction flip itself is asserted).
+* [x] `docs/frontend.md` finalised (panel API table, bulk actions, gates);
+  `docs/api.md` cross-links the panel API; `docs/development.md` documents
+  `npm run dev` + proxy.
 
 ### Phase 9 — cutover (2–3 d)
 
@@ -638,17 +664,15 @@ bumps by hand.
 7. **Rate limiting** on panel mutations (`rate_limited` reserved in §4.1).
 8. **`col_*` translations** for `fr-FR`, `zh-CN`, `hi-IN`, `ar-SA` (they fall
    back to en-US labels today; see §16, 2026-11-02 phase 2).
-9. **Selection + bulk actions** in the grid (delete/restore/status for a set) and
-   the 360 px viewport audit — the last unchecked phase 5 items.
-10. **Presigned PUT upload** (`POST /devices/{id}/files/presign`) if uploads ever
+9. **Presigned PUT upload** (`POST /devices/{id}/files/presign`) if uploads ever
     need to bypass PHP-FPM; today the server puts the object itself (§16, phase 3).
-11. **Pointer drag-and-drop** for the column picker (buttons already cover the
+10. **Pointer drag-and-drop** for the column picker (buttons already cover the
     keyboard path; `@dnd-kit` is pinned).
-12. **Prettier**: `npm --prefix ui run format` fails on ~50 files that predate
+11. **Prettier**: `npm --prefix ui run format` fails on ~50 files that predate
     this work (it is not part of the gate set yet). Reformatting is a separate,
     no-behaviour-change commit.
-13. **`ui.yml` workflow** (typecheck/lint/vitest/playwright per PR) and the
-    release ZIP step that builds `public/app` — see §8.
+12. **`api/client.ts` + i18n coverage unit tests** and an RTL screenshot
+    snapshot — the last unchecked phase 8 items.
 
 ## 15. Context recovery protocol
 
@@ -697,3 +721,11 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 4 | The error boundary renders untranslated English | the failure may be the i18n catalogue itself, so a hard-coded fallback is the only message guaranteed to paint |
 | 2026-11-02 | 5 | Column reordering uses `Move up`/`Move down` buttons, not pointer drag | keyboard-first, screen-reader friendly and directly testable; `@dnd-kit` stays pinned for the selection/bulk work |
 | 2026-11-02 | 5 | Inline editing is limited to Status and boolean columns | the other editable columns (dates, e-mail, notes) need per-type editors; the edit form already covers them, and the grid keeps the two fields that are actually toggled in bulk |
+| 2026-11-02 | 5 | `POST /devices/bulk` added to the panel API (not in §4) | a selection has to be one request with per-row results, not 25 fire-and-forget `PATCH`es; the route is panel-only (session + CSRF) so the Bearer API keeps its own `/v1/bulk` contract untouched |
+| 2026-11-02 | 5 | Bulk actions are per-row, not one transaction | a stale or already-deleted row must not roll back the rows that did save; the response reports `updated` + `skipped[{id, code, message}]` and the grid shows "N updated, M skipped" |
+| 2026-11-02 | 5 | The bulk value is validated once, before the loop (`status`, `byod`) | 200 rows would produce 200 identical `422`s; an invalid `value` or `ids` list fails the whole request instead |
+| 2026-11-02 | 5 | `DataGrid` ignores row clicks that land on `input`/`select`/`button`/`a`/`label` | with inline edit and selection inside the row, a click on the status `<select>` used to navigate to the detail page (found by the Playwright detail-page spec); interactive elements now win |
+| 2026-11-02 | 5 | `ui_selected_count`/`ui_bulk_done` interpolate `{{total}}`/`{{done}}`, not `{{count}}` | i18next rewrites a `count` option to plural keys (`_one`/`_other`), and the PHP catalogues are flat; the neutral variable keeps one key per string |
+| 2026-11-02 | 5 | e2e fixtures keep a mutable session and echo `PATCH /session/preferences` | theme, locale and column-layout tests need the stubbed server to remember what was saved, otherwise "survives a reload" cannot be asserted |
+| 2026-11-02 | 5 | `ui.yml` runs the Playwright suite in its own job, after `npm run build` | `vite preview` serves the production bundle; a separate job keeps a flaky browser test from blocking the typecheck/lint/vitest signal |
+| 2026-11-02 | 5 | Release ZIP excludes `ui/node_modules`, `ui/dist`, `ui/test-results`, `ui/playwright-report`, `ui/coverage` but includes `public/app` | zip deployments have no build step, while those directories are reproducible build inputs/outputs (and `node_modules` is not even tracked) |

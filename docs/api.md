@@ -123,6 +123,12 @@ Each item is processed independently:
 Soft delete by default (`deleted_at`), hidden from lists. `?hard=1` removes the
 row plus its custom values and attachment metadata (files stay in S3).
 
+> The web panel does **not** use this API. It talks to its own session-authenticated
+> `/panel-api/v1` (same envelope, CSRF header instead of a Bearer token), which
+> shares the model layer with the endpoints above. Its route table, including the
+> panel-only `POST /panel-api/v1/devices/bulk` used by the grid's bulk actions, is
+> documented in [frontend.md](frontend.md#panel-api-used-by-the-spa-today).
+
 ## Payload fields
 
 Both `snake_case` API names and raw database column names are accepted
