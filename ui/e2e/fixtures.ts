@@ -57,6 +57,23 @@ export const MESSAGES: Record<string, string> = {
   col_updated_at: 'Updated at',
   col_company: 'Company',
   col_byod: 'BYOD',
+  // Settings screens (phase 7): the catalogue stub only needs the strings the
+  // specs assert on, not the whole `set_*` family.
+  set_title: 'Settings',
+  set_tab_general: 'General',
+  set_tab_storage: 'Storage (S3)',
+  set_tab_api: 'API',
+  set_tab_sources: 'Sources',
+  set_tab_fields: 'Custom fields',
+  set_tab_maintenance: 'Maintenance',
+  set_tab_users: 'Users',
+  set_general_intro: 'Language, timezone and display defaults.',
+  set_storage_intro: 'S3-compatible storage for device attachments.',
+  set_saved: 'Settings saved.',
+  set_error: 'Some values could not be saved.',
+  set_err_required: 'Required.',
+  setting_s3_bucket: 'Bucket',
+  setting_s3_secret_key: 'Secret access key',
   ui_new_device: 'New device',
   ui_edit_device: 'Edit device',
   ui_columns: 'Columns',
@@ -222,6 +239,8 @@ export type MockOptions = {
   onBulk?: (body: Record<string, unknown>) => void;
   /** Called with the JSON body of every `PATCH /session/preferences`. */
   onPreferences?: (patch: Record<string, unknown>) => void;
+  /** Merged into the stubbed session (role, capabilities, locale, …). */
+  session?: Record<string, unknown>;
   pages?: number;
   total?: number;
 };
@@ -252,7 +271,7 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
   const pages = options.pages ?? 1;
   // The stubbed session is mutable so preference writes (theme, locale, column
   // layout) behave like the real server: a reload sees what was saved.
-  let sessionState: Record<string, unknown> = { ...SESSION };
+  let sessionState: Record<string, unknown> = { ...SESSION, ...(options.session ?? {}) };
 
   await page.route('**/panel-api/v1/session', (route) => json(route, sessionState));
   await page.route('**/panel-api/v1/session/preferences', (route) => {
@@ -343,4 +362,189 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     options.onBulk?.(body);
     return json(route, { op: body.op, updated: ids, skipped: [] }, { changed: ids.length, skipped: 0 });
   });
+}
+
+// --- Settings -------------------------------------------------------------
+
+type SettingStub = {
+  key: string;
+  group: string;
+  label: string;
+  label_key: string;
+  type: string;
+  options: { value: string; label: string }[];
+  min: number | null;
+  max: number | null;
+  source: 'db' | 'env' | 'default';
+  secret: boolean;
+  configured: boolean | null;
+  value: string;
+};
+
+function settingStub(key: string, type: string, value: string, extra: Partial<SettingStub> = {}): SettingStub {
+  return {
+    key,
+    group: key.split('.')[0] as string,
+    label: key,
+    label_key: `setting_${key.replace(/\./g, '_')}`,
+    type,
+    options: [],
+    min: null,
+    max: null,
+    source: 'db',
+    secret: false,
+    configured: null,
+    value,
+    ...extra,
+  };
+}
+
+export const SETTINGS_SOURCES = [
+  { slug: 'manual', label: 'Manual', color: '#64748b', is_system: true, is_default: true, usage: 12 },
+  { slug: 'intune', label: 'Intune', color: '#4f46e5', is_system: false, is_default: false, usage: 0 },
+];
+
+export const SETTINGS_PAYLOAD = {
+  groups: [
+    {
+      id: 'general',
+      label_key: 'set_tab_general',
+      settings: [
+        settingStub('general.default_locale', 'locale', 'en-US'),
+        settingStub('general.per_page', 'int', '25', { min: 5, max: 500 }),
+        settingStub('ui.spa_enabled', 'bool', '1'),
+      ],
+    },
+    {
+      id: 'assets',
+      label_key: 'set_tab_general',
+      settings: [
+        settingStub('assets.default_source', 'source', 'manual'),
+        settingStub('assets.require_sn', 'bool', '1'),
+      ],
+    },
+    {
+      id: 'api',
+      label_key: 'set_tab_api',
+      settings: [settingStub('api.enabled', 'bool', '1')],
+    },
+    {
+      id: 'storage',
+      label_key: 'set_tab_storage',
+      settings: [
+        settingStub('s3.bucket', 'text', 'cmdb'),
+        // A stored secret: the API sends an empty value and `configured: true`,
+        // which is what "leave blank to keep" is built on.
+        settingStub('s3.secret_key', 'secret', '', { secret: true, configured: true }),
+      ],
+    },
+  ],
+  sources: SETTINGS_SOURCES,
+  locales: [
+    { code: 'en-US', native: 'English (US)', label: 'EN', dir: 'ltr' },
+    { code: 'ar-SA', native: 'العربية', label: 'AR', dir: 'rtl' },
+  ],
+  timezones: ['UTC', 'America/Sao_Paulo'],
+  themes: ['system', 'light', 'dark'],
+};
+
+export type SettingsMockOptions = {
+  /** Called with the JSON body of every `PATCH /settings`. */
+  onSave?: (body: Record<string, unknown>) => void;
+  /** Answered as `422 validation_failed` with these per-key codes. */
+  invalid?: Record<string, string>;
+};
+
+/**
+ * Settings endpoints, shaped like `lib/panel/settings.php`.
+ *
+ * `PATCH /settings` echoes the payload the way the handler does, so the form
+ * re-seeds itself from the server's answer instead of from local state. A 422
+ * carries `errors` keyed by setting key, which is what the inline messages read.
+ */
+export async function mockSettings(page: Page, options: SettingsMockOptions = {}): Promise<void> {
+  await page.route('**/panel-api/v1/settings', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { ok: true, data: SETTINGS_PAYLOAD } });
+      return;
+    }
+
+    let body: Record<string, unknown> = {};
+    try {
+      body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
+    options.onSave?.(body);
+
+    if (options.invalid !== undefined) {
+      await route.fulfill({
+        status: 422,
+        json: {
+          ok: false,
+          error: { code: 'validation_failed', message: 'Some settings were rejected.', errors: options.invalid },
+        },
+      });
+      return;
+    }
+
+    const values = (body.values ?? {}) as Record<string, unknown>;
+    await route.fulfill({
+      json: { ok: true, data: SETTINGS_PAYLOAD, meta: { saved: Object.keys(values) } },
+    });
+  });
+
+  await page.route('**/panel-api/v1/settings/sources', (route) =>
+    route.fulfill({ json: { ok: true, data: { sources: SETTINGS_SOURCES } } }),
+  );
+  await page.route('**/panel-api/v1/settings/fields', (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        data: {
+          fields: [],
+          types: [{ value: 'text', label: 'Text', input: 'text' }],
+          roles: ['user', 'manager', 'admin', 'superadmin'],
+        },
+      },
+    }),
+  );
+  await page.route('**/panel-api/v1/settings/api-keys**', (route) =>
+    route.fulfill({ json: { ok: true, data: { keys: [], sources: SETTINGS_SOURCES } } }),
+  );
+  await page.route('**/panel-api/v1/settings/users', (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        data: {
+          users: [
+            { email: 'qa@example.com', company: '', role: 'superadmin', is_self: true },
+            { email: 'ops@example.com', company: 'Acme', role: 'manager', is_self: false },
+          ],
+          roles: ['user', 'manager', 'admin', 'superadmin'],
+        },
+      },
+    }),
+  );
+  await page.route('**/panel-api/v1/settings/maintenance', (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        data: {
+          migrations: { ready: true, ledger: true, applied: ['0001_settings'], pending: [] },
+          diagnostics: {
+            app_version: '10.6.1',
+            app_env: 'development',
+            php_version: '8.4.0',
+            database: 'cmdb',
+            db_version: '8.0.36',
+            timezone: 'UTC',
+            now: '2026-11-03 00:00:00',
+            encryption: true,
+            counts: { api_keys: 0, sources: 2, fields: 0 },
+          },
+        },
+      },
+    }),
+  );
 }

@@ -5,6 +5,7 @@ import { Alert } from '@/components/ui';
 import { DeviceDetailPage } from '@/features/devices/DeviceDetailPage';
 import { DeviceFormPage } from '@/features/devices/DeviceFormPage';
 import { DeviceGridPage } from '@/features/devices/DeviceGridPage';
+import { SettingsPage } from '@/features/settings/SettingsPage';
 
 import { AppShell } from './AppShell';
 
@@ -70,12 +71,28 @@ const editDeviceRoute = createRoute({
   component: DeviceFormPage,
 });
 
+/**
+ * `/app/settings` — the tab is a `?tab=` parameter, so the route carries a
+ * `validateSearch` that keeps it in the location object instead of letting the
+ * router drop it on the next navigation.
+ */
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => {
+    const tab = search.tab;
+    return typeof tab === 'string' && tab !== '' ? { tab } : {};
+  },
+  component: SettingsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   devicesRoute,
   newDeviceRoute,
   editDeviceRoute,
   deviceRoute,
+  settingsRoute,
 ]);
 
 /** `basepath` matches the nginx mount point, so links stay `/app/...`. */
