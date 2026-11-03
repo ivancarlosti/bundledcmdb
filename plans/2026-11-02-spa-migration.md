@@ -4,11 +4,13 @@
 > starts by re-reading it. Update it at the end of each phase (mark progress,
 > record deviations in §17) so context is never lost.
 >
-> Status: **in progress** — phases 0–6 done (phase 5 complete: selection/bulk
-> actions, 360 px audit; phase 4 keyboard walkthrough), phase 8 CI in place
-> (`ui.yml`, SPA build in the release ZIP). Phase 7 is complete: the settings API
-> and the `/app/settings` React screens are both shipped. Phase 9 (cutover:
-> `ui.spa_enabled`, deleting the legacy pages) is next.
+> Status: **in progress** — phases 0–8 done. Phase 2's last item (EXPLAIN +
+> 100k-row timing) is closed by `bin/bench-devices.php`, which found and fixed
+> three real problems (missing indexes, a repair migration, and the broken `byod`
+> filter). Phase 9 step 1 is shipped: `ui.spa_enabled` defaults to `1`, `/`
+> redirects to `/app/`, and rolling the setting back renders a notice instead of
+> a half-working shell. What is left is the breaking release that deletes the
+> legacy PHP pages (§9).
 
 ## 1. Goals
 
@@ -520,9 +522,13 @@ Estimates are focus days for one developer.
   "reload before saving" state.
 * [x] Delete (soft) / restore / hard delete (superadmin) from the detail page,
   gated by `capabilities`; attachments upload + remove (server-side S3 put).
-* [ ] Tabbed edit drawer, `react-hook-form` + `zod` client schemas, upload
-  progress — the controlled form covers the same fields today; revisit if the
-  field count grows.
+* [~] Deferred by design: tabbed edit drawer, `react-hook-form` + `zod` client
+  schemas, upload progress. The controlled form covers the same fields (they come
+  from `/meta.writeColumns`, so nothing is missing), `deviceForm.ts` owns the
+  payload/normalisation rules and is unit-tested, and the 422/409 paths are
+  covered by e2e. Both libraries are installed and pinned, so the drawer is a
+  contained change; the trigger to do it is the field count growing (or the need
+  for per-file upload state, which `fetch` cannot report — that needs XHR).
 
 ### Phase 7 — settings, sources, fields, API keys, users (5–6 d) ✅ done
 
@@ -793,3 +799,5 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 2 | The `byod` filter compares normalised strings (`LOWER(TRIM(BYOD)) IN ('1','true','yes','on')`) instead of binding `1`/`0` | `BYOD` is a `VARCHAR`: MariaDB cast `'true'` to `0`, so `byod=true` silently matched nothing. Both legacy (`1`/`0`, `yes`/`no`) and current (`true`/`false`) spellings now match |
 | 2026-11-04 | 2 | `files`/`custom:` sorts and free-text search stay linear and are documented as such | both sort on a computed expression (filesort over the whole scope, ~155 ms at 100k) and `q=` is a `LIKE '%…%'` over ~20 columns (~300+400 ms); the UI narrows with filters first, and keyset pagination/FULLTEXT stay in §14 |
 | 2026-11-04 | 8 | `fr-FR`/`zh-CN`/`hi-IN`/`ar-SA` floors raised 15 % → 45 % and a per-locale family gate added to `coverage.test.ts` | the panel families are what a user actually reads; a percentage floor alone let a single new `col_*` key ship untranslated |
+| 2026-11-04 | 6 | The tabbed drawer / `react-hook-form` + `zod` rewrite stays deferred (marked `[~]`) | the field list comes from `/meta.writeColumns`, so the controlled form has no blind spots, and `deviceForm.ts` is unit-tested; rewriting the only device-write screen in the same release that makes it the default UI would trade known-good behaviour for style |
+| 2026-11-04 | 9 | The legacy pages are **not** deleted in this release | the rollback I just shipped links at `/main.php`, `bin/bootstrap.php` still points its maintenance banner at `settings.php?tab=maintenance`, and the plan (D7) stages the deletion as a separate breaking release with the `docs/screenshots` refresh |
