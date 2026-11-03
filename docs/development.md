@@ -101,5 +101,8 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 * Never trust `$_GET`/`$_POST` for column names: use `asset_column_defs()`,
   `field_defs()` and the whitelist in `asset_list()`.
 * Timestamps are stored in UTC (`app_now_utc()`), rendered with `app_date()`.
+* `ui/package.json` pins `minimatch@^11` through `overrides`: eslint's config
+  loader still asks for `^10`, and 10.x carries a DoS advisory (GHSA-g3hv-75wg-m249).
+  Remove the override when `@eslint/config-array` widens its own range.
 * New settings must be declared in `settings_definitions()` (label + type +
   optional env fallback) to appear in the UI and in `settings_all()`.
