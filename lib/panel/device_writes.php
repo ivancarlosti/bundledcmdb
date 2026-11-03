@@ -24,8 +24,13 @@ declare(strict_types=1);
  * fails with `409 stale_record` instead of overwriting a newer edit.
  */
 
-/** Uploads accepted through the panel API (nginx/PHP limits are lower in practice). */
-const PANEL_MAX_UPLOAD_BYTES = 26214400; // 25 MiB
+/**
+ * Uploads accepted through the panel API, for both drivers: the local one copies
+ * a temp file, the S3 one signs a PUT of the same size. The image raises nginx
+ * (`client_max_body_size 101m`) and PHP (`post_max_size = 101M`) above this so
+ * the multipart envelope always fits.
+ */
+const PANEL_MAX_UPLOAD_BYTES = 104857600; // 100 MiB
 
 /**
  * Schema columns the given role may write.
@@ -683,12 +688,13 @@ function panel_devices_bulk(array $params = []): array
 
 
 /**
- * POST /devices/{id}/files — multipart upload, server-side to S3.
+ * POST /devices/{id}/files — multipart upload, server-side to S3 or to disk.
  *
  * The browser uploads to the panel (the session cookie and the CSRF token are
  * already there) and the server puts the object, so AWS credentials and signing
- * logic never reach JavaScript. `S3Client` only signs GET URLs, so a
- * direct-to-bucket upload is intentionally not offered.
+ * logic never reach JavaScript. This is the path used with `storage.driver =
+ * local` and the fallback the SPA takes when the presigned PUT to the bucket
+ * fails (CORS, or an `s3.endpoint` the browser cannot resolve).
  */
 function panel_devices_files_store(array $params = []): array
 {
@@ -709,8 +715,19 @@ function panel_devices_files_store(array $params = []): array
         return panel_devices_files_register($pdo, $user, $id, $device);
     }
 
+    // PHP discards a body over `post_max_size` before reading it, so `$_FILES`
+    // arrives empty and the per-file error never exists. Without this check the
+    // user would be told "A file is required." for an oversized attachment.
+    if ($_FILES === [] && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        throw new ApiError('validation_failed', 'The file is too large.', 422, ['file' => 'too_large']);
+    }
+
     $file = $_FILES['file'] ?? $_FILES['new_file'] ?? null;
-    if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+    $uploadError = is_array($file) ? (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+    if ($uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE) {
+        throw new ApiError('validation_failed', 'The file is too large.', 422, ['file' => 'too_large']);
+    }
+    if (!is_array($file) || $uploadError !== UPLOAD_ERR_OK) {
         throw new ApiError('validation_failed', 'A file is required.', 422, ['file' => 'required']);
     }
 

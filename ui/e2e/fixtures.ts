@@ -26,6 +26,7 @@ export const MESSAGES: Record<string, string> = {
   ui_history: 'History',
   ui_drag_column: 'Drag {{name}} to reorder',
   upload_title: 'Upload New File',
+  upload_failed: 'Could not upload the file.',
   files_title: 'Attachments',
   ui_views: 'Views',
   ui_form_tabs: 'Device sections',
@@ -157,7 +158,6 @@ export const MESSAGES: Record<string, string> = {
   setting_s3_path_style: 'Enable path-style URLs (MinIO / self-hosted)',
   setting_s3_secret_key: 'Secret access key',
   setting_storage_driver: 'Attachment storage driver',
-  setting_storage_local_path: 'Local storage path (empty = var/storage)',
   role_user: 'User',
   role_manager: 'Manager',
   role_superadmin: 'Superadmin',
@@ -386,7 +386,7 @@ export const META = {
     create: ['sn', 'hostname', 'status', 'source', 'user_email'],
     update: ['sn', 'hostname', 'status', 'user_email'],
   },
-  limits: { requireSn: true, maxUploadBytes: 26214400 },
+  limits: { requireSn: true, maxUploadBytes: 104857600 },
   schemaReady: true,
 };
 
@@ -484,6 +484,23 @@ export type MockOptions = {
   presign?: Record<string, unknown>;
   /** Called with the JSON body that registers a direct upload. */
   onFileUpload?: (body: Record<string, unknown>) => void;
+  /**
+   * Abort the browser's PUT to the fake bucket, the way a DNS failure or a
+   * missing CORS rule looks from `XMLHttpRequest` (it fires `error`, not `load`).
+   */
+  bucketUnreachable?: boolean;
+  /**
+   * Refuse the registration of a direct upload (`422`), so the SPA has to fall
+   * back to the multipart upload. Multipart bodies still succeed.
+   */
+  registerDirectFailed?: boolean;
+  /**
+   * Refuse the multipart upload too (`422`, the way an oversized body is
+   * reported), so a test can assert what the toast says when nothing worked.
+   */
+  multipartFailed?: boolean;
+  /** Merged into the stubbed `GET /devices/{id}` row, e.g. a long `notes`. */
+  detail?: Record<string, unknown>;
   /** Called with the entry the SPA saved as a grid view (`POST /views`). */
   onSaveView?: (view: { id: number; name: string; state: Record<string, unknown> }) => void;
   /** Merged into the stubbed session (role, capabilities, locale, …). */
@@ -605,6 +622,7 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
   await page.route('**/panel-api/v1/devices/**', (route) =>
     json(route, {
       ...ROWS[0],
+      ...(options.detail ?? {}),
       files: [
         {
           id: 1,
@@ -674,6 +692,30 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
       body = {};
     }
     options.onFileUpload?.(body);
+    // A JSON body is the registration of a direct upload; a multipart body is the
+    // server-side upload, which the bucket PUT failing must still be able to reach.
+    if (options.registerDirectFailed === true && body.key !== undefined) {
+      return route.fulfill({
+        status: 422,
+        json: {
+          ok: false,
+          error: {
+            code: 'validation_failed',
+            message: 'The uploaded object was not found.',
+            errors: { key: 'missing' },
+          },
+        },
+      });
+    }
+    if (options.multipartFailed === true && body.key === undefined) {
+      return route.fulfill({
+        status: 422,
+        json: {
+          ok: false,
+          error: { code: 'validation_failed', message: 'The file is too large.', errors: { file: 'too_large' } },
+        },
+      });
+    }
     return route.fulfill({
       status: 201,
       json: {
@@ -691,7 +733,10 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     });
   });
   // The bucket the browser PUTs to; only the presigned path reaches this.
-  await page.route('**/fake-upload**', (route) => route.fulfill({ status: 200, body: '' }));
+  // `abort` (not an error status) is what a CORS/DNS failure looks like.
+  await page.route('**/fake-upload**', (route) =>
+    options.bucketUnreachable === true ? route.abort('failed') : route.fulfill({ status: 200, body: '' }),
+  );
 
   // Registered last: Playwright gives the newest route priority, and
   // `/devices/{id}/events` would otherwise be answered by the `/devices/**`
@@ -765,7 +810,7 @@ export const SETTINGS_PAYLOAD = {
     {
       id: 'storage',
       label_key: 'set_group_storage',
-      settings: [settingStub('storage.driver', 'text', 's3'), settingStub('storage.local_path', 'text', '')],
+      settings: [settingStub('storage.driver', 'text', 's3')],
     },
     {
       id: 's3',

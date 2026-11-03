@@ -25,5 +25,10 @@ services:
       - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
       - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
       - KEYCLOAK_REDIRECT_URI=${KEYCLOAK_REDIRECT_URI}
+    volumes:
+      # Attachments for storage.driver=local. Relative to this file, so the
+      # default is <checkout>/uploads; set BCMDB_UPLOADS_DIR in .env to move it.
+      # Without the mount the files live in the container and die on `down`.
+      - ${BCMDB_UPLOADS_DIR:-../uploads}:/var/www/html/var/storage
     extra_hosts:
       - host.docker.internal:host-gateway

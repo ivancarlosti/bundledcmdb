@@ -683,10 +683,25 @@ try {
     // driver is exercised against the real handlers and not just the helpers.
     $localDir = sys_get_temp_dir() . '/bcmdb-storage-' . bin2hex(random_bytes(4));
     $driverBefore = settings_all(true)['storage.driver'] ?? null;
-    $pathBefore = settings_all(true)['storage.local_path'] ?? null;
+    $pathBefore = (string) getenv('BCMDB_STORAGE_PATH');
+    if ($pathBefore === '') {
+        check(
+            storage_local_dir() === dirname(__DIR__) . '/var/storage',
+            'storage: the local directory defaults to <app>/var/storage',
+            storage_local_dir()
+        );
+    }
     try {
         settings_set('storage.driver', 'local', 'tester@example.com');
-        settings_set('storage.local_path', $localDir, 'tester@example.com');
+        // The directory is a fixed path now — the compose stacks bind-mount it —
+        // so `BCMDB_STORAGE_PATH` is the documented escape hatch that keeps this
+        // test out of the real attachment tree.
+        putenv('BCMDB_STORAGE_PATH=' . $localDir);
+        check(
+            storage_local_dir() === $localDir,
+            'storage: BCMDB_STORAGE_PATH overrides the local directory',
+            storage_local_dir()
+        );
         check(storage_driver() === 'local', 'storage: the driver switch is honoured');
         check(panel_storage_configured() === true, 'storage: local storage counts as configured');
 
@@ -754,14 +769,12 @@ try {
         );
         unset($_SERVER['CONTENT_TYPE']);
     } finally {
-        foreach (['storage.driver' => $driverBefore, 'storage.local_path' => $pathBefore] as $key_ => $previous) {
-            if ($previous === null) {
-                continue;
-            }
-            if (($previous['source'] ?? '') === 'db') {
-                settings_set($key_, (string) $previous['value'], 'tester@example.com');
+        putenv($pathBefore === '' ? 'BCMDB_STORAGE_PATH' : 'BCMDB_STORAGE_PATH=' . $pathBefore);
+        if ($driverBefore !== null) {
+            if (($driverBefore['source'] ?? '') === 'db') {
+                settings_set('storage.driver', (string) $driverBefore['value'], 'tester@example.com');
             } else {
-                settings_forget($key_);
+                settings_forget('storage.driver');
             }
         }
         if (is_dir($localDir)) {

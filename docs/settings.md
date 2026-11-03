@@ -42,16 +42,33 @@ environment-only: they are needed *before* the settings table can be read.
 ### Attachment storage
 The Storage tab has two cards: **Attachment storage** (`storage.*`) and **S3
 connection** (`s3.*`). This card's **Driver** is `s3` (default) or `local`
-(`lib/storage.php`). `local` keeps the attachments under `var/storage`
-(git-ignored, created `0700` on first upload) or under **Local storage path**
-when you set one; nothing else changes, because the driver is selected at upload
-time and the database row keeps the same object key. Boolean settings render
-first in each card with their explicit **Enable …** label. Downloads go through
+(`lib/storage.php`). `local` keeps the attachments under `var/storage`, created
+`0700` on first upload; nothing else changes, because the driver is selected at
+upload time and the database row keeps the same object key.
+
+The directory is **not** a setting. Both compose files bind-mount it
+(`${BCMDB_UPLOADS_DIR:-../uploads}` → `/var/www/html/var/storage`, so the default
+is `<checkout>/uploads`), and an editable path could point PHP-FPM outside the
+mount, where the files would die with the container. `BCMDB_STORAGE_PATH`
+overrides it for the test suite and non-Docker installs. Migration
+`0013_retire_storage_local_path` drops the old row from `app_settings`; an
+install that had set one must move its files to `var/storage`.
+
+Boolean settings render first in each card with their explicit **Enable …**
+label. Downloads go through
 `GET /panel-api/v1/devices/{id}/files/{fileId}/download`, which streams the file
 for `local` and redirects to a presigned GET for `s3`, so the bucket never has to
 be public and the local directory never lives inside the document root. Use
 `local` for a laptop, a lab install or a zip deployment without object storage;
 `s3` for anything with more than one app container.
+
+### Upload size
+`PANEL_MAX_UPLOAD_BYTES` (`lib/panel/device_writes.php`) is the ceiling for both
+drivers and is published to the SPA as `meta.limits.maxUploadBytes`: **100 MiB**.
+The image raises nginx (`client_max_body_size 101m`) and PHP
+(`upload_max_filesize = 100M`, `post_max_size = 101M`) above it, because PHP
+silently turns an oversized body into an empty `$_FILES` — which the API now
+reports as `422 file=too_large` instead of `file=required`.
 
 ### S3 connection
 Region, bucket, endpoint, access key, secret key, path-style URLs, presigned URL

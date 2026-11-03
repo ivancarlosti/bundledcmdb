@@ -108,6 +108,29 @@ test.describe('device history', () => {
 });
 
 /**
+ * The detail page is the "show me everything" view.
+ *
+ * The grid clips a cell at 26 characters (one row per device: a long note would
+ * blow the row height). The detail page used to reuse that `GridCell` unchanged,
+ * so long values — serials, MAC lists, notes — were dots on the one screen whose
+ * whole purpose is reading them.
+ */
+test.describe('device detail layout', () => {
+  test('renders a long field value in full', async ({ page }) => {
+    const hostname = 'acme-laptop-07.asset-name-that-the-grid-would-clip.example.internal';
+    await mockPanel(page, { detail: { hostname } });
+
+    await page.goto('/app/devices/7');
+
+    // Scoped to the field list: the header repeats the hostname next to the company.
+    const value = page.locator('dl').getByText(hostname, { exact: true });
+    await expect(value).toBeVisible();
+    await expect(value).toHaveClass(/break-words/);
+    await expect(value).not.toHaveClass(/max-w-\[26ch\]/);
+  });
+});
+
+/**
  * Column reordering, both ways.
  *
  * The pointer path (`@dnd-kit` on the grip handle) is what the deferred item
@@ -270,5 +293,71 @@ test.describe('attachment upload', () => {
     // `mode: 'server'` (the fixture default) means the browser never talks to a
     // bucket: the request goes to the panel API as multipart.
     await expect(page.getByText('invoice.pdf')).toBeVisible();
+  });
+
+  test('uploads through the panel when the browser cannot reach the bucket', async ({ page }) => {
+    // What a real MinIO setup does when `s3.endpoint` is `http://minio:9000`: the
+    // name resolves inside the Docker network only, so the browser's PUT dies on
+    // DNS (or on CORS). The object may still have landed — a blocked response, not
+    // a blocked request — so the key is registered first and the bytes are only
+    // re-sent through PHP-FPM when the server says the object is missing.
+    const bodies: Record<string, unknown>[] = [];
+    await mockPanel(page, {
+      session: { ...SESSION, features: { ...SESSION.features, attachments: true } },
+      presign: {
+        mode: 's3',
+        url: '/fake-upload?X-Amz-Signature=abc',
+        key: 'uploads/assets/7/x_note.txt',
+        headers: { 'Content-Type': 'text/plain' },
+        expires_in: 300,
+      },
+      bucketUnreachable: true,
+      registerDirectFailed: true,
+      onFileUpload: (body) => {
+        bodies.push(body);
+      },
+    });
+
+    await page.goto('/app/devices/7');
+    await page.getByLabel('Upload New File').setInputFiles({
+      name: 'note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('hello attachment'),
+    });
+
+    await expect.poll(() => bodies.length).toBe(2);
+    // First the registration of the signed key, then the multipart upload.
+    expect(bodies[0]).toMatchObject({ key: 'uploads/assets/7/x_note.txt' });
+    expect(bodies[1]).not.toHaveProperty('key');
+    await expect(page.getByText('invoice.pdf')).toBeVisible();
+  });
+
+  test('reports the server reason when no path can upload', async ({ page }) => {
+    await mockPanel(page, {
+      session: { ...SESSION, features: { ...SESSION.features, attachments: true } },
+      presign: {
+        mode: 's3',
+        url: '/fake-upload?X-Amz-Signature=abc',
+        key: 'uploads/assets/7/x_note.txt',
+        headers: { 'Content-Type': 'text/plain' },
+        expires_in: 300,
+      },
+      bucketUnreachable: true,
+      registerDirectFailed: true,
+      multipartFailed: true,
+    });
+
+    await page.goto('/app/devices/7');
+    await page.getByLabel('Upload New File').setInputFiles({
+      name: 'huge.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.7'),
+    });
+
+    // The title stays the generic `upload_failed`; the description is the reason
+    // the server gave. `messageOf()` used to drop everything that was not a
+    // `PanelApiError`, which is how the bare "Could not upload the file." happened.
+    await expect(page.getByText('Could not upload the file.')).toBeVisible();
+    await expect(page.getByText('The file is too large.')).toBeVisible();
   });
 });

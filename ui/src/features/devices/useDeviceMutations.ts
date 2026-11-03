@@ -26,8 +26,19 @@ import {
  * cache/refresh problem.
  */
 
+/**
+ * Human-readable reason for a failed write.
+ *
+ * `PanelApiError` carries the server's message; anything else is a transport
+ * failure (the XHR that never reached the bucket, a dropped connection). Those
+ * used to fall back to an empty description, so the user saw "Could not upload
+ * the file." with no clue — exactly when the detail matters most.
+ */
 function messageOf(error: unknown, fallback: string): string {
-  return error instanceof PanelApiError ? error.message : fallback;
+  if (error instanceof Error && error.message !== '') {
+    return error.message;
+  }
+  return fallback;
 }
 
 export function useCreateDevice() {

@@ -54,7 +54,8 @@ RUN printf '%s\n' \
   '    default_type  application/octet-stream;' \
   '' \
   '    sendfile        on;' \
-  '    client_max_body_size 25m;' \
+  '    # 100 MiB attachments (PANEL_MAX_UPLOAD_BYTES) + the multipart envelope.' \
+  '    client_max_body_size 101m;' \
   '' \
   '    server {' \
   '        listen       80;' \
@@ -126,9 +127,29 @@ RUN printf '%s\n' \
   '}' \
   > /etc/nginx/nginx.conf
 
+# Upload limits. PHP's defaults (2M/8M) reject a real PDF long before the panel
+# sees it, and the failure surfaces as an empty `$_FILES` rather than an error,
+# so nginx above and PHP here both have to sit above PANEL_MAX_UPLOAD_BYTES
+# (100 MiB, identical for the local and S3 drivers).
+RUN printf '%s\n' \
+  'upload_max_filesize = 100M' \
+  'post_max_size = 101M' \
+  'max_file_uploads = 20' \
+  'memory_limit = 256M' \
+  'max_execution_time = 300' \
+  > /usr/local/etc/php/conf.d/zz-bcmdb-uploads.ini
+
+# Attachments for storage.driver = local. `var/` is in .dockerignore, so the
+# directory is created here; the compose stacks bind-mount a host directory over
+# it, and the entrypoint repairs the ownership of a mount Docker created as root.
+RUN mkdir -p /var/www/html/var/storage
+COPY bin/docker-entrypoint.sh /usr/local/bin/bcmdb-entrypoint
+RUN chmod +x /usr/local/bin/bcmdb-entrypoint
+
 # Make sure Nginx and PHP-FPM can access/serve project files
 RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
 
+ENTRYPOINT ["bcmdb-entrypoint"]
 CMD php-fpm -D && nginx -g 'daemon off;'

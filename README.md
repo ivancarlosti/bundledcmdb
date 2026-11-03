@@ -20,7 +20,8 @@ Small CMDB project that uses ESET data sent to database for asset management, us
 * MySQL/MariaDB (or use the bundled compose file, which runs MariaDB for you)
 * Keycloak for SSO
 * S3-compatible object storage (optional — Settings → Storage can keep
-  attachments on local disk instead)
+  attachments on local disk instead, under `var/storage`, bind-mounted from
+  `<checkout>/uploads`)
 * ESET data to populate
 
 ## Panel
@@ -131,11 +132,18 @@ the file); change them before exposing the stack. The panel is published on
 | `APP_DEV_LOGIN` | `1` enables `/auth/dev-login?email=…` **outside production only** (local UI work without Keycloak) |
 | `KEYCLOAK_PANEL_REDIRECT_URI` | Callback registered for `/auth/callback`. Empty = derive `https://<host>/auth/callback` from the request |
 | `DB_PORT` | Optional non-default database port |
+| `BCMDB_UPLOADS_DIR` | Host directory bind-mounted at `/var/www/html/var/storage` for `storage.driver=local` (default `../uploads`, i.e. `<checkout>/uploads`) |
 
 Object storage has no environment tier: S3 region/bucket/endpoint/keys are set
 under **Settings → Storage**, stored in `app_settings` with the secret encrypted
 by `APP_ENCRYPTION_KEY`. Installations that used the old `S3_*` variables must
 enter the same values there once after upgrading.
+
+Attachments are capped at **100 MiB** for both drivers (`PANEL_MAX_UPLOAD_BYTES`);
+the image already raises nginx (`client_max_body_size 101m`) and PHP
+(`upload_max_filesize=100M`, `post_max_size=101M`) to match. With `local`
+storage the files live under `var/storage` — mounted from `BCMDB_UPLOADS_DIR`
+in both compose files, so back up that directory and keep it off `tmpfs`.
 
 ### Languages
 

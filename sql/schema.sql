@@ -182,6 +182,11 @@ ALTER TABLE assets ADD INDEX idx_assets_status (Status);
 -- Record every version in lib/migrate.php::migrations() so bin/migrate.php does
 -- not try to re-apply them. `php bin/check-schema.php` fails when this file and
 -- the migrations drift apart (a table added to one but not the other).
+
+-- 0013 retired the editable local-storage path: the directory is fixed at
+-- `var/storage`, which the Docker stacks bind-mount.
+DELETE FROM app_settings WHERE skey = 'storage.local_path';
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -194,5 +199,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_04_0009_rate_limits'),
     ('2026_11_04_0010_asset_events'),
     ('2026_11_04_0011_saved_views'),
-    ('2026_11_05_0012_audit_entities');
+    ('2026_11_05_0012_audit_entities'),
+    ('2026_11_06_0013_retire_storage_local_path');
 

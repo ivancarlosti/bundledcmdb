@@ -48,6 +48,7 @@ bin/
   check-ui.sh         SPA gates (typecheck, lint, format, vitest, build, e2e)
   test-panel-api.php  panel API integration suite
   bench-devices.php   100k-row query benchmarks
+  docker-entrypoint.sh  container start (owns var/storage, then php-fpm + nginx)
 docker/
   .env.example                template — copy it to docker/.env first
   docker-compose.yml          app + external database
@@ -82,6 +83,13 @@ docker compose -f docker/docker-compose-bundle.yml exec -T db \
 
 * development login: `APP_ENV=development` and `APP_DEV_LOGIN=1` in
   `docker/.env` (the shipped default is production-safe and leaves it off).
+* attachments: with Settings → Storage → Driver = `local` the files land in
+  `/var/www/html/var/storage`, bind-mounted from `<checkout>/uploads`
+  (`BCMDB_UPLOADS_DIR` in `docker/.env` moves it), so they survive
+  `docker compose down`. `bin/docker-entrypoint.sh` chowns the directory before
+  php-fpm starts, because Docker creates a missing host directory as root.
+  The ceiling is 100 MiB for both drivers (`PANEL_MAX_UPLOAD_BYTES`), with
+  nginx at `101m` and PHP at `upload_max_filesize=100M`/`post_max_size=101M`.
 
 Creating a session for manual API tests:
 

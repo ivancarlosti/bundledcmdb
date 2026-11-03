@@ -209,7 +209,6 @@ export async function restoreDevice(id: number): Promise<{ device: DeviceDetail;
   return { device: result.data, restored: result.meta.restored === true };
 }
 
-/** Upload one attachment (multipart; the server puts the object in S3). */
 /** What `POST /devices/{id}/files/presign` answers. */
 export type UploadPlan =
   { mode: 'server' } | { mode: 's3'; url: string; key: string; headers: Record<string, string>; expires_in: number };
@@ -222,13 +221,18 @@ export function presignDeviceFile(
 }
 
 /**
- * Upload one attachment.
+ * Upload one attachment (`meta.limits.maxUploadBytes`: 100 MiB for both drivers).
  *
  * Uses `XMLHttpRequest`, not `fetch`, because this is the one request in the panel
- * whose *progress* matters: a 20 MB PDF over a slow link should show a percentage
- * instead of a spinner that looks stuck. When the server offers a presigned PUT
- * (S3 driver) the browser talks to the bucket directly and only the registration
- * call goes through the panel API; otherwise the bytes go through PHP-FPM.
+ * whose *progress* matters: a 100 MB PDF over a slow link should show a percentage
+ * instead of a spinner that looks stuck.
+ *
+ * With the S3 driver the browser PUTs straight to the bucket. That is the fast
+ * path and the fragile one: the browser needs its own route to `s3.endpoint`
+ * (`http://minio:9000` only resolves inside the Docker network) and a CORS rule on
+ * the bucket. When that PUT fails, the object may still have landed — a blocked
+ * response, not a blocked request — so the key is registered first and the bytes
+ * go through PHP-FPM only when the registration is refused too.
  *
  * @param onProgress 0..1, called on the way up (never for the multipart fallback
  *   until the request completes, because XHR cannot report server-side progress)
@@ -239,21 +243,39 @@ export async function uploadDeviceFile(
   onProgress?: (fraction: number) => void,
 ): Promise<DeviceFile> {
   const plan = await presignDeviceFile(id, { name: file.name, mime: file.type, size: file.size });
-
   if (plan.mode !== 's3') {
-    const form = new FormData();
-    form.set('file', file);
-    onProgress?.(0.1);
-    const uploaded = await apiRequest<DeviceFile>(`/devices/${id}/files`, { method: 'POST', form });
-    onProgress?.(1);
-    return uploaded;
+    return uploadThroughServer(id, file, onProgress);
   }
 
-  await putWithProgress(plan.url, file, plan.headers, onProgress);
+  try {
+    await putWithProgress(plan.url, file, plan.headers, onProgress);
+  } catch {
+    return registerDirectUpload(id, plan.key, file).catch(() => uploadThroughServer(id, file, onProgress));
+  }
+
+  return registerDirectUpload(id, plan.key, file);
+}
+
+/** Register an object the browser already PUT to the bucket. */
+function registerDirectUpload(id: number, key: string, file: File): Promise<DeviceFile> {
   return apiRequest<DeviceFile>(`/devices/${id}/files`, {
     method: 'POST',
-    body: { key: plan.key, name: file.name, mime: file.type, size: file.size },
+    body: { key, name: file.name, mime: file.type, size: file.size },
   });
+}
+
+/** Multipart upload through the panel; the server writes S3 or local disk. */
+async function uploadThroughServer(
+  id: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<DeviceFile> {
+  const form = new FormData();
+  form.set('file', file);
+  onProgress?.(0.1);
+  const uploaded = await apiRequest<DeviceFile>(`/devices/${id}/files`, { method: 'POST', form });
+  onProgress?.(1);
+  return uploaded;
 }
 
 /** PUT one file to a presigned URL, reporting upload progress. */
@@ -278,12 +300,17 @@ function putWithProgress(
       if (request.status >= 200 && request.status < 300) {
         onProgress?.(1);
         resolve();
-      } else {
-        reject(new Error(`Upload failed with status ${request.status}`));
+        return;
       }
+      reject(new Error(`The object storage refused the upload (HTTP ${request.status}).`));
     });
-    request.addEventListener('error', () => reject(new Error('Upload failed')));
-    request.addEventListener('abort', () => reject(new Error('Upload aborted')));
+    // status 0 means the request never got a response: DNS failure on
+    // `s3.endpoint`, a CORS rule that does not allow the panel origin, or an
+    // unreachable bucket. The message ends up in the toast, so it has to say so.
+    request.addEventListener('error', () =>
+      reject(new Error('The browser could not reach the object storage endpoint (CORS or DNS).')),
+    );
+    request.addEventListener('abort', () => reject(new Error('The upload was cancelled.')));
     request.send(file);
   });
 }

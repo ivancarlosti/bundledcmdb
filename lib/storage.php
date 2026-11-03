@@ -8,8 +8,9 @@ declare(strict_types=1);
  * (a laptop, a lab box, the `docker-compose-bundle.yml` stack), and asking an
  * administrator to stand up MinIO just to attach a PDF is a bad first run. The
  * driver is a setting (`storage.driver`), the caller never cares which one is
- * active, and `local` keeps everything under `var/storage` (git-ignored) unless
- * `storage.local_path` says otherwise.
+ * active, and `local` keeps everything under `var/storage` — git-ignored, and a
+ * bind mount in both Docker stacks (`${BCMDB_UPLOADS_DIR:-../uploads}`), so the
+ * attachments outlive the container.
  *
  * The object key is what the database stores in `device_files.file_path`, so the
  * two drivers share the same rows: switching from `local` to `s3` later means
@@ -27,19 +28,24 @@ function storage_driver(): string
     return $driver === 'local' ? 'local' : 's3';
 }
 
-/** Absolute directory used by the local driver. */
+/**
+ * Absolute directory used by the local driver.
+ *
+ * Deliberately not a setting: `docker/docker-compose.yml` and
+ * `docker/docker-compose-bundle.yml` bind-mount this path
+ * (`${BCMDB_UPLOADS_DIR:-../uploads}` → `/var/www/html/var/storage`), so an
+ * editable path could point PHP-FPM outside the mount and the attachments would
+ * disappear with the next container. `BCMDB_STORAGE_PATH` is the escape hatch
+ * for the test suite and for non-Docker deployments.
+ */
 function storage_local_dir(): string
 {
-    $configured = '';
-    try {
-        $configured = trim((string) settings_get('storage.local_path', ''));
-    } catch (Throwable) {
-        $configured = '';
+    $override = trim((string) getenv('BCMDB_STORAGE_PATH'));
+    if ($override !== '') {
+        return rtrim($override, '/');
     }
-    if ($configured === '') {
-        $configured = dirname(__DIR__) . '/var/storage';
-    }
-    return rtrim($configured, '/');
+
+    return dirname(__DIR__) . '/var/storage';
 }
 
 /** Is the active driver ready to accept an upload? */

@@ -14,9 +14,10 @@
 #     mariadb -ucmdb -pcmdb bundledcmdb < sql/dev-seed.sql
 #
 # Attachments: set Settings → Storage → Driver to `local` (files land in
-# /var/www/html/var/storage inside the container) — no object storage needed.
-# For S3/MinIO configure the connection under Settings → Storage: the panel has
-# no S3 environment variables and the secret is encrypted with
+# /var/www/html/var/storage inside the container, bind-mounted from
+# `<checkout>/uploads`, so they survive `docker compose down`) — no object
+# storage needed. For S3/MinIO configure the connection under Settings → Storage:
+# the panel has no S3 environment variables and the secret is encrypted with
 # APP_ENCRYPTION_KEY.
 #
 # Defaults are production-safe (APP_ENV=production, development login off). For
@@ -84,6 +85,12 @@ services:
       # SPA endpoints: register http://localhost:5600/auth/callback in the client
       # when pointing at a real Keycloak; leave empty to derive it per request.
       KEYCLOAK_PANEL_REDIRECT_URI: ${KEYCLOAK_PANEL_REDIRECT_URI:-}
+    volumes:
+      # Attachments for storage.driver=local (see Settings → Storage). Relative to
+      # this file, so the default is <checkout>/uploads; set BCMDB_UPLOADS_DIR in
+      # docker/.env to move it. Named volume alternative:
+      #   bcmdb-bundle-storage:/var/www/html/var/storage
+      - ${BCMDB_UPLOADS_DIR:-../uploads}:/var/www/html/var/storage
 
 volumes:
   bcmdb-bundle-db:

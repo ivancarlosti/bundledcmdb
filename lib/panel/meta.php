@@ -258,7 +258,7 @@ function panel_meta_show(array $params = []): array
         'writeColumns' => panel_write_columns_payload($user['role']),
         'limits'       => [
             'requireSn'      => $requireSn,
-            'maxUploadBytes' => defined('PANEL_MAX_UPLOAD_BYTES') ? PANEL_MAX_UPLOAD_BYTES : 26214400,
+            'maxUploadBytes' => defined('PANEL_MAX_UPLOAD_BYTES') ? PANEL_MAX_UPLOAD_BYTES : 104857600,
         ],
         'schemaReady'  => app_schema_ready(),
     ]];

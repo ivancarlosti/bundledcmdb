@@ -11,6 +11,8 @@ public/app/
 
 # Local attachment storage (storage.driver = local, see lib/storage.php)
 var/
+# Host directory bind-mounted at var/storage by docker/docker-compose*.yml.
+/uploads/
 
 # Editors / OS
 .DS_Store

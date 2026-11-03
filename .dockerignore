@@ -23,3 +23,4 @@ public/app/
 sql/dev-seed.sql
 # Local attachment storage must never ship in an image.
 var/
+uploads/

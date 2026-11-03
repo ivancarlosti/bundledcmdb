@@ -237,6 +237,14 @@ The detail page has two cards under the form:
   register the key. With the `local` driver the server answers
   `{mode: "server"}` and the same control posts the multipart form, so the screen
   does not care which driver is configured.
+  A failed PUT is not fatal: the browser may be unable to resolve `s3.endpoint`
+  (`http://minio:9000` only exists inside the Docker network) or the bucket may
+  lack a CORS rule for the panel origin. The SPA then tries to register the key —
+  the object often did land — and only falls back to the multipart upload when
+  that registration is refused, so a bucket reachable solely from the server
+  still works. The toast carries the transport message instead of a bare
+  "Could not upload the file." (`messageOf()` in `useDeviceMutations.ts`).
+  `meta.limits.maxUploadBytes` (100 MiB) is the ceiling for both drivers.
 
 ## Scripts
 

@@ -90,16 +90,14 @@ function settings_definitions(): array
         ],
 
         // --- Storage ---
-        // `local` keeps attachments under `var/storage` (or `storage.local_path`),
-        // so a dev/lab install works without S3 (`lib/storage.php`).
+        // `local` keeps attachments under `var/storage`, so a dev/lab install
+        // works without S3 (`lib/storage.php`). The directory is fixed because
+        // the Docker stacks bind-mount it; `BCMDB_STORAGE_PATH` overrides it for
+        // tests and non-Docker deployments, but it is not a UI setting.
         'storage.driver' => [
             'group' => 'storage', 'type' => 'select', 'default' => 's3',
             'options' => ['s3' => 'S3-compatible', 'local' => 'Local disk'],
             'label' => 'Attachment storage driver',
-        ],
-        'storage.local_path' => [
-            'group' => 'storage', 'type' => 'text', 'default' => '',
-            'label' => 'Local storage path (empty = var/storage)',
         ],
 
         // --- S3 connection (Settings → Storage only: no environment tier) ---

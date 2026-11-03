@@ -135,6 +135,10 @@ function migrations(): array
             'description' => 'Add asset_events company/entity columns + indexes, backfill device rows',
             'run' => 'migration_0012_audit_entities',
         ],
+        '2026_11_06_0013_retire_storage_local_path' => [
+            'description' => 'Drop the storage.local_path setting (the directory is fixed at var/storage)',
+            'run' => 'migration_0013_retire_storage_local_path',
+        ],
     ];
 }
 
@@ -636,6 +640,26 @@ function migration_0012_audit_entities(PDO $pdo): void
              WHERE e.asset_id IS NOT NULL'
         );
         migrate_note('backfill asset_events.company/entity_label from assets');
+    }
+}
+
+
+/**
+ * `storage.local_path` was a free-text path the panel could not keep honest: the
+ * Docker stacks bind-mount `var/storage`, so any other path meant the files were
+ * written to the container filesystem and lost on the next `up`. The directory
+ * is now fixed (`lib/storage.php`, with `BCMDB_STORAGE_PATH` as the escape hatch
+ * for tests and non-Docker installs), so the stored row only misleads the UI.
+ */
+function migration_0013_retire_storage_local_path(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'app_settings')) {
+        return;
+    }
+    $stmt = $pdo->prepare('DELETE FROM app_settings WHERE skey = ?');
+    $stmt->execute(['storage.local_path']);
+    if ($stmt->rowCount() > 0) {
+        migrate_note('DELETE app_settings storage.local_path');
     }
 }
 

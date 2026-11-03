@@ -16,7 +16,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex flex-col gap-0.5 border-b border-[var(--color-border)] py-2 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-4">
       <dt className="w-full shrink-0 text-xs font-medium text-[var(--color-muted)] sm:w-52">{label}</dt>
-      <dd className="m-0 min-w-0 break-words">{children}</dd>
+      <dd className="m-0 min-w-0 break-words sm:flex-1">{children}</dd>
     </div>
   );
 }
@@ -30,7 +30,13 @@ function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayloa
     <dl className="m-0">
       {meta.columns.map((column) => (
         <Row key={column.key} label={t(column.label_key, { defaultValue: column.label })}>
-          <GridCell value={cellValue(device, column)} columnKey={column.key} type={column.type} {...context} />
+          <GridCell
+            value={cellValue(device, column)}
+            columnKey={column.key}
+            type={column.type}
+            truncate={false}
+            {...context}
+          />
         </Row>
       ))}
       {meta.fields.map((field) => (
@@ -39,6 +45,7 @@ function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayloa
             value={device.custom?.[field.key] ?? null}
             columnKey={`custom:${field.key}`}
             type={field.type}
+            truncate={false}
             {...context}
           />
         </Row>

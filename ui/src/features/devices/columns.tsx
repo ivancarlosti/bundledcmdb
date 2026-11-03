@@ -31,6 +31,12 @@ type CellProps = {
   t: TFunction;
   statusLabels: Map<string, string>;
   sourceColors: Map<string, string | null>;
+  /**
+   * Clip long text to one line. The grid needs it (a 300-character `notes` would
+   * blow the row height); the detail page passes `false` because there the value
+   * is the point.
+   */
+  truncate?: boolean;
 };
 
 function Empty() {
@@ -38,7 +44,16 @@ function Empty() {
 }
 
 /** One grid cell, rendered by the column type published in `/meta`. */
-export function GridCell({ value, columnKey, type, locale, t, statusLabels, sourceColors }: CellProps) {
+export function GridCell({
+  value,
+  columnKey,
+  type,
+  locale,
+  t,
+  statusLabels,
+  sourceColors,
+  truncate = true,
+}: CellProps) {
   if (value === null || value === undefined || value === '') {
     return <Empty />;
   }
@@ -84,6 +99,12 @@ export function GridCell({ value, columnKey, type, locale, t, statusLabels, sour
   }
 
   const text = String(value);
+  if (!truncate) {
+    // `pre-wrap` keeps the line breaks a multi-line notes field was written with,
+    // `break-words` stops a long serial or URL from widening the whole page.
+    return <span className="block whitespace-pre-wrap break-words">{text}</span>;
+  }
+
   return (
     <span className="block max-w-[26ch] truncate" title={text}>
       {text}
