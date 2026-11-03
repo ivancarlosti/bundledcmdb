@@ -25,7 +25,14 @@ class KeycloakAuth {
         return $this->baseUrl . '/realms/' . $this->realm . '/protocol/openid-connect/' . ltrim($path, '/');
     }
 
-    /** POST a form body and decode the JSON response (null on failure). */
+    /**
+     * POST a form body and decode the JSON response (null on failure).
+     *
+     * The handle is deliberately not passed to curl_close(): it is a no-op since
+     * PHP 8.0 (handles are objects freed when they go out of scope) and calling it
+     * is deprecated as of PHP 8.5, where the notice would be printed into the
+     * redirect response and break the OIDC callback.
+     */
     private function post($url, array $fields) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -36,14 +43,15 @@ class KeycloakAuth {
         $response = curl_exec($ch);
         if ($response === false) {
             error_log('Keycloak request error: ' . curl_error($ch));
-            curl_close($ch);
             return null;
         }
-        curl_close($ch);
         return json_decode($response, true);
     }
 
-    /** GET an endpoint, optionally with a bearer token; decodes JSON. */
+    /**
+     * GET an endpoint, optionally with a bearer token; decodes JSON.
+     * See post() for why curl_close() is not called.
+     */
     private function get($url, $bearer = null) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -55,10 +63,8 @@ class KeycloakAuth {
         $response = curl_exec($ch);
         if ($response === false) {
             error_log('Keycloak request error: ' . curl_error($ch));
-            curl_close($ch);
             return null;
         }
-        curl_close($ch);
         return json_decode($response, true);
     }
 

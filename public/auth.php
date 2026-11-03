@@ -19,6 +19,11 @@ require_once __DIR__ . '/../auth_keycloak.php';
 app_boot();
 session_boot();
 
+// This endpoint answers browser navigations (302 to Keycloak / back to /app/).
+// A stray notice or deprecation printed before the Location header would break
+// the OIDC round-trip, so diagnostics go to the log, never into the response.
+ini_set('display_errors', '0');
+
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
