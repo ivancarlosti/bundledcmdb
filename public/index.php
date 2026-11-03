@@ -83,8 +83,8 @@ if (isset($_SESSION['user_email'])) {
 
 // Anonymous visitor: with the SPA enabled `/` is not a page any more, it is a
 // redirect to the SPA's own login screen. Only the rollback renders the form
-// below.
-if ($spaHome === '/app/') {
+// below, and a failed SSO callback keeps its message on screen.
+if ($spaHome === '/app/' && $message === '') {
     header('Location: /app/');
     exit();
 }

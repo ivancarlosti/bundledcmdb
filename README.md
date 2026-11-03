@@ -22,6 +22,19 @@ Small CMDB project that uses ESET data sent to database for asset management, us
 * S3-like for object storage
 * ESET data to populate
 
+## Panel
+
+The React panel is the default UI since 10.8.0: `/` redirects to `/app/` —
+devices grid (server-side sort/filter/paging, bulk actions, column layout),
+device detail with attachments, create/edit forms and the admin settings tabs.
+It talks to `/panel-api/v1/*` with the session cookie and `X-CSRF-Token`; the
+Bearer REST API at `/api/v1/*` is unchanged.
+
+`Settings → General → Serve the React panel at /app/` (`ui.spa_enabled`) is the
+rollback: setting it to `0` sends `/` back to the legacy PHP pages, which stay
+reachable by direct URL for one release. See
+[docs/frontend.md](docs/frontend.md) for the cutover and rollback details.
+
 ## Deployment instructions:
 
 * Download `/docker` files on your server, example:
