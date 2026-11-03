@@ -128,14 +128,36 @@ jobs:
             echo "TAGS_EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: 🟢 Node (SPA build)
+        if: steps.rebuild.outputs.proceed == 'true' && github.event_name != 'schedule'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # The ZIP is a deployment artefact: zip installs have no build step, so
+      # `public/app` (the SPA bundle the nginx `/app/` location serves) has to be
+      # built here, exactly like the Dockerfile's `ui` stage does.
+      - name: 🏗️ Build the SPA into public/app
+        if: steps.rebuild.outputs.proceed == 'true' && github.event_name != 'schedule'
+        run: |
+          npm ci --prefix ui --no-audit --no-fund
+          npm run build --prefix ui
+          test -f public/app/index.html
+          echo "::notice title=SPA bundle::$(du -sh public/app | cut -f1) in public/app"
+
       - name: 📦 Create ZIP package
         if: steps.rebuild.outputs.proceed == 'true' && github.event_name != 'schedule'
         run: |
-          # docs/, plans/ and node_modules/ are intentionally kept: the zip
-          # doubles as a backup.
+          # docs/, plans/ and the SPA sources are intentionally kept: the zip
+          # doubles as a backup. Only build inputs/outputs that can be
+          # reproduced (`ui/node_modules`, `ui/dist`) are dropped.
           zip -r "${{ steps.version.outputs.zip_name }}" . \
             -x ".git/*" ".github/*" "docker/*" ".dockerignore" \
-               "CNAME" "Dockerfile" "README.md" "LICENSE"
+               "CNAME" "Dockerfile" "README.md" "LICENSE" \
+               "ui/node_modules/*" "ui/dist/*" "ui/test-results/*" \
+               "ui/playwright-report/*" "ui/coverage/*"
 
       - name: 📤 Upload ZIP to GitHub Release
         if: steps.rebuild.outputs.proceed == 'true' && github.event_name != 'schedule'
