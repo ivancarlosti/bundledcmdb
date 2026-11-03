@@ -2,15 +2,15 @@
 
 > **This file is the single source of truth for the migration.** Every phase
 > starts by re-reading it. Update it at the end of each phase (mark progress,
-> record deviations in §17) so context is never lost.
+> record deviations in §16) so context is never lost.
 >
-> Status: **in progress** — phases 0–8 done. Phase 2's last item (EXPLAIN +
-> 100k-row timing) is closed by `bin/bench-devices.php`, which found and fixed
-> three real problems (missing indexes, a repair migration, and the broken `byod`
-> filter). Phase 9 step 1 is shipped: `ui.spa_enabled` defaults to `1`, `/`
-> redirects to `/app/`, and rolling the setting back renders a notice instead of
-> a half-working shell. What is left is the breaking release that deletes the
-> legacy PHP pages (§9).
+> Status: **complete** — phases 0–9 shipped. 11.0.0 is the breaking release that
+> deleted the legacy PHP pages, the SPA is the only UI and `/` redirects to
+> `/app/`. Phase 2's last item (EXPLAIN + 100k-row timing) closed with
+> `bin/bench-devices.php`, which found and fixed three real problems (missing
+> indexes, a repair migration and the broken `byod` filter). What remains in §14
+> is either upstream-blocked (TypeScript 7) or a measured follow-up (keyset
+> pagination, declined at the current row counts), not unfinished scope.
 
 ## 1. Goals
 
@@ -396,7 +396,7 @@ Estimates are focus days for one developer.
   `/auth/login` 503 with the placeholder Keycloak → `main.php`/`settings.php`
   still render (new setting visible and translated).
 
-### Phase 2 — devices read API (3–4 d) ✅ code + smoke done
+### Phase 2 — devices read API (3–4 d) ✅ done
 
 * [x] `GET /devices` with `q`, filters (`source`, `status`, `byod`, `company`,
   `trashed`), `sort` (incl. `files`, `custom:<key>`, `updated_at`), `dir`,
@@ -620,18 +620,18 @@ Estimates are focus days for one developer.
 | Layer | Command | Gate |
 |---|---|---|
 | PHP syntax | `php -l <file>` on every changed PHP file | every commit |
-| PHP behaviour | `php bin/migrate.php --dry-run`, `php bin/check-i18n.php` | every commit touching `lib/`, `bin/`, `public/lang/` |
-| Panel API (manual) | `curl -i -c /tmp/c -b /tmp/c …` (§10.1) | phase 1+ |
-| Panel API (auto) | `php bin/test-panel-api.php` (integration, dev DB, self-cleaning) | phase 2+ |
+| PHP behaviour | `php bin/migrate.php --dry-run`, `php bin/check-schema.php`, `php bin/check-i18n.php` | every commit touching `lib/`, `bin/`, `public/lang/`, `docker/schema.sql` |
+| DBA schema parity | `php bin/check-schema.php` (also asserted by the suite, no DB needed) | every commit touching `lib/migrate.php` or `docker/schema.sql` |
+| Panel API (manual) | `curl -i -c /tmp/c -b /tmp/c …` (§10.2) | when touching `lib/panel/` |
+| Panel API (auto) | `php bin/test-panel-api.php` (integration, dev DB, self-cleaning) | every commit touching `lib/` or `public/` |
 | Device list perf | `php bin/bench-devices.php --rows=100000` (EXPLAIN + timings, self-cleaning) | before each release |
 | SPA types | `npm --prefix ui run typecheck` | every UI commit |
-| SPA lint | `npm --prefix ui run lint` | every UI commit |
+| SPA lint | `npm --prefix ui run lint` + `npm --prefix ui run format` | every UI commit |
 | SPA unit | `npm --prefix ui run test` (`vitest run --coverage`) | every UI commit |
-| SPA e2e | `npm --prefix ui run e2e` (`playwright test`) | phase 4+ |
-| i18n sync | `npm --prefix ui run i18n -- --check` | every commit touching lang files |
+| SPA e2e | `npm --prefix ui run e2e` (`playwright test`) | every UI commit |
 | Build | `npm --prefix ui run build` (must emit `public/app/index.html`) | before release |
-| Image | `docker build .` then `docker compose -f docker/docker-compose.dev.yml up -d` | phase 8+ |
-| Legacy parity | legacy `main.php` still sorts/pages/filters | until phase 9 |
+| Image | `docker build . --build-arg VERSION=<release>` then `docker compose -f docker/docker-compose.dev.yml up -d` | before release |
+| Release stamp | `curl -s :5600/api/v1/health \| jq -r .version` equals `manifest.json` (or the build arg) | before release |
 
 ### 10.1 Regression tests for the eight §2.1 bugs
 
@@ -749,10 +749,14 @@ bumps by hand.
    `PATCH/DELETE /views/{id}`, and a `SavedViewsMenu` in the grid toolbar that
    saves the current state and re-applies it through the URL (the filters never
    get a second home). Covered by 23 panel-API assertions and 2 Playwright tests.
-6. **Keyset pagination** for very deep pages if `OFFSET` shows up in profiling —
-   measured at 100k rows: the last page costs 176 ms against 0.3 ms for page 1
-   (`bin/bench-devices.php`, "deep page" row). Not user-visible yet (nobody pages
-   to 3600), but it is the number to act on if it is.
+6. ~~**Keyset pagination** for very deep pages~~ — reviewed and **declined**
+   (2026-11-04). The bench now compares both: at 100k rows the deep page costs
+   197 ms with `OFFSET` against 0.17 ms for the same page by cursor (107×), which
+   is still far below the 100 ms-per-half budget and a page nobody opens (3601).
+   A cursor would also change the grid's URL/state model — the riskiest screen —
+   and cannot serve the `files`/`custom:` sorts or the `total` counter. The query
+   and the measurement stay in `bin/bench-devices.php`, so the decision can be
+   reversed with evidence.
 7. ~~**Rate limiting** on panel mutations (`rate_limited` reserved in §4.1)~~ —
    done: `lib/rate_limit.php` + migration `0009_rate_limits`, a fixed-window
    counter per user (`api.panel_rate_limit`, default 120/min) enforced in
@@ -761,10 +765,12 @@ bumps by hand.
    image ships neither and PHP-FPM spreads a user's requests over workers.
 8. ~~`col_*` translations for `fr-FR`, `zh-CN`, `hi-IN`, `ar-SA`~~ — done: the
    whole panel family (`ui_*`, `col_*`, `status_*`, `theme_*`, `role_*`) plus the
-   shell strings are translated in all seven catalogues (47 % coverage for the
+   shell strings are translated in all seven catalogues (56 % coverage for the
    four community locales, floor raised to 45 % in `bin/check-i18n.php` and
    enforced per locale by `ui/src/i18n/coverage.test.ts`). The legacy `set_*` /
-   `perm_*` keys of the PHP pages still fall back to en-US there.
+   `perm_*` keys of the deleted PHP pages are gone: `bin/check-i18n.php` now also
+   fails on keys nothing references, and 70 of them were removed from all seven
+   catalogues once the pages they belonged to stopped existing.
 9. ~~**Presigned PUT upload** (`POST /devices/{id}/files/presign`)~~ — done:
     with the S3 driver the endpoint signs a short-lived PUT (content type included
     in the signature) and the SPA uploads with `XMLHttpRequest`, so the file also
@@ -885,3 +891,9 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 6 | `@hookform/resolvers` is **not** added; `lib/zodResolver.ts` is 30 lines and unit-tested | the stack lock (§13) is a promise about versions; a hand-written adapter for one schema shape does not justify another pinned dependency, and the nesting rule it has to get right is pinned by `zodResolver.test.ts` |
 | 2026-11-04 | 2 | Keyset pagination stays unimplemented, now with the numbers on record | the bench grew an OFFSET-vs-keyset comparison: at 100k rows the deep page costs 197 ms against 0.17 ms for the same page by cursor (107×), but 197 ms is far below the 100 ms-per-half budget the plan set and nobody pages to 3601. Adding a cursor would change the grid's URL/state model — the riskiest screen — for a number that is not a problem; the query and the measurement are in `bin/bench-devices.php` so the decision can be reversed with evidence, not opinion |
 | 2026-11-04 | 8 | `ui/package.json` carries an `overrides` entry pinning `minimatch@^11.0.1` | the one Dependabot alert on `main` came from eslint's `@eslint/config-array@0.23.5` (latest) which still depends on `minimatch ^10.2.4`; the advisory is fixed in 11.0.1. `npm audit fix --force` proposes downgrading eslint to 4, which is nonsense — the override keeps eslint 10 and satisfies the advisory (lint, vitest, build and the 36 e2e cases all pass with it, `npm audit` reports 0) |
+| 2026-11-03 | 10 | `docker/schema.sql` gained `user_preferences`, `asset_events` and `saved_views`, and its ledger now runs to `0011` | the file records itself as applied, so `bin/migrate.php` never came back for them: a DBA-managed install silently lost Preferences, the History card and saved views, because each feature is guarded by `db_table_exists()` |
+| 2026-11-03 | 10 | `php bin/check-schema.php` + `migrate_dba_sql_drift()` (also asserted by `bin/test-panel-api.php`) | the drift above is invisible until a feature disappears; a static comparison of the two files fails the gate instead. Verified by building a database from `dev-legacy.sql` + `schema.sql` only: `migrate --dry-run` says 0 pending and the suite passes 235 assertions against it |
+| 2026-11-03 | 10 | `APP_VERSION` falls back to `manifest.json`; the Dockerfile declares `ARG VERSION`/`COMMIT` and exports them as `ENV` | `build.yml` passed both build args to a Dockerfile that had no `ARG` for them, so the engine dropped them and every image reported the hard-coded `1.1.0`; the constant now follows the released tag without a second place to bump |
+| 2026-11-03 | 10 | `.dockerignore` excludes `docker/**` and re-includes `docker/schema.sql` | a negation cannot re-include a file under an excluded directory; shipping the DDL means the parity check also runs inside the image, where an operator may want the file |
+| 2026-11-03 | 10 | `bin/check-i18n.php` scans `ui/src` + `ui/e2e` and fails on dead catalogue keys | with the PHP pages gone the scan reported "0 referenced in code" and protected nothing; 70 keys of deleted screens (267 lines across seven catalogues) are removed, and the comparison stays honest because runtime-built families (`col_*`, `setting_*`, `set_theme_*`, …) are whitelisted with the code that builds them |
+| 2026-11-03 | 10 | `ui/e2e/fixtures.ts` stubs `status_stock` (it said `status_in_stock`) and no longer offers `ui.spa_enabled` | the fixture invented a key the server never sends — the status filter would have rendered the raw key — and kept stubbing a setting that migration `0008` deletes |

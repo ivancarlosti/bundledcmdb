@@ -27,9 +27,10 @@ declare(strict_types=1);
  *
  * The handlers are thin on purpose: every rule (validation, protection of system
  * sources, token hashing, migration ledger) already lives in the model helpers
- * used by `public/settings.php`, so the legacy page and the SPA cannot drift.
- * What this file adds is the JSON shape, the role gate and the `ApiError`
- * mapping (`validation_failed` + `errors` per field, like the device writes).
+ * (`lib/settings.php`, `lib/sources.php`, `lib/api_auth.php`, `lib/migrate.php`),
+ * so the REST API in `public/api.php` and this panel cannot drift. What this file
+ * adds is the JSON shape, the role gate and the `ApiError` mapping
+ * (`validation_failed` + `errors` per field, like the device writes).
  */
 
 /** Roles allowed to change settings; user management stays superadmin-only. */

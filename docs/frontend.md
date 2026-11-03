@@ -139,13 +139,13 @@ Writes go through the same helpers as `public/api.php` (`asset_validate()`,
 device is. Role rules come from the server: `/meta.writeColumns` lists the keys
 the signed-in role may send, and the API rejects everything else with `422`.
 
-The settings handlers (`lib/panel/settings.php`) are thin wrappers over the same
-model helpers the legacy pages at `/settings` use (`settings_set()`,
-`source_create/update/delete()`, `field_*`, `api_key_*`, `migrate_run()`), so the
-two front ends cannot drift. Secrets (keys flagged `secret`, i.e.
-`s3.secret_key`, and the API key hashes) never leave the server: they come back
-as an empty `value` plus `configured: true`, sending an empty string back means
-"unchanged", and a deliberate wipe is `{"clear": ["s3.secret_key"]}`.
+The settings handlers (`lib/panel/settings.php`) are thin wrappers over the model
+helpers (`settings_set()`, `source_create/update/delete()`, `field_*`,
+`api_key_*`, `migrate_run()`), which are the same functions `bin/migrate.php` and
+the Bearer API use — no rule lives in two places. Secrets (keys flagged `secret`,
+i.e. `s3.secret_key`, and the API key hashes) never leave the server: they come
+back as an empty `value` plus `configured: true`, sending an empty string back
+means "unchanged", and a deliberate wipe is `{"clear": ["s3.secret_key"]}`.
 
 ## Settings screens
 
@@ -191,6 +191,38 @@ need manager+, `delete`/`restore` admin+, `hard` superadmin. The shared value is
 validated once (`422 value: invalid_status`), and more than 200 ids is `422
 ids: too_many`.
 
+### Saved views
+
+`SavedViewsMenu` sits in the grid toolbar (a keyboard-operable `<details>`, the
+same pattern as the column picker). It lists the signed-in user's presets from
+`GET /panel-api/v1/views` and saves the current state — filters, sort,
+direction and the column `order`/`visible` — under a name. The same name
+overwrites the row (`POST` answers `201` with the same id), which is the gesture
+a toolbar should have; deleting asks for confirmation first. Views belong to one
+e-mail: somebody else's id is `404`, not `403`, so the id space leaks nothing.
+
+Applying a view does not re-run the query by itself: it hands the stored state
+back to the grid, which writes it into the URL like any other filter change, so
+the result is shareable and survives a reload.
+
+### History and attachments
+
+The detail page has two cards under the form:
+
+* **History** — `GET /devices/{id}/events`, newest first: `ui_ev_<action>`, the
+  actor, the timestamp and the `{column: [old, new]}` pairs from
+  `asset_events.changes`. Saving the whole form therefore lists only the columns
+  that actually moved (`asset_event_diff()` ignores `updated_at`/`updated_by`).
+  An empty history is a normal state, not an error.
+* **Attachments** — list, download, remove and upload. Upload asks
+  `POST /devices/{id}/files/presign` first: with `storage.driver = s3` the file
+  goes **straight to the bucket** through an `XMLHttpRequest` PUT — that is what
+  makes the percentage next to `ui_uploading` possible, since `fetch` cannot
+  report upload progress — and the panel API is called once afterwards to
+  register the key. With the `local` driver the server answers
+  `{mode: "server"}` and the same control posts the multipart form, so the screen
+  does not care which driver is configured.
+
 ## Scripts
 
 | Command | Purpose |
@@ -206,7 +238,8 @@ ids: too_many`.
 PHP side (the API itself):
 
 ```bash
-php bin/check-i18n.php          # catalog coverage + unknown keys
+php bin/check-i18n.php          # catalog coverage, unknown keys and dead keys
+php bin/check-schema.php        # docker/schema.sql ↔ lib/migrate.php (no database)
 php bin/test-panel-api.php      # integration tests: role matrix, validation,
                                 # optimistic locking, delete/restore, isolation
 php bin/bench-devices.php       # EXPLAIN + timings on a throwaway 100k fixture

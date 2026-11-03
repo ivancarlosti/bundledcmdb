@@ -5,15 +5,15 @@ declare(strict_types=1);
  * lib/assets.php — asset (device) model: column metadata, validation, CRUD,
  * search/sort/paging and the API representation.
  *
- * Every panel page (main.php, asset.php, asset_new.php, export.php) and the API
- * use these helpers instead of the copy-pasted SQL that used to live in each
- * file.
+ * `lib/panel/devices.php` (the device list, detail, exports and the write
+ * handlers), the panel meta endpoint and `public/api.php` all use these helpers
+ * instead of the copy-pasted SQL that used to live in each page.
  *
  * Column metadata keys:
  *   type        input/validation hint
- *   grid        shown in main.php / export by default
+ *   grid        available to the SPA grid / export by default
  *   api         writable through the REST API
- *   form_roles  roles allowed to edit it on asset.php ([] = read-only)
+ *   form_roles  roles allowed to edit it in the device form ([] = read-only)
  *   label       English fallback label
  */
 function asset_column_defs(): array
@@ -81,7 +81,7 @@ function asset_grid_editable_columns(string $role): array
     return $allowed;
 }
 
-/** Columns shown on asset.php / asset_new.php, in order. */
+/** Columns the device form edits (create and PATCH), in order. */
 function asset_form_columns(): array
 {
     return [

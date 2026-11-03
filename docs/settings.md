@@ -165,7 +165,10 @@ php bin/migrate.php
 Applied versions are recorded in `schema_migrations`; every step is guarded by
 `information_schema` checks because MySQL 8 has no `ADD COLUMN IF NOT EXISTS`.
 For databases where the application user cannot run DDL, a DBA can apply
-`docker/schema.sql` once (it also records the migration versions).
+`docker/schema.sql` once (it also records the migration versions). Because that
+file records itself as applied, a table it forgets never reaches those
+installations — `php bin/check-schema.php` fails when it and `lib/migrate.php`
+disagree about a table or a version.
 
 ## Language support
 
@@ -173,15 +176,16 @@ Catalogues: `public/lang/<code>.php`. Resolution order is explicit choice →
 Settings default → `Accept-Language` → `en-US`. Missing keys fall back to
 `en-US`, then to the key itself. `ar-SA` switches the document to `dir="rtl"`.
 
-`bin/check-i18n.php` validates the files, reports coverage per locale and fails
-on unknown keys or missing en-US keys used in code:
+`bin/check-i18n.php` validates the files, reports coverage per locale and fails on
+unknown keys, on keys referenced from PHP/TSX that en-US lacks, and on en-US keys
+that nothing references any more:
 
 ```bash
 php bin/check-i18n.php
 ```
 
-Current coverage: en-US 100 %, pt-BR 96 %, es-MX 87 %, fr-FR/zh-CN/hi-IN/ar-SA
-47 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
-`role_*` string). The `set_*` family still falls back to en-US in those four
-locales; `ui/src/i18n/coverage.test.ts` keeps the panel families complete so a
-new `col_*` key cannot ship untranslated.
+Current coverage: en-US 100 %, pt-BR 97 %, es-MX 88 %, fr-FR/zh-CN/hi-IN/ar-SA
+56 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
+`role_*` string). The remaining `set_*` keys are the settings screens, which fall
+back to en-US in those four locales; `ui/src/i18n/coverage.test.ts` keeps the
+panel families complete so a new `col_*` key cannot ship untranslated.

@@ -11,35 +11,48 @@
 
 ```
 config.php            env constants (DB, S3 fallbacks, Keycloak, APP_ENCRYPTION_KEY)
+manifest.json         released version (the APP_VERSION fallback)
 lib/                  shared PHP (no framework)
   bootstrap.php       single include for web/API/CLI
   db.php              PDO + information_schema helpers
   settings.php        app_settings with DB → ENV → default precedence
   crypto.php          AES-256-GCM for secrets
-  migrate.php         idempotent migrations + ledger
-  http.php            JSON envelope, ApiError, CSRF, flash, IP/CIDR matching
+  migrate.php         idempotent migrations, ledger, docker/schema.sql drift check
+  http.php            JSON envelope, ApiError, CSRF, IP/CIDR matching
+  locales.php         supported locales + coverage helpers
+  session_auth.php    session bootstrap, role guards, CSRF
+  user_preferences.php per-user locale/theme/page size/grid layout
+  rate_limit.php      fixed-window counters for panel writes
+  storage.php         attachment storage (local disk or S3)
   sources.php         asset sources
   assets.php          asset model, validation, CRUD, list/search/sort
   asset_fields.php    dynamic fields (EAV) + value validation/rendering
+  asset_events.php    audit trail for device writes
+  saved_views.php     named grid presets
   api_auth.php        API keys + request authentication
-  session_auth.php    session bootstrap, role guards, CSRF
-  panel/              panel API route handlers (devices, writes, settings, meta)
+  panel/              panel API route handlers (devices, writes, settings, meta, session, i18n)
 public/               web root (nginx document root)
-  index.php           entry point for / (redirects to /app/, legacy SSO callback)
-  api.php             REST front controller
+  index.php           entry point for / (redirects to /app/)
   panel_api.php       panel API front controller (session cookie + CSRF)
+  api.php             REST front controller (API keys)
   auth.php            Keycloak login/callback/logout for the SPA
   lang.php + lang/    i18n loader + catalogues
   app/                built SPA (npm run build)
+ui/                   React panel (Vite + TanStack Query)
+  src/                screens, grid, auth, i18n bridge
+  e2e/                Playwright suite (stubs the panel API, no database)
 bin/
   migrate.php         schema migrations (CLI)
-  check-i18n.php      catalogue validation/coverage
+  check-schema.php    docker/schema.sql ↔ lib/migrate.php parity
+  check-i18n.php      catalogue validation, coverage and dead keys
+  test-panel-api.php  panel API integration suite
+  bench-devices.php   100k-row query benchmarks
 docker/
   docker-compose.dev.yml  db + app for local work
   dev-legacy.sql          pre-migration schema + sample rows
   schema.sql              DDL for DBA-managed databases
 docs/
-  api.md, settings.md, development.md
+  api.md, frontend.md, settings.md, development.md
 ```
 
 ## Local stack
@@ -69,7 +82,9 @@ curl -H 'Cookie: PHPSESSID=testsess123' http://localhost:5600/panel-api/v1/sessi
 
 ```bash
 php bin/migrate.php [--dry-run|--status]
-php bin/check-i18n.php
+php bin/check-schema.php        # docker/schema.sql ↔ lib/migrate.php (no database)
+php bin/check-i18n.php          # missing, unknown and dead catalogue keys
+php bin/test-panel-api.php      # panel API integration suite (needs a non-production DB)
 ```
 
 `lib/bootstrap.php` requires `vendor/autoload.php` only when present, so these
@@ -80,9 +95,16 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
 ## Validation checklist
 
 1. `php -l` on every PHP file.
-2. `php bin/migrate.php` twice → second run reports "already present: 5".
-3. `php bin/check-i18n.php` → passed.
-4. API smoke (`curl`):
+2. `php bin/check-schema.php` → `schema check passed.` It fails when a migration
+   creates a table that `docker/schema.sql` (the DBA path) does not, or when the
+   ledger in it is not up to `migrations()`.
+3. `php bin/migrate.php --dry-run` → 0 pending; a second real run reports
+   `Applied: 0, already present: 11`.
+4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
+5. `php bin/test-panel-api.php` → 0 failed (235 assertions with a database).
+6. SPA: `cd ui && npm run typecheck && npm run lint && npm run format && npm test
+   && npm run e2e`.
+7. API smoke (`curl`):
 
 ```bash
 TOKEN=... # Settings → API → Create key
@@ -93,11 +115,14 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
      -d '{"company":"Acme","sn":"SN-DEV-1","hostname":"dev-1"}' $B/devices | jq
 ```
 
-5. Panel: `/app/`, `/app/devices/1`, `/app/devices/1/edit` and every
+8. Panel: `/app/`, `/app/devices/1`, `/app/devices/1/edit` and every
    `/app/settings?tab=…` render without console errors, in `en-US` and `ar-SA`
    (`dir="rtl"`).
-6. ESET compatibility: `INSERT` a row into `assets` without `source` and check
+9. ESET compatibility: `INSERT` a row into `assets` without `source` and check
    that it appears with the `eset` badge.
+10. Version: `curl -s $B/health | jq -r .version` matches `manifest.json` (or the
+   `APP_VERSION` the image was built with). `config.php` falls back to
+   `manifest.json`; a literal there is how the panel reported 1.1.0 on 11.0.2.
 
 ## Conventions
 

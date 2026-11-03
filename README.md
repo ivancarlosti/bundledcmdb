@@ -52,25 +52,34 @@ docker compose pull && docker compose up -d
 docker compose exec ddnsonroute53 php bin/migrate.php
 ```
 
-## What's new in 1.1
+## What's new in 11.0
 
+* **React panel only** — `/` redirects to `/app/`; every screen talks to
+  `/panel-api/v1/*`. The classic PHP pages are gone (see the note above).
+* **Devices grid** — server-side sort/filter/paging, per-column visibility and
+  order, bulk actions (status, soft delete, restore, purge, export), CSV/JSON
+  export, attachments and *save as…* named views.
+* **Device history** — every write lands in `asset_events` (`create`, `update`,
+  `delete`, `restore`, `purge`, `file_add`, `file_remove`) and is shown as a
+  timeline on the detail page.
+* **Per-user preferences** — locale, theme and page size live in
+  `user_preferences`, so they follow the user across browsers.
+* **Settings tabs** (`/app/settings`) — general, storage (secret encrypted with
+  `APP_ENCRYPTION_KEY`), sources, API keys, custom fields and schema
+  maintenance. Values are stored in the database with `DB → ENV → default`
+  precedence; see [docs/settings.md](docs/settings.md).
 * **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert and bulk
   endpoints, per-key company/source scopes, IP allowlists, token rotation.
   See [docs/api.md](docs/api.md).
 * **Source per asset** — `assets.source` (seeded `eset`, `api`, `manual`, plus
   any custom source), shown as badges and filterable in the grid.
-* **Panel-side asset management** — create assets (`asset_new.php`), edit them
-  with attachments, soft-delete from the grid.
-* **Settings page** (`settings.php`, admin/superadmin) — language combo (7
-  locales), timezone, S3 storage (secret encrypted with `APP_ENCRYPTION_KEY`),
-  API keys, sources, custom fields and schema maintenance. Values are stored in
-  the database with `DB → ENV → default` precedence; see
-  [docs/settings.md](docs/settings.md).
 * **Dynamic custom fields** (EAV) — text, textarea, integer, decimal, date,
   datetime, boolean, single/multi choice, e-mail, URL, IP; validation, unique
   constraints, per-role editing, per-locale labels, grid columns and search.
 * **Schema migrations** — `bin/migrate.php` (+ Settings → Maintenance button),
-  `docker/schema.sql` for DBA-managed databases. No manual `ALTER TABLE` needed.
+  `docker/schema.sql` for DBA-managed databases (`php bin/check-schema.php`
+  keeps the two in step). No manual `ALTER TABLE` needed. `/api/v1/health`
+  reports the version the image was built with.
 
 ### New environment variables
 
@@ -126,7 +135,7 @@ no production or customer data).
 ### Users and roles (SuperAdmin)
 ![Settings screen listing users and their roles](docs/screenshots/06-settings-users.png)
 
-### Language switcher (es_MX)
+### Language switcher (es-MX)
 ![Asset dashboard displayed in Spanish](docs/screenshots/04-dashboard-es-MX.png)
 
 <!-- footer -->

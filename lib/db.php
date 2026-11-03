@@ -2,11 +2,11 @@
 declare(strict_types=1);
 
 /**
- * lib/db.php — one PDO connection for every entry point (web, CLI, API).
+ * lib/db.php — one PDO connection for every entry point (web, API, CLI).
  *
- * Replaces the five copy-pasted `new PDO(...)` blocks that used to live in
- * public/index.php, main.php, asset.php, save_row.php, save_rows.php and
- * export.php.
+ * Every entry point (`public/api.php`, `public/panel_api.php`, `public/auth.php`,
+ * `public/index.php`, `bin/*`) goes through `db()` / `db_try()`; nothing opens a
+ * connection of its own.
  */
 
 function db_dsn(): string

@@ -2,8 +2,8 @@
 declare(strict_types=1);
 
 /**
- * lib/http.php — request/response helpers shared by the panel and the API:
- * escaping, JSON envelopes, CSRF, flash messages, client IP + allowlists.
+ * lib/http.php — request/response helpers shared by the panel and the REST API:
+ * escaping, JSON envelopes, CSRF, client IP + allowlists.
  */
 
 /**
