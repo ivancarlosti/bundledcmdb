@@ -73,6 +73,32 @@ Query parameters:
 
 Response: `{"devices":[],"total":n,"page":1,"pages":1}`
 
+#### Measured cost at 100k rows
+
+`bin/bench-devices.php` seeds a throwaway 100k-row fixture (deleted afterwards),
+runs the SQL that `lib/panel/devices.php` builds through `EXPLAIN`, and prints
+the wall time per access pattern. Measured on MariaDB 11.8, page size 25, 90k
+live rows:
+
+| Access pattern | count | page | Plan |
+|---|---|---|---|
+| default (`updated_at desc`) | 11 ms | 0.3 ms | `idx_assets_updated` |
+| `sort=SN` asc/desc | 11 ms | 0.3 ms | `idx_assets_sn` |
+| `sort=source`, `sort=Status` | 13 ms | 0.3 ms | `idx_assets_source` / `idx_assets_status` |
+| `sort=files`, `sort=custom:<key>` | 12 ms | ~155 ms | filesort over the whole scope (computed expression) |
+| `q=<term>` (`LIKE '%…%'` on ~20 columns) | 300 ms | 400 ms | index scan + filter |
+| last page (`OFFSET 90000`) | 12 ms | 176 ms | `idx_assets_updated`, offset scan |
+
+Two findings from that run are fixed in this release: `idx_assets_source`,
+`idx_assets_status` were missing (179 ms → 0.3 ms for those sorts, migration
+`0007_assets_indexes` also repairs installations that had already applied
+`0004`), and `byod=true` matched nothing because a `VARCHAR` column was compared
+against integer `1`.
+
+Sorting by a computed value (`files`, `custom:<key>`) and free-text search are
+inherently linear: combine them with `source`/`status`/`company` filters, which
+is what the panel's UI does, instead of paging through 90k rows.
+
 ### `GET /v1/devices/{id}`
 `?with=files` adds attachment metadata.
 

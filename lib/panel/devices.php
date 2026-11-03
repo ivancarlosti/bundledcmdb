@@ -182,8 +182,19 @@ function panel_devices_where(PDO $pdo, array $user, array $params): array
     }
 
     if ($params['byod'] !== null && db_column_exists($pdo, 'assets', 'BYOD')) {
-        $where[] = 'a.`BYOD` = ?';
-        $bind[] = $params['byod'] ? 1 : 0;
+        // `BYOD` is a VARCHAR: `asset_bool_normalize()` writes 'true'/'false', but
+        // installations imported from the legacy grid also hold '1'/'0' and
+        // 'yes'/'no'. Comparing against an integer (`BYOD = 1`) casts the column
+        // to a number, so 'true' becomes 0 and the "BYOD only" filter silently
+        // returned nothing — found by bin/bench-devices.php (phase 2).
+        $spellings = $params['byod']
+            ? ['1', 'true', 'yes', 'on']
+            : ['0', 'false', 'no', 'off'];
+        $where[] = 'LOWER(TRIM(a.`BYOD`)) IN ('
+            . implode(',', array_fill(0, count($spellings), '?')) . ')';
+        foreach ($spellings as $spelling) {
+            $bind[] = $spelling;
+        }
     }
 
     $search = (string) $params['q'];

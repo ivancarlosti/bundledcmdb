@@ -41,6 +41,10 @@ function migrations(): array
             'description' => 'Create user_preferences (locale, theme, page size, grid layout)',
             'run' => 'migration_0006_user_preferences',
         ],
+        '2026_11_02_0007_assets_indexes' => [
+            'description' => 'Ensure every index the device list/export sorts on exists',
+            'run' => 'migration_0007_assets_indexes',
+        ],
     ];
 }
 
@@ -365,5 +369,44 @@ function migration_0006_user_preferences(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
     migrate_note('CREATE TABLE user_preferences');
+}
+
+/**
+ * Repair step: the index block of 0004 only runs on installations that applied
+ * 0004 *after* it was written. A database that migrated earlier keeps the
+ * `schema_migrations` row and never learns about `idx_assets_updated`,
+ * `idx_assets_deleted` or `idx_assets_company_source`, which is exactly what
+ * `bin/bench-devices.php` (phase 2, EXPLAIN at 100k rows) surfaced: the default
+ * `updated_at desc` sort degraded to a filesort over the whole table.
+ *
+ * Idempotent by construction — every step is guarded by `migrate_index_exists()`.
+ */
+function migration_0007_assets_indexes(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'assets')) {
+        return;
+    }
+
+    $indexes = [
+        'idx_assets_company_source' => ['`company`', '`source`'],
+        'idx_assets_uuid'           => ['`UUID`'],
+        'idx_assets_sn'             => ['`SN`'],
+        'idx_assets_updated'        => ['`updated_at`'],
+        'idx_assets_deleted'        => ['`deleted_at`'],
+        // `ORDER BY source` / `ORDER BY Status` cannot use the composite and the
+        // low-cardinality index still lets InnoDB walk in order and stop at the
+        // page (179 ms → 0.3 ms at 100k rows in bin/bench-devices.php).
+        'idx_assets_source'         => ['`source`'],
+        'idx_assets_status'         => ['`Status`'],
+    ];
+    foreach ($indexes as $name => $columns) {
+        $present = true;
+        foreach ($columns as $column) {
+            $present = $present && db_column_exists($pdo, 'assets', trim($column, '`'));
+        }
+        if ($present) {
+            migrate_add_index($pdo, 'assets', $name, implode(', ', $columns));
+        }
+    }
 }
 

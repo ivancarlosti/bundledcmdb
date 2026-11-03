@@ -229,6 +229,16 @@ try {
         'meta: manager may not update cypher_id'
     );
 
+    // --- session: capability and feature flags ----------------------------
+    $sessionFeatures = panel_session_payload(session_require())['features'];
+    check($sessionFeatures['spa'] === true, 'session: features.spa is on by default (phase 9)');
+    check(settings_spa_enabled() === true, 'settings: ui.spa_enabled defaults to 1');
+    check(is_bool($sessionFeatures['attachments']), 'session: features.attachments is a bool');
+    check(
+        ($sessionFeatures['devLogin'] ?? null) === app_dev_login_enabled(),
+        'session: features.devLogin mirrors the environment'
+    );
+
     // --- create ------------------------------------------------------------
     $createBody = [
         'sn'        => $sn,
@@ -367,6 +377,33 @@ try {
     $_GET = ['sort' => 'SN', 'dir' => 'asc'];
     $sorted = panel_devices_index();
     check(($sorted['meta']['sort'] ?? '') === 'SN', 'list: meta.sort echoes the column');
+    $_GET = [];
+
+    // --- byod filter -------------------------------------------------------
+    // Regression: `BYOD` is a VARCHAR holding 'true'/'false'. Binding integer
+    // 1/0 made MariaDB cast the column to a number ('true' → 0), so
+    // `byod=true` matched nothing. Found by bin/bench-devices.php (phase 2).
+    as_role('manager', $companyA);
+    body(['byod' => true]);
+    panel_devices_update(['id' => (string) $id]);
+
+    $nonByodBody = ['sn' => $sn . '-N', 'hostname' => 'NON-BYOD', 'byod' => false];
+    if ($companyA === '') {
+        $nonByodBody['company'] = $writeCompany;
+    }
+    body($nonByodBody);
+    $nonByodId = (int) panel_devices_create()['data']['id'];
+    $createdIds[] = $nonByodId;
+
+    $_GET = ['q' => $sn, 'byod' => 'true'];
+    $byodTrue = array_column(panel_devices_index()['data']['rows'], 'id');
+    check(in_array($id, $byodTrue, true), 'filter: byod=true returns the BYOD device');
+    check(!in_array($nonByodId, $byodTrue, true), 'filter: byod=true skips the other device');
+
+    $_GET = ['q' => $sn, 'byod' => 'false'];
+    $byodFalse = array_column(panel_devices_index()['data']['rows'], 'id');
+    check(in_array($nonByodId, $byodFalse, true), 'filter: byod=false returns the other device');
+    check(!in_array($id, $byodFalse, true), 'filter: byod=false skips the BYOD device');
     $_GET = [];
 
     // --- company isolation -------------------------------------------------

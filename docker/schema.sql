@@ -113,6 +113,10 @@ ALTER TABLE assets ADD INDEX idx_assets_uuid (UUID);
 ALTER TABLE assets ADD INDEX idx_assets_sn (SN);
 ALTER TABLE assets ADD INDEX idx_assets_updated (updated_at);
 ALTER TABLE assets ADD INDEX idx_assets_deleted (deleted_at);
+-- Sorts on these two cannot use the composite index above; measured by
+-- bin/bench-devices.php at 100k rows (179 ms → 0.3 ms).
+ALTER TABLE assets ADD INDEX idx_assets_source (source);
+ALTER TABLE assets ADD INDEX idx_assets_status (Status);
 
 -- Record the versions so bin/migrate.php does not try to re-apply them.
 INSERT IGNORE INTO schema_migrations (version) VALUES
@@ -120,4 +124,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0002_sources'),
     ('2026_11_02_0003_api_keys'),
     ('2026_11_02_0004_assets_provenance'),
-    ('2026_11_02_0005_asset_fields');
+    ('2026_11_02_0005_asset_fields'),
+    ('2026_11_02_0006_user_preferences'),
+    ('2026_11_02_0007_assets_indexes');
