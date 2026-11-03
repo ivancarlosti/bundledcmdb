@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 /**
- * bin/check-schema.php — keeps `docker/schema.sql` in step with the migrations.
+ * bin/check-schema.php — keeps `sql/schema.sql` in step with the migrations.
  *
- * A DBA-managed installation applies `docker/schema.sql` once and never needs
+ * A DBA-managed installation applies `sql/schema.sql` once and never needs
  * `bin/migrate.php` again: the file records the versions as applied. Anything a
  * later migration adds but the file forgets is therefore gone for good on those
  * installs (that is how `user_preferences`, `asset_events` and `saved_views`
@@ -30,9 +30,9 @@ $root = dirname(__DIR__);
 $errors = migrate_dba_sql_drift($root);
 
 $migrationTables = migrate_sql_tables((string) file_get_contents(__DIR__ . '/../lib/migrate.php'));
-$schemaTables = migrate_sql_tables((string) file_get_contents(__DIR__ . '/../docker/schema.sql'));
+$schemaTables = migrate_sql_tables((string) file_get_contents(__DIR__ . '/../sql/schema.sql'));
 printf(
-    "migrations: %d tables, docker/schema.sql: %d tables, ledger: %d versions\n",
+    "migrations: %d tables, sql/schema.sql: %d tables, ledger: %d versions\n",
     count($migrationTables),
     count($schemaTables),
     count(migrations())

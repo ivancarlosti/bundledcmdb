@@ -8,11 +8,18 @@ so an installation can move away from `.env` without code changes.
 Every field shows a badge telling which tier answered:
 
 * **DB** — a row exists in `app_settings`.
-* **ENV** — the environment variable (kept for backwards compatibility).
+* **ENV** — the environment variable (`APP_DEFAULT_LOCALE`, `APP_TIMEZONE`;
+  kept for backwards compatibility).
 * **DEFAULT** — built-in default from `lib/settings.php`.
 
 "Hits" on the DB tier have a *Reset to env/default* button that deletes the row.
-Placeholder values such as `YOURS3BUCKET` are treated as "not configured".
+Placeholder values shipped in `docker/.env.example` (anything starting with
+`YOUR`) are treated as "not configured".
+
+Object storage is the one exception to the table above: `s3.*` has **no** ENV
+tier, so the values only ever live in the database (the secret encrypted). An
+installation that used the old `S3_*` variables must enter them once under
+Settings → Storage after upgrading.
 
 Database credentials (`DB_*`), `APP_ENCRYPTION_KEY` and Keycloak stay
 environment-only: they are needed *before* the settings table can be read.
@@ -57,7 +64,7 @@ Generate a key once per environment:
 
 ```bash
 openssl rand -base64 32
-# docker/.env or your orchestrator secret:
+# docker/.env (copy docker/.env.example) or your orchestrator secret:
 APP_ENCRYPTION_KEY=...
 ```
 
@@ -170,7 +177,7 @@ php bin/migrate.php
 Applied versions are recorded in `schema_migrations`; every step is guarded by
 `information_schema` checks because MySQL 8 has no `ADD COLUMN IF NOT EXISTS`.
 For databases where the application user cannot run DDL, a DBA can apply
-`docker/schema.sql` once (it also records the migration versions). Because that
+`sql/schema.sql` once (it also records the migration versions). Because that
 file records itself as applied, a table it forgets never reaches those
 installations — `php bin/check-schema.php` fails when it and `lib/migrate.php`
 disagree about a table or a version.

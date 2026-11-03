@@ -197,12 +197,12 @@ check(
     'release: APP_VERSION is the env stamp, else manifest.json (' . APP_VERSION . ')'
 );
 
-// `docker/schema.sql` is the DBA path: it records itself as applied, so a table
+// `sql/schema.sql` is the DBA path: it records itself as applied, so a table
 // it forgets never reaches those installations (user_preferences, asset_events
 // and saved_views were all missing). `bin/check-schema.php` prints the detail;
 // running the same helper here keeps the suite honest.
 $schemaDrift = migrate_dba_sql_drift(dirname(__DIR__));
-check($schemaDrift === [], 'schema: docker/schema.sql matches lib/migrate.php', implode('; ', $schemaDrift));
+check($schemaDrift === [], 'schema: sql/schema.sql matches lib/migrate.php', implode('; ', $schemaDrift));
 
 $pdo = db_try();
 if ($pdo === null) {

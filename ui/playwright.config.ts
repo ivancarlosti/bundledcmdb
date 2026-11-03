@@ -13,9 +13,9 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
-  // `github` turns a failure into an annotation on the commit/PR, which is the
-  // only way to read it without an authenticated job log.
-  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  // `list` for the terminal and `html` so a failure can be reopened afterwards
+  // (`ui/playwright-report/index.html`). Run with `./bin/check-ui.sh --e2e`.
+  reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',

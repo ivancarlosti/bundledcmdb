@@ -4,9 +4,9 @@ declare(strict_types=1);
 /**
  * s3_client.php — S3 wrapper.
  *
- * Configuration now comes from Settings → Storage (DB), falling back to the
- * S3_* environment variables and finally to the built-in defaults, so an
- * instance can be moved from .env to the panel without touching code.
+ * Configuration comes from Settings → Storage (stored in `app_settings`, the
+ * secret encrypted with APP_ENCRYPTION_KEY), so an instance can be moved away
+ * from `.env` without touching code. There is no S3 environment tier.
  *
  * Constructor overrides are supported, which is what the "Test connection"
  * button uses to validate values before saving them.

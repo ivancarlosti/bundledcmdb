@@ -4,13 +4,13 @@
  *
  * Usage (dev stack up, see docs/frontend.md):
  *
- *   docker cp public/app/. bcmdb-dev-app:/var/www/html/public/app/   # fresh bundle
+ *   docker cp public/app/. bcmdb-bundle-app:/var/www/html/public/app/   # fresh bundle
  *   node ui/scripts/screenshots.mjs [baseUrl]
  *
- * Default base URL: http://localhost:5600 (docker/docker-compose.dev.yml). The
+ * Default base URL: http://localhost:5600 (docker/docker-compose-bundle.yml). The
  * script signs in through the development login (`APP_DEV_LOGIN=1`), so it never
  * needs Keycloak; every screen is captured with the same demo data as
- * `docker/dev-legacy.sql`. It writes into docs/screenshots/ and prints the file
+ * `sql/dev-seed.sql`. It writes into docs/screenshots/ and prints the file
  * names, which is what README.md references.
  */
 import { mkdir } from 'node:fs/promises';

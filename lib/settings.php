@@ -6,9 +6,11 @@ declare(strict_types=1);
  *
  *   database (app_settings)  →  environment variable  →  built-in default
  *
- * The settings page shows which tier answered (DB / ENV / default) so an
- * instance previously configured only through .env keeps working and it is
- * obvious what still comes from the environment.
+ * Only `general.default_locale` and `general.timezone` still have an ENV tier
+ * (`APP_DEFAULT_LOCALE` / `APP_TIMEZONE`); `s3.*` is database-only. The
+ * settings page shows which tier answered (DB / ENV / default) so an instance
+ * previously configured only through .env keeps working and it is obvious what
+ * still comes from the environment.
  *
  * Secrets (S3 secret key, …) are stored encrypted, see lib/crypto.php.
  */
@@ -91,26 +93,26 @@ function settings_definitions(): array
             'label' => 'Local storage path (empty = var/storage)',
         ],
 
-        // --- S3 connection ---
+        // --- S3 connection (Settings → Storage only: no environment tier) ---
         's3.region' => [
             'group' => 's3', 'type' => 'text', 'default' => '',
-            'env' => 'S3_REGION', 'label' => 'Region',
+            'label' => 'Region',
         ],
         's3.bucket' => [
             'group' => 's3', 'type' => 'text', 'default' => '',
-            'env' => 'S3_BUCKET', 'label' => 'Bucket',
+            'label' => 'Bucket',
         ],
         's3.endpoint' => [
             'group' => 's3', 'type' => 'text', 'default' => '',
-            'env' => 'S3_ENDPOINT', 'label' => 'Endpoint',
+            'label' => 'Endpoint',
         ],
         's3.access_key' => [
             'group' => 's3', 'type' => 'text', 'default' => '',
-            'env' => 'S3_ACCESS_KEY', 'label' => 'Access key ID',
+            'label' => 'Access key ID',
         ],
         's3.secret_key' => [
             'group' => 's3', 'type' => 'secret', 'default' => '', 'secret' => true,
-            'env' => 'S3_SECRET_KEY', 'label' => 'Secret access key',
+            'label' => 'Secret access key',
         ],
         's3.path_style' => [
             'group' => 's3', 'type' => 'bool', 'default' => '1',
@@ -127,7 +129,9 @@ function settings_definitions(): array
     ];
 }
 /**
- * Placeholder values shipped in .env.example count as "not configured".
+ * Environment tier for the few settings that still have one (APP_DEFAULT_LOCALE,
+ * APP_TIMEZONE). Placeholder values shipped in .env.example ("YOUR…") count as
+ * "not configured".
  */
 function settings_env_value(string $key): ?string
 {
@@ -140,9 +144,7 @@ function settings_env_value(string $key): ?string
     if ($value === '') {
         return null;
     }
-    if (preg_match('/^YOUR/i', $value) === 1
-        || str_contains($value, 'YOURS3')
-        || str_contains($value, 'YOURKEYCLOAK')) {
+    if (preg_match('/^YOUR/i', $value) === 1) {
         return null;
     }
 

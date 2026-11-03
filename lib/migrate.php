@@ -10,13 +10,13 @@ declare(strict_types=1);
  * Settings → Maintenance tab report what is still pending.
  *
  * DDL privileges are required. When the application user cannot ALTER TABLE the
- * panel shows a banner and a DBA can apply `docker/schema.sql` instead.
+ * panel shows a banner and a DBA can apply `sql/schema.sql` instead.
  */
 
 /**
- * Static drift check between `migrations()` and `docker/schema.sql`.
+ * Static drift check between `migrations()` and `sql/schema.sql`.
  *
- * `docker/schema.sql` is the DBA path: an installation applies it once and it
+ * `sql/schema.sql` is the DBA path: an installation applies it once and it
  * records the versions as applied, so `bin/migrate.php` afterwards believes the
  * work is done and never comes back. A table that a later migration creates must
  * therefore also appear in that file — otherwise the feature protected by its
@@ -30,9 +30,9 @@ declare(strict_types=1);
  */
 function migrate_dba_sql_drift(string $root): array
 {
-    $schemaPath = rtrim($root, '/') . '/docker/schema.sql';
+    $schemaPath = rtrim($root, '/') . '/sql/schema.sql';
     if (!is_file($schemaPath)) {
-        return ['docker/schema.sql is missing.'];
+        return ['sql/schema.sql is missing.'];
     }
 
     $errors = [];
@@ -42,7 +42,7 @@ function migrate_dba_sql_drift(string $root): array
     $missing = array_keys(array_diff_key($migrationTables, $schemaTables));
     sort($missing);
     if ($missing !== []) {
-        $errors[] = 'docker/schema.sql is missing tables that lib/migrate.php creates: ' . implode(', ', $missing);
+        $errors[] = 'sql/schema.sql is missing tables that lib/migrate.php creates: ' . implode(', ', $missing);
     }
 
     $schemaSql = (string) file_get_contents($schemaPath);
@@ -57,11 +57,11 @@ function migrate_dba_sql_drift(string $root): array
     $versions = array_keys(migrations());
     $notRecorded = array_values(array_diff($versions, array_keys($recorded)));
     if ($notRecorded !== []) {
-        $errors[] = 'docker/schema.sql does not record these migrations as applied: ' . implode(', ', $notRecorded);
+        $errors[] = 'sql/schema.sql does not record these migrations as applied: ' . implode(', ', $notRecorded);
     }
     $unknown = array_values(array_diff(array_keys($recorded), $versions));
     if ($unknown !== []) {
-        $errors[] = 'docker/schema.sql records versions that no longer exist: ' . implode(', ', $unknown);
+        $errors[] = 'sql/schema.sql records versions that no longer exist: ' . implode(', ', $unknown);
     }
 
     return $errors;

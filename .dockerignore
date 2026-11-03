@@ -1,11 +1,10 @@
 .git/
 .github/
-# `docker/**` rather than `docker/`: the negation below can only re-include a
-# file when its parent directory itself is not excluded. Only the DBA DDL ships
-# (an operator may need it from inside the image); the dev compose file and the
-# legacy sample rows stay out.
+# `docker/**` holds the operator-facing compose files and `.env.example`; the
+# image needs none of them. SQL lives in `sql/` (schema.sql + legacy.sql ship,
+# the demo rows do not).
 docker/**
-!docker/schema.sql
+.env
 docs/
 plans/
 .dockerignore
@@ -20,5 +19,7 @@ ui/coverage/
 ui/playwright-report/
 ui/test-results/
 public/app/
+# Dev fixtures must never ship in an image.
+sql/dev-seed.sql
 # Local attachment storage must never ship in an image.
 var/

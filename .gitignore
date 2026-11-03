@@ -16,5 +16,8 @@ var/
 .DS_Store
 *.local
 
+# Real environment files (copy docker/.env.example to docker/.env)
+.env
+
 # Stray npm cache when a tool runs at the repo root
 node_modules/

@@ -57,9 +57,10 @@ covered by `e2e/smoke.spec.ts`.
 ## Local development
 
 ```bash
-# 1. backend + database + (optional) minio
-docker compose -f docker/docker-compose.dev.yml up -d --build
-docker compose -f docker/docker-compose.dev.yml exec app php bin/migrate.php
+# 1. backend + bundled database
+cp docker/.env.example docker/.env   # once; APP_ENCRYPTION_KEY + Keycloak values
+docker compose -f docker/docker-compose-bundle.yml up -d --build
+docker compose -f docker/docker-compose-bundle.yml exec app php bin/migrate.php
 
 # 2. SPA dev server (proxies /panel-api and /auth to the container)
 cd ui
@@ -73,9 +74,10 @@ production.
 
 ### Logging in without Keycloak
 
-The dev compose file points Keycloak at `sso.example.com`, so the real flow
-cannot complete locally. Set `APP_DEV_LOGIN=1` on the container (non-production
-only) and use:
+The bundle compose file points Keycloak at `sso.example.com`, so the real flow
+cannot complete locally. Put `APP_ENV=development` and `APP_DEV_LOGIN=1` in
+`docker/.env` (the compose defaults are production-safe and leave it off) and
+use:
 
 ```
 http://localhost:5600/auth/dev-login?email=admin@example.com
@@ -249,7 +251,7 @@ PHP side (the API itself):
 
 ```bash
 php bin/check-i18n.php          # catalog coverage, unknown keys and dead keys
-php bin/check-schema.php        # docker/schema.sql ↔ lib/migrate.php (no database)
+php bin/check-schema.php        # sql/schema.sql ↔ lib/migrate.php (no database)
 php bin/test-panel-api.php      # integration tests: role matrix, validation,
                                 # optimistic locking, delete/restore, isolation
 php bin/bench-devices.php       # EXPLAIN + timings on a throwaway 100k fixture
@@ -262,11 +264,12 @@ development database. It refuses to run with `APP_ENV=production`. The route
 table and `panel_request_path()` are asserted before the database check, so a
 broken route ordering still fails the gate on a machine without MySQL.
 
-CI: `.github/workflows/ui.yml` runs the SPA gates (`typecheck`, `lint`, `vitest`,
-`build`, then Playwright against `vite preview`) for changes under `ui/`,
-`public/lang/` and `lib/panel/`, and uploads the built `public/app` bundle. The
-release ZIP (`.github/workflows/build.yml`) builds the SPA before zipping, so a
-zip deployment does not need Node.
+SPA gates run from the repo root, without GitHub Actions:
+`./bin/check-ui.sh` installs (`npm ci`), then runs `typecheck`, `lint`, `format`,
+`test` and `build`; `--e2e` also runs Playwright against `vite preview` and
+`--no-install` skips the install. The build writes `public/app/`, which the
+release ZIP (`.github/workflows/build.yml`) and the Dockerfile produce
+themselves, so a zip or image deployment does not need Node.
 
 The Playwright suite is **hermetic**: every `/panel-api/v1/*` call is stubbed per
 test (`e2e/fixtures.ts` — `mockPanel()` for a signed-in role, `mockAnonymous()`

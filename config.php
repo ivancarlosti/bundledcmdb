@@ -45,13 +45,6 @@ define('APP_ENCRYPTION_KEY', getenv('APP_ENCRYPTION_KEY') ?: '');
 define('APP_DEFAULT_LOCALE', getenv('APP_DEFAULT_LOCALE') ?: '');
 define('APP_TIMEZONE', getenv('APP_TIMEZONE') ?: '');
 
-// --- S3 Settings (environment fallbacks; editable in Settings → Storage) ---
-define('S3_REGION', getenv('S3_REGION') ?: 'YOURS3REGION');
-define('S3_BUCKET', getenv('S3_BUCKET') ?: 'YOURS3BUCKET');
-define('S3_ACCESS_KEY', getenv('S3_ACCESS_KEY') ?: 'YOURS3ACCESSKEY');
-define('S3_SECRET_KEY', getenv('S3_SECRET_KEY') ?: 'YOURS3SECRETKEY');
-define('S3_ENDPOINT', getenv('S3_ENDPOINT') ?: 'https://s3.YOURS3REGION.amazonaws.com'); // Change if using MinIO or other provider
-
 // --- Keycloak Settings ---
 define('KEYCLOAK_BASE_URL', getenv('KEYCLOAK_BASE_URL') ?: 'https://sso.example.com'); // Replace with your Keycloak URL
 define('KEYCLOAK_REALM', getenv('KEYCLOAK_REALM') ?: 'YOURSSORealm'); // Replace with your Realm

@@ -1,0 +1,89 @@
+# Bundled CMDB with its database.
+#
+#   cp docker/.env.example docker/.env   # once; set APP_ENCRYPTION_KEY + Keycloak
+#   docker compose -f docker/docker-compose-bundle.yml up -d
+#   docker compose -f docker/docker-compose-bundle.yml exec app php bin/migrate.php
+#
+# Panel: http://localhost:5600/
+# API:   http://localhost:5600/api/v1/health
+#
+# The database is bootstrapped from sql/legacy.sql (pre-migration tables only),
+# so a checkout keeps docker/ and sql/ as siblings. Demo rows for local work
+# live in sql/dev-seed.sql; load them once, after `up`:
+#   docker compose -f docker/docker-compose-bundle.yml exec -T db \
+#     mariadb -ucmdb -pcmdb bundledcmdb < sql/dev-seed.sql
+#
+# Attachments: set Settings → Storage → Driver to `local` (files land in
+# /var/www/html/var/storage inside the container) — no object storage needed.
+# For S3/MinIO configure the connection under Settings → Storage: the panel has
+# no S3 environment variables and the secret is encrypted with
+# APP_ENCRYPTION_KEY.
+#
+# Defaults are production-safe (APP_ENV=production, development login off). For
+# a local stack put APP_ENV=development and APP_DEV_LOGIN=1 in docker/.env.
+# Change the BUNDLE_DB_* credentials before exposing this stack.
+
+name: bundledcmdb-bundle
+
+services:
+  db:
+    image: mariadb:11
+    container_name: bcmdb-bundle-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${BUNDLE_DB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: ${BUNDLE_DB_NAME:-bundledcmdb}
+      MARIADB_USER: ${BUNDLE_DB_USER:-cmdb}
+      MARIADB_PASSWORD: ${BUNDLE_DB_PASSWORD:-cmdb}
+    ports:
+      - "${BUNDLE_DB_PORT:-33061}:3306"
+    volumes:
+      - bcmdb-bundle-db:/var/lib/mysql
+      - ../sql/legacy.sql:/docker-entrypoint-initdb.d/10-legacy.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    # Published image by default, so a copied docker/ + sql/ folder needs no
+    # source; `--build` still works from a checkout because the Dockerfile lives
+    # one level up.
+    image: ${BCMDB_IMAGE:-git.icc.gg/ivancarlos/bundledcmdb:latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: bcmdb-bundle-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${BUNDLE_HTTP_PORT:-5600}:80"
+    environment:
+      DB_SERVER: db
+      DB_PORT: "3306"
+      DB_NAME: ${BUNDLE_DB_NAME:-bundledcmdb}
+      DB_USERNAME: ${BUNDLE_DB_USER:-cmdb}
+      DB_PASSWORD: ${BUNDLE_DB_PASSWORD:-cmdb}
+      # Generate once with: openssl rand -base64 32
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      APP_DEFAULT_LOCALE: ${APP_DEFAULT_LOCALE:-pt-BR}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Sao_Paulo}
+      # Production-safe defaults: set APP_ENV=development + APP_DEV_LOGIN=1 in
+      # docker/.env for local work (never enable the dev login in production).
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEV_LOGIN: ${APP_DEV_LOGIN:-0}
+      # S3 is configured from Settings → Storage (no S3 environment variables).
+      KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-https://sso.example.com}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-dev}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-bundledcmdb}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-dev-secret}
+      KEYCLOAK_REDIRECT_URI: ${KEYCLOAK_REDIRECT_URI:-http://localhost:5600/index.php}
+      # SPA endpoints: register http://localhost:5600/auth/callback in the client
+      # when pointing at a real Keycloak; leave empty to derive it per request.
+      KEYCLOAK_PANEL_REDIRECT_URI: ${KEYCLOAK_PANEL_REDIRECT_URI:-}
+
+volumes:
+  bcmdb-bundle-db:

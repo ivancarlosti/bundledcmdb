@@ -150,12 +150,14 @@ jobs:
       - name: 📦 Create ZIP package
         if: steps.rebuild.outputs.proceed == 'true' && github.event_name != 'schedule'
         run: |
-          # docs/, plans/ and the SPA sources are intentionally kept: the zip
-          # doubles as a backup. Only build inputs/outputs that can be
-          # reproduced (`ui/node_modules`, `ui/dist`) are dropped.
+          # docs/, plans/, sql/ and the SPA sources are intentionally kept: the
+          # zip doubles as a backup. Only build inputs/outputs that can be
+          # reproduced (`ui/node_modules`, `ui/dist`) and the dev-only fixtures
+          # (`sql/dev-seed.sql`) are dropped.
           zip -r "${{ steps.version.outputs.zip_name }}" . \
             -x ".git/*" ".github/*" "docker/*" ".dockerignore" \
                "CNAME" "Dockerfile" "README.md" "LICENSE" \
+               "sql/dev-seed.sql" \
                "ui/node_modules/*" "ui/dist/*" "ui/test-results/*" \
                "ui/playwright-report/*" "ui/coverage/*"
 

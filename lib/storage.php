@@ -5,7 +5,7 @@ declare(strict_types=1);
  * lib/storage.php — attachment storage behind one interface (`s3` or `local`).
  *
  * Why two drivers: the Docker image and the zip release are usable without S3
- * (a laptop, a lab box, the `docker-compose.dev.yml` stack), and asking an
+ * (a laptop, a lab box, the `docker-compose-bundle.yml` stack), and asking an
  * administrator to stand up MinIO just to attach a PDF is a bad first run. The
  * driver is a setting (`storage.driver`), the caller never cares which one is
  * active, and `local` keeps everything under `var/storage` (git-ignored) unless

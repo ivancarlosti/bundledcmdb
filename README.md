@@ -17,9 +17,10 @@ Small CMDB project that uses ESET data sent to database for asset management, us
 ## Requirement:
 
 * [Docker Compose](https://docs.docker.com/engine/install/)
-* MySQL/MariaDB
+* MySQL/MariaDB (or use the bundled compose file, which runs MariaDB for you)
 * Keycloak for SSO
-* S3-like for object storage
+* S3-compatible object storage (optional — Settings → Storage can keep
+  attachments on local disk instead)
 * ESET data to populate
 
 ## Panel
@@ -37,20 +38,51 @@ redeploying the previous 10.x image; see [docs/frontend.md](docs/frontend.md).
 
 ## Deployment instructions:
 
-* Download `/docker` files on your server, example:
+* Download the docker files on your server, for example:
 ```
-curl -o .env https://raw.githubusercontent.com/ivancarlosti/bundledcmdb/main/docker/.env
-curl -o docker-compose.yml https://raw.githubusercontent.com/ivancarlosti/bundledcmdb/main/docker/docker-compose.yml
+mkdir -p docker
+curl -o docker/docker-compose.yml https://raw.githubusercontent.com/ivancarlosti/bundledcmdb/main/docker/docker-compose.yml
+curl -o docker/.env.example       https://raw.githubusercontent.com/ivancarlosti/bundledcmdb/main/docker/.env.example
+cp docker/.env.example docker/.env
 ```
-* Edit both `.env`, `docker-compose.yml` files
+* Edit `docker/.env`: database (`DB_*`), Keycloak and `APP_ENCRYPTION_KEY`.
+  Object storage is **not** configured here — after the first boot open
+  **Settings → Storage** and fill in the S3 values there. They are stored in the
+  database and the secret is encrypted with `APP_ENCRYPTION_KEY`, so an existing
+  installation that used the old `S3_*` environment variables only has to enter
+  them once.
 * Start Docker Compose, example:
 ```
-docker compose pull && docker compose up -d
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml up -d
 ```
 * Apply the schema migrations (idempotent; safe to re-run):
 ```
-docker compose exec ddnsonroute53 php bin/migrate.php
+docker compose -f docker/docker-compose.yml exec app php bin/migrate.php
 ```
+
+### Bundled database (MariaDB in the same project)
+
+Prefer not to run a database yourself? Use `docker-compose-bundle.yml`: it adds
+a MariaDB service, creates the database from `sql/legacy.sql` and points the app
+at it. `docker/` and `sql/` must stay siblings:
+
+```
+mkdir -p docker sql
+curl -o docker/docker-compose-bundle.yml https://raw.githubusercontent.com/ivancarlosti/bundledcmdb/main/docker/docker-compose-bundle.yml
+curl -o docker/.env.example             https://raw.githubusercontent.com/ivancarlosti/bundledcmdb/main/docker/.env.example
+curl -o sql/legacy.sql                  https://raw.githubusercontent.com/ivancarlosti/bundledcmdb/main/sql/legacy.sql
+cp docker/.env.example docker/.env
+docker compose -f docker/docker-compose-bundle.yml up -d
+docker compose -f docker/docker-compose-bundle.yml exec app php bin/migrate.php
+```
+
+The database credentials come from `BUNDLE_DB_NAME`, `BUNDLE_DB_USER`,
+`BUNDLE_DB_PASSWORD`, `BUNDLE_DB_ROOT_PASSWORD` and `BUNDLE_DB_PORT` (defaults in
+the file); change them before exposing the stack. The panel is published on
+`BUNDLE_HTTP_PORT` (5600 by default). Demo rows for local work live in
+`sql/dev-seed.sql` and are never loaded automatically; see
+[docs/development.md](docs/development.md).
 
 ## What's new in 11.0
 
@@ -77,7 +109,7 @@ docker compose exec ddnsonroute53 php bin/migrate.php
   datetime, boolean, single/multi choice, e-mail, URL, IP; validation, unique
   constraints, per-role editing, per-locale labels, grid columns and search.
 * **Schema migrations** — `bin/migrate.php` (+ Settings → Maintenance button),
-  `docker/schema.sql` for DBA-managed databases (`php bin/check-schema.php`
+  `sql/schema.sql` for DBA-managed databases (`php bin/check-schema.php`
   keeps the two in step). No manual `ALTER TABLE` needed. `/api/v1/health`
   reports the version the image was built with.
 
@@ -94,8 +126,10 @@ docker compose exec ddnsonroute53 php bin/migrate.php
 | `KEYCLOAK_PANEL_REDIRECT_URI` | Callback registered for `/auth/callback`. Empty = derive `https://<host>/auth/callback` from the request |
 | `DB_PORT` | Optional non-default database port |
 
-S3 variables remain supported as fallbacks, but the panel values take
-precedence and encrypt the secret.
+Object storage has no environment tier: S3 region/bucket/endpoint/keys are set
+under **Settings → Storage**, stored in `app_settings` with the secret encrypted
+by `APP_ENCRYPTION_KEY`. Installations that used the old `S3_*` variables must
+enter the same values there once after upgrading.
 
 ### Languages
 
@@ -109,8 +143,8 @@ coverage.
 * [docs/api.md](docs/api.md) — API reference and curl examples.
 * [docs/settings.md](docs/settings.md) — settings precedence, encryption,
   sources, custom fields, migrations.
-* [docs/development.md](docs/development.md) — local stack, CLI tools, layout,
-  validation checklist.
+* [docs/development.md](docs/development.md) — local stack, CLI tools (including
+  the SPA gates in `bin/check-ui.sh`), layout, validation checklist.
 * [docs/frontend.md](docs/frontend.md) — React SPA: structure, `npm` scripts,
   local `vite` workflow, conventions and i18n rules
   (migration plan: [`plans/2026-11-02-spa-migration.md`](plans/2026-11-02-spa-migration.md)).
