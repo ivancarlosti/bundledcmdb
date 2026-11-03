@@ -515,12 +515,22 @@ Estimates are focus days for one developer.
   progress — the controlled form covers the same fields today; revisit if the
   field count grows.
 
-### Phase 7 — settings, sources, fields, API keys, users (5–6 d)
+### Phase 7 — settings, sources, fields, API keys, users (5–6 d) ✅ API done
 
-* Full parity with `settings.php`, `manage_permissions.php`: general, storage
-  (secrets write-only, masked), sources, custom fields (reorder, per-locale
-  labels, validation options), API keys (create-once secret, rotate, revoke),
-  maintenance (status + migrate button), users (superadmin).
+* [x] Server contract for the whole surface: `lib/panel/settings.php` exposes
+  `GET/PATCH /settings`, `sources` CRUD, `fields` CRUD + `reorder`, `api-keys`
+  CRUD + `rotate`, `users` (superadmin) and `maintenance` (status + migrate, dry
+  run by default). Every handler wraps the same model helper the legacy page
+  uses (`settings_set()`, `source_*`, `field_*`, `api_key_*`, `migrate_run()`).
+* [x] Parity rules encoded server-side: secrets write-only (empty `value` +
+  `configured`, `clear` to wipe), `422 validation_failed` with a code per key,
+  system sources undeletable (`409 system_source`), tokens returned once, own
+  role immutable (`409 self_role_change`).
+* [x] `bin/test-panel-api.php` covers the role gates (manager `403`, users
+  superadmin-only), validation/storage, sources, fields + reorder, keys
+  (create/rotate/delete, hash never serialised) and maintenance.
+* [ ] SPA screens (`/app/settings/*`) — the endpoints are ready, the React tabs
+  are still phase 9 work; the legacy page remains the only UI.
 
 ### Phase 8 — tests, CI, docs (3–4 d) 🚧 mostly done
 
@@ -533,9 +543,14 @@ Estimates are focus days for one developer.
 * [x] `.github/workflows/ui.yml`: `npm ci` → typecheck → lint → vitest → build
   (+ `public/app` artifact) and a Playwright job against `vite preview` with the
   stubbed panel API; `build.yml` builds the SPA before zipping.
-* [ ] Vitest for `api/client.ts` (envelope → `PanelApiError`, CSRF header) and an
-  i18n coverage assertion in the SPA.
-* [ ] RTL screenshot snapshot (the direction flip itself is asserted).
+* [x] Vitest for `api/client.ts` (envelope → `PanelApiError`, CSRF header,
+  multipart body, `buildQuery`/`apiUrl`) and an i18n coverage assertion that
+  reads `public/lang/*.php` and fails on a literal used by the SPA that no
+  catalogue defines (dynamic families asserted separately).
+* [x] RTL geometry spec (`e2e/rtl.spec.ts`): no page-level overflow, the
+  selection column on the visual right, the grid scrolling inside its own
+  container; the pixel snapshot is opt-in (`VISUAL_SNAPSHOTS=1`) because a
+  baseline would compare different font sets across machines.
 * [x] `docs/frontend.md` finalised (panel API table, bulk actions, gates);
   `docs/api.md` cross-links the panel API; `docs/development.md` documents
   `npm run dev` + proxy.
@@ -729,3 +744,10 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 5 | e2e fixtures keep a mutable session and echo `PATCH /session/preferences` | theme, locale and column-layout tests need the stubbed server to remember what was saved, otherwise "survives a reload" cannot be asserted |
 | 2026-11-02 | 5 | `ui.yml` runs the Playwright suite in its own job, after `npm run build` | `vite preview` serves the production bundle; a separate job keeps a flaky browser test from blocking the typecheck/lint/vitest signal |
 | 2026-11-02 | 5 | Release ZIP excludes `ui/node_modules`, `ui/dist`, `ui/test-results`, `ui/playwright-report`, `ui/coverage` but includes `public/app` | zip deployments have no build step, while those directories are reproducible build inputs/outputs (and `node_modules` is not even tracked) |
+| 2026-11-02 | 7 | Settings writes reuse `settings_normalize()` + `settings_set()` instead of a second validator | the legacy page and the SPA must agree on `min`/`max`/option lists; the handlers only add the JSON shape and `ApiError` mapping |
+| 2026-11-02 | 7 | `PATCH /settings` treats an empty string on a `secret` key as "unchanged" and needs `{"clear": [...]}` to wipe it | an untouched password field posts `""`; without this a settings save would erase a working S3 secret |
+| 2026-11-02 | 7 | `PATCH /settings/users/{email}` refuses to change the caller's own role (`409 self_role_change`) | a superadmin who demotes themself locks the roster for every other administrator; the legacy page has the same guard |
+| 2026-11-02 | 7 | `POST /settings/maintenance/migrate` defaults to `dry_run: true` | running DDL from a button click should be an explicit choice; the response returns the same log for both modes |
+| 2026-11-02 | 7 | `bin/test-panel-api.php` asserts the self-role guard by logging in *as* a roster row | the CLI session (`tester@example.com`) is not a `users` row, so the natural test path returned `404` instead of the guard |
+| 2026-11-02 | 8 | The RTL pixel snapshot is opt-in (`VISUAL_SNAPSHOTS=1`); the committed gate is geometry | a committed baseline compares the local font set with the CI runner's, so it fails for reasons unrelated to layout |
+| 2026-11-02 | 8 | `ui/tsconfig.test.json` added and `tsconfig.app.json` excludes `*.test.*` | `vite build` must not type-check test files against the browser-only project, while `tsc -b` still has to cover them |

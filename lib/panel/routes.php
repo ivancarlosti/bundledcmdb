@@ -40,6 +40,28 @@ function panel_routes(): array
         ['PATCH', '/devices/{id}',        'panel_devices_update'],
         ['PUT',   '/devices/{id}',        'panel_devices_replace'],
         ['DELETE', '/devices/{id}',       'panel_devices_delete'],
+        // Settings: literal paths before the `{slug}` / `{id}` ones so
+        // /settings/fields/reorder is not read as a field id.
+        ['GET',   '/settings',            'panel_settings_show'],
+        ['PATCH', '/settings',            'panel_settings_update'],
+        ['GET',   '/settings/sources',    'panel_settings_sources_index'],
+        ['POST',  '/settings/sources',    'panel_settings_sources_store'],
+        ['PATCH', '/settings/sources/{slug}', 'panel_settings_sources_update'],
+        ['DELETE', '/settings/sources/{slug}', 'panel_settings_sources_delete'],
+        ['GET',   '/settings/fields',     'panel_settings_fields_index'],
+        ['POST',  '/settings/fields',     'panel_settings_fields_store'],
+        ['POST',  '/settings/fields/reorder', 'panel_settings_fields_reorder'],
+        ['PATCH', '/settings/fields/{id}', 'panel_settings_fields_update'],
+        ['DELETE', '/settings/fields/{id}', 'panel_settings_fields_delete'],
+        ['GET',   '/settings/api-keys',   'panel_settings_keys_index'],
+        ['POST',  '/settings/api-keys',   'panel_settings_keys_store'],
+        ['POST',  '/settings/api-keys/{id}/rotate', 'panel_settings_keys_rotate'],
+        ['PATCH', '/settings/api-keys/{id}', 'panel_settings_keys_update'],
+        ['DELETE', '/settings/api-keys/{id}', 'panel_settings_keys_delete'],
+        ['GET',   '/settings/users',      'panel_settings_users_index'],
+        ['PATCH', '/settings/users/{email}', 'panel_settings_users_update'],
+        ['GET',   '/settings/maintenance', 'panel_settings_maintenance_show'],
+        ['POST',  '/settings/maintenance/migrate', 'panel_settings_maintenance_migrate'],
     ];
 }
 

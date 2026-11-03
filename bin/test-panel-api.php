@@ -29,6 +29,7 @@ require_once __DIR__ . '/../lib/panel/session.php';
 require_once __DIR__ . '/../lib/panel/meta.php';
 require_once __DIR__ . '/../lib/panel/devices.php';
 require_once __DIR__ . '/../lib/panel/device_writes.php';
+require_once __DIR__ . '/../lib/panel/settings.php';
 
 app_boot();
 
@@ -123,6 +124,14 @@ $statusA = (string) ($statusValues[0] ?? 'In Use');
 $statusB = (string) ($statusValues[1] ?? $statusA);
 $sn = 'TEST-' . strtoupper(bin2hex(random_bytes(4)));
 $writeCompany = $companyA !== '' ? $companyA : 'TEST-CO';
+
+// Ids of the settings rows created below, so the cleanup also runs when an
+// assertion throws halfway through.
+$testSource = null;
+$fieldId = 0;
+$keyId = 0;
+// Previous tier of the setting the storage test overwrites.
+$restoreSetting = null;
 
 try {
     // --- /meta role matrix -------------------------------------------------
@@ -467,12 +476,332 @@ try {
     $_GET = [];
     check(asset_get($pdo, $id, null, true) === null, 'delete: row is gone');
     $createdIds = array_values(array_diff($createdIds, [$id]));
+
+    // --- settings: role gate ----------------------------------------------
+    as_role('manager', $companyA);
+    check_error('settings: manager cannot read → 403', fn () => panel_settings_show(), 'forbidden', 403);
+    check_error('settings: manager cannot write → 403', function (): void {
+        body(['values' => ['general.per_page' => 30]]);
+        panel_settings_update();
+    }, 'forbidden', 403);
+    check_error('settings: manager cannot list users → 403', fn () => panel_settings_users_index(), 'forbidden', 403);
+
+    as_role('admin', $companyA);
+    $settingsPayload = panel_settings_show()['data'] ?? [];
+    check(($settingsPayload['groups'] ?? []) !== [], 'settings: admin reads the groups');
+    check(($settingsPayload['locales'] ?? []) !== [], 'settings: locales are included');
+    check(($settingsPayload['timezones'] ?? []) !== [], 'settings: timezones are included');
+
+    $secretEntry = null;
+    foreach ($settingsPayload['groups'] as $group) {
+        foreach ($group['settings'] as $entry) {
+            if (!empty($entry['secret'])) {
+                $secretEntry = $entry;
+                break 2;
+            }
+        }
+    }
+    check($secretEntry !== null && $secretEntry['value'] === '', 'settings: secret values are never returned');
+    check($secretEntry !== null && array_key_exists('configured', $secretEntry), 'settings: secrets report "configured"');
+    check($secretEntry !== null && !array_key_exists('hash', $secretEntry), 'settings: no hash/secret metadata leaks');
+
+    // --- settings: validation and storage ---------------------------------
+    $pageSizeKey = 'general.per_page';
+    $pageSizeOriginal = settings_get($pageSizeKey);
+    $pageSizeSource = settings_source($pageSizeKey);
+    $restoreSetting = ['key' => $pageSizeKey, 'value' => $pageSizeOriginal, 'source' => $pageSizeSource];
+
+    check_error('settings: unknown key → 422', function (): void {
+        body(['values' => ['nope.nothing' => 'x']]);
+        panel_settings_update();
+    }, 'validation_failed', 422, ['nope.nothing' => 'unknown_setting']);
+
+    check_error('settings: out-of-range int → 422', function (): void {
+        body(['values' => ['general.per_page' => 9999]]);
+        panel_settings_update();
+    }, 'validation_failed', 422, ['general.per_page' => 'out_of_range']);
+
+    check_error('settings: unknown locale → 422', function (): void {
+        body(['values' => ['general.default_locale' => 'xx-XX']]);
+        panel_settings_update();
+    }, 'validation_failed', 422, ['general.default_locale' => 'invalid_locale']);
+
+    check_error('settings: write without CSRF → 419', function (): void {
+        $header = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+        $_SERVER['HTTP_X_CSRF_TOKEN'] = 'not-the-token';
+        try {
+            body(['values' => ['general.per_page' => 30]]);
+            panel_settings_update();
+        } finally {
+            $_SERVER['HTTP_X_CSRF_TOKEN'] = $header;
+        }
+    }, 'invalid_csrf', 419);
+
+    body(['values' => ['general.per_page' => 30]]);
+    $savedSettings = panel_settings_update();
+    check(($savedSettings['meta']['saved'] ?? []) === ['general.per_page'], 'settings: valid value is saved');
+    check((int) settings_get('general.per_page') === 30, 'settings: value reaches the settings tier');
+    $storedEntry = null;
+    foreach ($savedSettings['data']['groups'] as $group) {
+        foreach ($group['settings'] as $entry) {
+            if ($entry['key'] === $pageSizeKey) {
+                $storedEntry = $entry;
+            }
+        }
+    }
+    check($storedEntry !== null && $storedEntry['source'] === 'db', 'settings: source badge switches to db');
+
+    // --- settings: sources ------------------------------------------------
+    $testSource = 'panel_api_test';
+    if (source_get($pdo, $testSource) !== null) {
+        source_delete($pdo, $testSource);
+    }
+
+    body(['label' => 'Panel API test', 'slug' => $testSource, 'color' => '#123456']);
+    $createdSource = panel_settings_sources_store();
+    check(($createdSource['status'] ?? 0) === 201, 'sources: create returns 201');
+    check(source_get($pdo, $testSource) !== null, 'sources: row exists after create');
+
+    check_error('sources: duplicate slug → 422', function () use ($testSource): void {
+        body(['label' => 'Again', 'slug' => $testSource]);
+        panel_settings_sources_store();
+    }, 'validation_failed', 422);
+
+    body(['label' => 'Panel API test renamed']);
+    $renamedSource = panel_settings_sources_update(['slug' => $testSource]);
+    $renamedRow = source_get($pdo, $testSource);
+    check(($renamedRow['label'] ?? '') === 'Panel API test renamed', 'sources: label is updated');
+    check(($renamedSource['data']['sources'] ?? []) !== [], 'sources: update returns the full list');
+
+    check_error('sources: system source cannot be deleted → 409', function (): void {
+        panel_settings_sources_delete(['slug' => 'eset']);
+    }, 'system_source', 409);
+
+    $inUseSlug = null;
+    foreach (panel_settings_source_rows($pdo) as $row) {
+        if ($row['usage'] > 0 && !$row['is_system']) {
+            $inUseSlug = $row['slug'];
+            break;
+        }
+    }
+    if ($inUseSlug !== null) {
+        check_error('sources: in-use source cannot be deleted → 409', function () use ($inUseSlug): void {
+            panel_settings_sources_delete(['slug' => $inUseSlug]);
+        }, 'in_use', 409);
+    }
+
+    $deletedSource = panel_settings_sources_delete(['slug' => $testSource]);
+    check(($deletedSource['meta']['deleted'] ?? '') === $testSource, 'sources: delete reports the slug');
+    check(source_get($pdo, $testSource) === null, 'sources: row is gone');
+    $testSource = null;
+
+    check_error('sources: unknown slug → 404', function (): void {
+        panel_settings_sources_delete(['slug' => 'no_such_source']);
+    }, 'not_found', 404);
+
+    // --- settings: custom fields ------------------------------------------
+    $fieldLabel = 'Panel API test field';
+    $fieldId = 0;
+    body(['label' => $fieldLabel, 'type' => 'text', 'in_grid' => true, 'editable_roles' => ['admin']]);
+    $createdField = panel_settings_fields_store();
+    $fieldId = (int) ($createdField['meta']['id'] ?? 0);
+    check(($createdField['status'] ?? 0) === 201 && $fieldId > 0, 'fields: create returns the new id');
+
+    check_error('fields: duplicate key → 422', function () use ($fieldLabel): void {
+        body(['label' => $fieldLabel, 'type' => 'text']);
+        panel_settings_fields_store();
+    }, 'validation_failed', 422);
+
+    check_error('fields: unknown type → 422', function (): void {
+        body(['label' => 'Bad type field', 'type' => 'wat']);
+        panel_settings_fields_store();
+    }, 'validation_failed', 422, ['data_type' => 'invalid_type']);
+
+    body(['label' => 'Panel API test field (edited)', 'in_grid' => false]);
+    $updatedField = panel_settings_fields_update(['id' => (string) $fieldId]);
+    $updatedDef = field_def_by_id($pdo, $fieldId);
+    check(($updatedDef['label'] ?? '') === 'Panel API test field (edited)', 'fields: label is updated');
+    check((int) ($updatedDef['show_in_grid'] ?? 1) === 0, 'fields: flags are updated');
+    check(($updatedField['data']['types'] ?? []) !== [], 'fields: type catalogue is included');
+
+    $orderedIds = array_map(static fn (array $def): int => (int) $def['id'], field_defs($pdo, false, true));
+    body(['ids' => array_reverse($orderedIds)]);
+    $reordered = panel_settings_fields_reorder();
+    check(($reordered['data']['fields'][0]['id'] ?? 0) === (int) end($orderedIds), 'fields: reorder moves the last field first');
+    body(['ids' => $orderedIds]);
+    panel_settings_fields_reorder();
+
+    check_error('fields: unknown id in reorder → 422', function (): void {
+        body(['ids' => [999999]]);
+        panel_settings_fields_reorder();
+    }, 'validation_failed', 422, ['ids' => 'not_found']);
+
+    check_error('fields: unknown id on PATCH → 404', function (): void {
+        body(['label' => 'Ghost']);
+        panel_settings_fields_update(['id' => '999999']);
+    }, 'not_found', 404);
+
+    $deletedField = panel_settings_fields_delete(['id' => (string) $fieldId]);
+    check(($deletedField['meta']['deleted'] ?? 0) === $fieldId, 'fields: delete reports the id');
+    check(field_def_by_id($pdo, $fieldId) === null, 'fields: definition is gone');
+    $fieldId = 0;
+
+    // --- settings: API keys -----------------------------------------------
+    $keyId = 0;
+    body([
+        'label'           => 'Panel API test key',
+        'company'         => $companyA,
+        'allowed_sources' => ['eset'],
+        'can_read'        => true,
+        'can_write'       => false,
+    ]);
+    $createdKey = panel_settings_keys_store();
+    $keyId = (int) ($createdKey['meta']['id'] ?? 0);
+    $token = (string) ($createdKey['meta']['token'] ?? '');
+    check(($createdKey['status'] ?? 0) === 201 && $keyId > 0, 'keys: create returns 201 + id');
+    check(str_starts_with($token, 'bcmdb_'), 'keys: the plaintext token is returned once');
+
+    $keyRows = $createdKey['data']['keys'] ?? [];
+    $listedKey = null;
+    foreach ($keyRows as $row) {
+        if ($row['id'] === $keyId) {
+            $listedKey = $row;
+        }
+    }
+    check($listedKey !== null, 'keys: the new key is listed');
+    check($listedKey !== null && !array_key_exists('key_hash', $listedKey), 'keys: the hash is never serialised');
+    check($listedKey !== null && $listedKey['allowed_sources'] === ['eset'], 'keys: allowed sources come back as a list');
+
+    check_error('keys: no scope → 422', function () use ($companyA): void {
+        body(['label' => 'No scope', 'company' => $companyA]);
+        panel_settings_keys_store();
+    }, 'validation_failed', 422, ['can_read' => 'no_scope']);
+
+    check_error('keys: unknown source → 422', function () use ($companyA): void {
+        body(['label' => 'Bad source', 'company' => $companyA, 'source_slug' => 'nope']);
+        panel_settings_keys_store();
+    }, 'validation_failed', 422, ['source_slug' => 'unknown_source']);
+
+    body(['label' => 'Panel API test key (edited)', 'can_write' => true]);
+    $updatedKey = panel_settings_keys_update(['id' => (string) $keyId]);
+    $freshKey = api_key_get($pdo, $keyId);
+    check(($freshKey['label'] ?? '') === 'Panel API test key (edited)', 'keys: label is updated');
+    check((int) ($freshKey['can_write'] ?? 0) === 1, 'keys: scopes are updated');
+    check((int) ($freshKey['can_read'] ?? 0) === 1, 'keys: unspecified scopes are preserved');
+    check(!array_key_exists('token', $updatedKey['meta'] ?? []), 'keys: PATCH never re-reveals the token');
+
+    $rotated = panel_settings_keys_rotate(['id' => (string) $keyId]);
+    $rotatedToken = (string) ($rotated['meta']['token'] ?? '');
+    check($rotatedToken !== '' && $rotatedToken !== $token, 'keys: rotate issues a different token');
+    check(hash_equals((string) api_key_get($pdo, $keyId)['key_hash'], hash('sha256', $rotatedToken)), 'keys: rotate stores the new hash');
+
+    $deletedKey = panel_settings_keys_delete(['id' => (string) $keyId]);
+    check(($deletedKey['meta']['deleted'] ?? 0) === $keyId, 'keys: delete reports the id');
+    check(api_key_get($pdo, $keyId) === null, 'keys: row is gone');
+    $keyId = 0;
+
+    check_error('keys: delete twice → 404', function (): void {
+        panel_settings_keys_delete(['id' => '999999']);
+    }, 'not_found', 404);
+
+    // --- settings: users (superadmin only) --------------------------------
+    as_role('superadmin', '');
+    $usersPayload = panel_settings_users_index()['data'] ?? [];
+    check(($usersPayload['users'] ?? []) !== [], 'users: superadmin lists the roster');
+    check(($usersPayload['roles'] ?? []) === array_keys(SESSION_ROLES), 'users: the role catalogue is included');
+
+    $otherEmail = null;
+    foreach ($usersPayload['users'] as $row) {
+        if (!$row['is_self']) {
+            $otherEmail = (string) $row['email'];
+            break;
+        }
+    }
+
+    // Sign in *as* a real roster entry to exercise the lockout guard.
+    if ($otherEmail !== null) {
+        as_role('superadmin', '', $otherEmail);
+        check_error('users: changing your own role → 409', function () use ($otherEmail): void {
+            body(['role' => 'admin']);
+            panel_settings_users_update(['email' => rawurlencode($otherEmail)]);
+        }, 'self_role_change', 409);
+        as_role('superadmin', '');
+    }
+
+    check_error('users: unknown e-mail → 404', function (): void {
+        body(['role' => 'admin']);
+        panel_settings_users_update(['email' => 'nobody%40example.invalid']);
+    }, 'not_found', 404);
+
+    if ($otherEmail !== null) {
+        $otherBefore = (string) $pdo->query('SELECT role FROM users WHERE email = ' . $pdo->quote($otherEmail))->fetchColumn();
+        check_error('users: unknown role → 422', function () use ($otherEmail): void {
+            body(['role' => 'emperor']);
+            panel_settings_users_update(['email' => rawurlencode($otherEmail)]);
+        }, 'validation_failed', 422, ['role' => 'invalid_option']);
+
+        body(['role' => 'manager']);
+        $promoted = panel_settings_users_update(['email' => rawurlencode($otherEmail)]);
+        check(($promoted['meta']['role'] ?? '') === 'manager', 'users: role is written');
+        check((string) $pdo->query('SELECT role FROM users WHERE email = ' . $pdo->quote($otherEmail))->fetchColumn() === 'manager', 'users: the row holds the new role');
+        $pdo->prepare('UPDATE users SET role = ? WHERE email = ?')->execute([$otherBefore, $otherEmail]);
+    }
+
+    // --- settings: maintenance --------------------------------------------
+    as_role('admin', $companyA);
+    $maintenance = panel_settings_maintenance_show()['data'] ?? [];
+    check(array_key_exists('ready', $maintenance['migrations'] ?? []), 'maintenance: migration status is included');
+    check(($maintenance['diagnostics']['php_version'] ?? '') === PHP_VERSION, 'maintenance: diagnostics include PHP');
+    check(is_bool($maintenance['diagnostics']['encryption'] ?? null), 'maintenance: encryption flag is a bool');
+
+    body(['dry_run' => true]);
+    $dryRun = panel_settings_maintenance_migrate();
+    check(($dryRun['meta']['dry_run'] ?? false) === true, 'maintenance: dry run is the default shape');
+    check(is_array($dryRun['meta']['log'] ?? null), 'maintenance: the migration log is returned');
+
+
+
 } catch (Throwable $e) {
     check(false, 'unexpected exception', get_class($e) . ': ' . $e->getMessage());
 } finally {
     clear_body();
     $_GET = [];
     as_role('superadmin', '');
+    if ($restoreSetting !== null) {
+        // Put the previous value back on its previous tier, so the database keeps
+        // the same effective configuration even when an assertion above threw.
+        // (Only `updated_at`/`updated_by` of that one row change.)
+        try {
+            if ($restoreSetting['source'] === 'db') {
+                settings_set($restoreSetting['key'], (string) $restoreSetting['value'], 'tester@example.com');
+            } else {
+                settings_forget($restoreSetting['key']);
+            }
+        } catch (Throwable $e) {
+            fwrite(STDERR, "setting restore failed ({$restoreSetting['key']}): " . $e->getMessage() . "\n");
+        }
+    }
+    if ($testSource !== null) {
+        try {
+            source_delete($pdo, $testSource);
+        } catch (Throwable $e) {
+            fwrite(STDERR, "source cleanup failed ({$testSource}): " . $e->getMessage() . "\n");
+        }
+    }
+    if ($fieldId > 0) {
+        try {
+            field_delete($pdo, $fieldId);
+        } catch (Throwable $e) {
+            fwrite(STDERR, "field cleanup failed (#{$fieldId}): " . $e->getMessage() . "\n");
+        }
+    }
+    if ($keyId > 0) {
+        try {
+            api_key_delete($pdo, $keyId);
+        } catch (Throwable $e) {
+            fwrite(STDERR, "api key cleanup failed (#{$keyId}): " . $e->getMessage() . "\n");
+        }
+    }
     foreach ($createdIds as $createdId) {
         try {
             asset_hard_delete($pdo, (int) $createdId);

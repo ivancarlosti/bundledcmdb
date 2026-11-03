@@ -110,7 +110,9 @@ export async function apiRequestEnvelope<T>(path: string, options: RequestOption
   const method = options.method ?? 'GET';
   const headers: Record<string, string> = { Accept: 'application/json' };
 
-  if (options.body !== undefined) {
+  if (options.form === undefined && options.body !== undefined) {
+    // A multipart body must keep the browser-generated boundary, so the JSON
+    // content type is only set for `body` (even when both are passed).
     headers['Content-Type'] = 'application/json';
   }
   if (method !== 'GET' && csrfToken !== null) {

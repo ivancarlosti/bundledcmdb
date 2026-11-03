@@ -121,7 +121,11 @@ export function DataGrid<T>({
 
   return (
     <div className="card overflow-hidden">
-      <div className="max-h-[calc(100dvh-18rem)] overflow-auto" aria-busy={isLoading}>
+      <div
+        className="max-h-[calc(100dvh-18rem)] overflow-auto"
+        data-testid="data-grid-scroll"
+        aria-busy={isLoading}
+      >
         <table aria-label={ariaLabel} className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10">
             {headerGroups.map((headerGroup) => (

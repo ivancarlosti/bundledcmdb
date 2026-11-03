@@ -77,6 +77,20 @@ the server-side guard.
 | `POST /panel-api/v1/devices/{id}/restore` | undo a soft delete (admin+, idempotent) |
 | `POST /panel-api/v1/devices/{id}/files` | multipart upload, server-side to S3 (manager+) |
 | `DELETE /panel-api/v1/devices/{id}/files/{fileId}` | remove object + row (admin+) |
+| `GET /panel-api/v1/settings` | every general/asset/API/storage setting, grouped, with locales/timezones and a `source` (`db`/`env`/`default`) per key |
+| `PATCH /panel-api/v1/settings` | `{"values": {"general.per_page": 50}}`; `422 validation_failed` carries a code per key |
+| `GET/POST /panel-api/v1/settings/sources` | source list (admin+) / create (`slug`, `label`) |
+| `PATCH/DELETE /panel-api/v1/settings/sources/{slug}` | rename / delete (`409 system_source`, `409 in_use` when assets still reference it) |
+| `GET/POST /panel-api/v1/settings/fields` | custom-field definitions + the type catalogue / create |
+| `POST /panel-api/v1/settings/fields/reorder` | `{"ids": [3, 1, 2]}` → new display order |
+| `PATCH/DELETE /panel-api/v1/settings/fields/{id}` | edit label/flags / delete (drops the stored values) |
+| `GET/POST /panel-api/v1/settings/api-keys` | key list / create; the plaintext token is returned **once** in `meta.token` |
+| `PATCH/DELETE /panel-api/v1/settings/api-keys/{id}` | edit label/scopes/allow-list / revoke |
+| `POST /panel-api/v1/settings/api-keys/{id}/rotate` | new secret, same row; the old token stops working |
+| `GET /panel-api/v1/settings/users` | roster with roles and `is_self` (superadmin only) |
+| `PATCH /panel-api/v1/settings/users/{email}` | change a role; changing your own is `409 self_role_change` |
+| `GET /panel-api/v1/settings/maintenance` | migration status, PHP/DB/encryption diagnostics, cron hints |
+| `POST /panel-api/v1/settings/maintenance/migrate` | runs the migration runner; `{"dry_run": true}` is the default |
 
 Writes go through the same helpers as `public/api.php` (`asset_validate()`,
 `asset_create/update/soft_delete/restore/hard_delete()`,
@@ -84,8 +98,13 @@ Writes go through the same helpers as `public/api.php` (`asset_validate()`,
 device is. Role rules come from the server: `/meta.writeColumns` lists the keys
 the signed-in role may send, and the API rejects everything else with `422`.
 
-Settings, sources, custom-field definitions, API keys and user management are
-still phase 7; the legacy pages remain available at `/` until they land.
+The settings handlers (`lib/panel/settings.php`) are thin wrappers over the same
+model helpers the legacy pages at `/settings` use (`settings_set()`,
+`source_create/update/delete()`, `field_*`, `api_key_*`, `migrate_run()`), so the
+two front ends cannot drift. Secrets (keys flagged `secret`, i.e.
+`s3.secret_key`, and the API key hashes) never leave the server: they come back
+as an empty `value` plus `configured: true`, sending an empty string back means
+"unchanged", and a deliberate wipe is `{"clear": ["s3.secret_key"]}`.
 
 ### Bulk actions
 
