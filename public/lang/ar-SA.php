@@ -147,6 +147,7 @@ return [
     'ui_clear_filters' => 'مسح عوامل التصفية',
     'ui_columns' => 'الأعمدة',
     'ui_columns_hint' => 'اختر الأعمدة التي تريد عرضها وترتيبها.',
+    'ui_drag_column' => 'اسحب {{name}} لإعادة الترتيب',
     'ui_confirm_hard_delete' => 'حذف هذا الجهاز نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.',
     'ui_confirm_remove_file' => 'إزالة هذا الملف؟',
     'ui_created' => 'تم إنشاء الجهاز.',

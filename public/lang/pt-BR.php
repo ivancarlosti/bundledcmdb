@@ -331,6 +331,7 @@ return [
     'ui_edit_device' => 'Editar dispositivo',
     'ui_columns' => 'Colunas',
     'ui_columns_hint' => 'Escolha as colunas visíveis e a ordem delas.',
+    'ui_drag_column' => 'Arraste {{name}} para reordenar',
     'ui_move_up' => 'Mover {{name}} para cima',
     'ui_move_down' => 'Mover {{name}} para baixo',
     'ui_reset_columns' => 'Restaurar colunas',

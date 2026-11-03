@@ -82,3 +82,57 @@ test.describe('device history', () => {
     await expect(history).toContainText('admin@example.com');
   });
 });
+
+/**
+ * Column reordering, both ways.
+ *
+ * The pointer path (`@dnd-kit` on the grip handle) is what the deferred item
+ * asked for; the buttons stay because they are the keyboard baseline, and the
+ * handle itself is a button so `KeyboardSensor` works off the same focus ring.
+ */
+test.describe('column picker', () => {
+  test('reorders a column with the drag handle and persists it', async ({ page }) => {
+    let patched: { grid_state?: { order?: string[] } } | undefined;
+    await mockPanel(page);
+
+    await page.route('**/panel-api/v1/session/preferences', async (route) => {
+      patched = route.request().postDataJSON() as typeof patched;
+      return route.fulfill({ json: { ok: true, data: { ...SESSION, gridState: null } } });
+    });
+
+    await page.goto('/app/devices');
+    await expect(page.getByRole('columnheader', { name: /Hostname/ })).toBeVisible();
+
+    await page.getByText('Columns', { exact: true }).click();
+    const handle = page.getByRole('button', { name: 'Drag Hostname to reorder' });
+    const target = page.getByTestId('column-row-SN');
+    await expect(handle).toBeVisible();
+
+    // Pointer drag: from the handle of `Hostname` onto the `SN` row above it.
+    const from = await handle.boundingBox();
+    const to = await target.boundingBox();
+    if (from === null || to === null) {
+      throw new Error('the picker rows have no geometry');
+    }
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+    await page.mouse.up();
+
+    await expect.poll(() => patched?.grid_state?.order?.[0]).toBe('Hostname');
+  });
+
+  test('moves a column with the keyboard buttons', async ({ page }) => {
+    await mockPanel(page);
+
+    await page.goto('/app/devices');
+    await page.getByText('Columns', { exact: true }).click();
+
+    const firstHeader = page.getByRole('columnheader').nth(1);
+    const before = await firstHeader.innerText();
+
+    await page.getByRole('button', { name: `Move ${before} down` }).click();
+
+    await expect.poll(async () => page.getByRole('columnheader').nth(1).innerText()).not.toBe(before);
+  });
+});

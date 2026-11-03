@@ -344,6 +344,7 @@ return [
     'ui_edit_device' => 'Edit device',
     'ui_columns' => 'Columns',
     'ui_columns_hint' => 'Choose the columns to show, and their order.',
+    'ui_drag_column' => 'Drag {{name}} to reorder',
     'ui_move_up' => 'Move {{name}} up',
     'ui_move_down' => 'Move {{name}} down',
     'ui_reset_columns' => 'Reset columns',

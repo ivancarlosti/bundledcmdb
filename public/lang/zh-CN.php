@@ -147,6 +147,7 @@ return [
     'ui_clear_filters' => '清除筛选',
     'ui_columns' => '列',
     'ui_columns_hint' => '选择要显示的列及其顺序。',
+    'ui_drag_column' => '拖动 {{name}} 以重新排序',
     'ui_confirm_hard_delete' => '永久删除此设备？此操作无法撤销。',
     'ui_confirm_remove_file' => '移除此文件？',
     'ui_created' => '设备已创建。',

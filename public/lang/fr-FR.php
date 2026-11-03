@@ -147,6 +147,7 @@ return [
     'ui_clear_filters' => 'Effacer les filtres',
     'ui_columns' => 'Colonnes',
     'ui_columns_hint' => 'Choisissez les colonnes à afficher et leur ordre.',
+    'ui_drag_column' => 'Faites glisser {{name}} pour réordonner',
     'ui_confirm_hard_delete' => 'Supprimer définitivement cet appareil ? Cette action est irréversible.',
     'ui_confirm_remove_file' => 'Retirer ce fichier ?',
     'ui_created' => 'Appareil créé.',

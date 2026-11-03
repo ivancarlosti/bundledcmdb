@@ -747,8 +747,12 @@ bumps by hand.
    `perm_*` keys of the PHP pages still fall back to en-US there.
 9. **Presigned PUT upload** (`POST /devices/{id}/files/presign`) if uploads ever
     need to bypass PHP-FPM; today the server puts the object itself (§16, phase 3).
-10. **Pointer drag-and-drop** for the column picker (buttons already cover the
-    keyboard path; `@dnd-kit` is pinned).
+10. ~~**Pointer drag-and-drop** for the column picker~~ — done: the grip handle
+    in `ColumnPicker` is a `@dnd-kit` sortable row (`PointerSensor` with a 4 px
+    activation distance, vertical axis only, restricted to the list) and a real
+    button, so `KeyboardSensor` keeps space/arrow reordering and the up/down
+    buttons stay as the plain baseline. Covered by two Playwright tests (pointer
+    drag persists the order; the buttons still move a column).
 11. ~~**Prettier**~~ — done: `.prettierrc.json` (single quotes, 120 columns) and
     `.prettierignore` pin the house style, the tree is reformatted in one
     no-behaviour-change commit, and `npm run format` is now a CI gate.
@@ -847,3 +851,4 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 7 | The limit covers panel mutations only; `public/api.php` keeps its per-key limits on `api_keys` | the grid reloads `/devices` and `/session` constantly and a page load must never be throttled; integrations already have an explicit quota per key |
 | 2026-11-04 | 3 | Attachments go through `lib/storage.php` (`storage.driver` = `s3`/`local`) and the download is a panel route, not a public bucket URL | the plan asked for the driver; the download route fell out of it: `local` files live outside `public/` and `s3` buckets stay private, so `GET /devices/{id}/files/{fileId}/download` is the only way to read one — and it is the same session/role check as the rest of the panel |
 | 2026-11-04 | 2 | Fixed `panel_match()`: placeholder names may mix case | the helper only expanded `[a-z_]+`, so `{fileId}` never became a capture group and both attachment routes (`DELETE /devices/{id}/files/{fileId}` included) matched nothing — a file listed by the panel could not be removed over HTTP. The unit test drove the handlers directly, which is why it stayed hidden; the routing table now has explicit `{fileId}` assertions |
+| 2026-11-04 | 5 | Column reordering ships with `@dnd-kit` **and** keeps the up/down buttons | the picker is the only place where a pointer drag is the natural gesture, but a drag-only control is unusable with a keyboard and invisible to a screen reader; keeping both is one component and no extra state |

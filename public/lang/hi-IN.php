@@ -147,6 +147,7 @@ return [
     'ui_clear_filters' => 'फ़िल्टर साफ़ करें',
     'ui_columns' => 'कॉलम',
     'ui_columns_hint' => 'दिखाने वाले कॉलम और उनका क्रम चुनें।',
+    'ui_drag_column' => 'क्रम बदलने के लिए {{name}} खींचें',
     'ui_confirm_hard_delete' => 'इस डिवाइस को स्थायी रूप से हटाएँ? इसे वापस नहीं लाया जा सकता।',
     'ui_confirm_remove_file' => 'यह फ़ाइल हटाएँ?',
     'ui_created' => 'डिवाइस बनाया गया।',

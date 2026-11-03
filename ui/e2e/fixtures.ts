@@ -24,6 +24,7 @@ export const MESSAGES: Record<string, string> = {
   ui_trashed: 'Deleted only',
   ui_dev_login: 'Development sign-in',
   ui_history: 'History',
+  ui_drag_column: 'Drag {{name}} to reorder',
   ui_history_empty: 'No changes recorded yet.',
   ui_ev_create: 'Created',
   ui_ev_update: 'Updated',
