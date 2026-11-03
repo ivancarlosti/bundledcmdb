@@ -23,6 +23,12 @@ export type ApiEnvelope<T> = {
   error?: ApiErrorEnvelope;
 };
 
+/** Payload plus the `meta` block (sort echo, effective filters, timings). */
+export type ApiResult<T> = {
+  data: T;
+  meta: Record<string, unknown>;
+};
+
 export class PanelApiError extends Error {
   readonly code: string;
   readonly status: number;
@@ -83,8 +89,22 @@ export type RequestOptions = {
   raw?: boolean;
 };
 
+/** Absolute-in-app URL for direct navigation (CSV export, downloads). */
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 /** Perform one panel API call and return the unwrapped `data` payload. */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const result = await apiRequestEnvelope<T>(path, options);
+  return result.data;
+}
+
+/**
+ * Same as `apiRequest`, but keeps the `meta` block. The device grid needs it to
+ * echo the sort and the effective company scope the server actually applied.
+ */
+export async function apiRequestEnvelope<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
   const method = options.method ?? 'GET';
   const headers: Record<string, string> = { Accept: 'application/json' };
 
@@ -107,7 +127,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     if (!response.ok) {
       throw new PanelApiError(await readError(response), response.status);
     }
-    return response as unknown as T;
+    return { data: response as unknown as T, meta: {} };
   }
 
   let payload: ApiEnvelope<T> | null = null;
@@ -121,7 +141,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new PanelApiError(payload?.error ?? { code: 'unknown_error', message: response.statusText }, response.status);
   }
 
-  return payload.data as T;
+  return { data: payload.data as T, meta: payload.meta ?? {} };
 }
 
 async function readError(response: Response): Promise<ApiErrorEnvelope> {

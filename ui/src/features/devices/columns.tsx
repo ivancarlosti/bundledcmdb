@@ -1,0 +1,152 @@
+import type { TFunction } from 'i18next';
+import type { ColumnDef } from '@tanstack/react-table';
+
+import { formatDate, formatDateTime, formatNumber } from '@/lib/format';
+
+import type { DeviceRow, MetaPayload } from './api';
+import { StatusPill } from './StatusPill';
+
+export type GridColumn = ColumnDef<DeviceRow, unknown>;
+
+/**
+ * Read one cell value from a row.
+ *
+ * Asset columns are read through the `api_key` published by `/meta` (the wire
+ * format is snake_case while the schema keeps the legacy PascalCase names, and
+ * the virtual `files` column maps to `files_count`). Custom fields live under
+ * `custom`.
+ */
+export function cellValue(row: DeviceRow, column: { key: string; api_key?: string }): unknown {
+  if (column.key.startsWith('custom:')) {
+    return row.custom[column.key.slice('custom:'.length)] ?? null;
+  }
+  return (row as unknown as Record<string, unknown>)[column.api_key ?? ''] ?? null;
+}
+
+type CellProps = {
+  value: unknown;
+  columnKey: string;
+  type: string;
+  locale: string;
+  t: TFunction;
+  statusLabels: Map<string, string>;
+  sourceColors: Map<string, string | null>;
+};
+
+function Empty() {
+  return <span className="text-[var(--color-muted)]">—</span>;
+}
+
+/** One grid cell, rendered by the column type published in `/meta`. */
+export function GridCell({ value, columnKey, type, locale, t, statusLabels, sourceColors }: CellProps) {
+  if (value === null || value === undefined || value === '') {
+    return <Empty />;
+  }
+
+  if (columnKey === 'status' || type === 'status') {
+    const status = String(value);
+    return <StatusPill status={status} label={statusLabels.get(status) ?? status} />;
+  }
+
+  if (columnKey === 'source') {
+    const slug = String(value);
+    const color = sourceColors.get(slug);
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className="size-2 shrink-0 rounded-full bg-[var(--color-border)]"
+          style={color ? { backgroundColor: color } : undefined}
+        />
+        <span>{slug}</span>
+      </span>
+    );
+  }
+
+  if (type === 'bool') {
+    return <span>{value === true || value === 1 || value === '1' ? t('yes') : t('no')}</span>;
+  }
+
+  if (columnKey === 'files') {
+    return <span className="tabular-nums">{formatNumber(value, locale)}</span>;
+  }
+
+  if (type === 'int') {
+    return <span className="tabular-nums">{formatNumber(value, locale)}</span>;
+  }
+
+  if (type === 'datetime') {
+    return <span className="whitespace-nowrap">{formatDateTime(value, locale)}</span>;
+  }
+
+  if (type === 'date') {
+    return <span className="whitespace-nowrap">{formatDate(value, locale)}</span>;
+  }
+
+  const text = String(value);
+  return (
+    <span className="block max-w-[26ch] truncate" title={text}>
+      {text}
+    </span>
+  );
+}
+
+/**
+ * Build the TanStack Table column model from `/meta`.
+ *
+ * Nothing here hard-codes a column name: adding an asset column or a custom field
+ * to the server (and marking it `grid`) makes it appear, sortable, in the SPA.
+ */
+export function cellContext(meta: MetaPayload, t: TFunction, locale: string) {
+  return {
+    locale,
+    t,
+    statusLabels: new Map(meta.statuses.map((status) => [status.value, t(status.label_key)])),
+    sourceColors: new Map(meta.sources.map((source) => [source.slug, source.color])),
+  };
+}
+
+export function buildColumns(meta: MetaPayload, t: TFunction, locale: string): GridColumn[] {
+  const context = cellContext(meta, t, locale);
+  const columns: GridColumn[] = [];
+
+  for (const column of meta.columns) {
+    if (!column.in_grid) {
+      continue;
+    }
+    columns.push({
+      id: column.key,
+      accessorFn: (row) => cellValue(row, column),
+      header: t(column.label_key, { defaultValue: column.label }),
+      enableSorting: column.sortable,
+      cell: ({ getValue }) => (
+        <GridCell
+          value={getValue()}
+          columnKey={column.key}
+          type={column.type}
+          {...context}
+        />
+      ),
+      meta: { align: column.type === 'int' ? 'end' : 'start' },
+    });
+  }
+
+  for (const field of meta.fields) {
+    if (!field.in_grid) {
+      continue;
+    }
+    const key = `custom:${field.key}`;
+    columns.push({
+      id: key,
+      accessorFn: (row) => cellValue(row, { key }),
+      header: field.label_i18n?.[locale] ?? field.label,
+      enableSorting: true,
+      cell: ({ getValue }) => (
+        <GridCell value={getValue()} columnKey={key} type={field.type} {...context} />
+      ),
+      meta: { align: field.type === 'int' ? 'end' : 'start' },
+    });
+  }
+
+  return columns;
+}

@@ -10,7 +10,9 @@ test.describe('SPA shell', () => {
   test('boots with a viewport meta tag and a theme attribute', async ({ page }) => {
     const failures: string[] = [];
     page.on('console', (message) => {
-      if (message.type() === 'error') {
+      // The anonymous 401 for /session is the expected answer here; Chromium
+      // reports every failed response as a console error.
+      if (message.type() === 'error' && !message.text().includes('401')) {
         failures.push(message.text());
       }
     });
@@ -33,6 +35,6 @@ test.describe('SPA shell', () => {
     );
 
     await page.goto('/app/');
-    await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sign in with SSO' })).toBeVisible();
   });
 });

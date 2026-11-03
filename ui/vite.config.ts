@@ -5,6 +5,16 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 /**
+ * Requests that must reach the PHP container in development and in `vite
+ * preview` (the e2e suite runs against the preview build).
+ */
+const backendProxy = {
+  '/panel-api': { target: 'http://localhost:5600', changeOrigin: false },
+  '/auth': { target: 'http://localhost:5600', changeOrigin: false },
+  '/api': { target: 'http://localhost:5600', changeOrigin: false },
+} as const;
+
+/**
  * The SPA is served from `/app/` by nginx, and the build lands directly in
  * `public/app/` so the Dockerfile and the release zip need no extra copy step.
  *
@@ -29,20 +39,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: {
-      '/panel-api': {
-        target: 'http://localhost:5600',
-        changeOrigin: false,
-      },
-      '/auth': {
-        target: 'http://localhost:5600',
-        changeOrigin: false,
-      },
-      '/api': {
-        target: 'http://localhost:5600',
-        changeOrigin: false,
-      },
-    },
+    proxy: backendProxy,
+  },
+  preview: {
+    port: 4173,
+    strictPort: true,
+    proxy: backendProxy,
   },
   test: {
     environment: 'jsdom',

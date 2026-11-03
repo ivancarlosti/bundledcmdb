@@ -18,6 +18,12 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     rules: {
       'no-console': ['warn', { allow: ['warn', 'error'] }],
+      // A leading underscore marks an intentionally unused parameter (kept for
+      // signature symmetry, e.g. nextSort(state, column, defaults)).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
       'no-restricted-syntax': [
         'error',
         {
