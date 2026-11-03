@@ -7,6 +7,7 @@ import { useCurrentSession } from '@/features/auth/SessionContext';
 import { formatBytes, formatDateTime } from '@/lib/format';
 
 import type { DeviceDetail, MetaPayload } from './api';
+import { deviceFileDownloadUrl } from './api';
 import { cellContext, cellValue, GridCell } from './columns';
 import { useDeleteDevice, useDeleteDeviceFile, useRestoreDevice, useUploadDeviceFile } from './useDeviceMutations';
 import { useDevice, useDeviceEvents, useMeta } from './useDevices';
@@ -157,7 +158,12 @@ function FilesSection({ device }: { device: DeviceDetail }) {
               key={file.id}
               className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--color-border)] py-2 last:border-b-0"
             >
-              <span className="min-w-0 break-all">{file.name}</span>
+              <a
+                href={deviceFileDownloadUrl(device.id, file.id)}
+                className="min-w-0 break-all text-[var(--color-accent)] hover:underline"
+              >
+                {file.name}
+              </a>
               <span className="flex items-center gap-3 text-xs whitespace-nowrap text-[var(--color-muted)]">
                 {formatBytes(file.size, locale)} · {formatDateTime(file.uploaded_at, locale)}
                 {session.capabilities.can_admin ? (

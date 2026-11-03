@@ -66,7 +66,9 @@ php bin/check-i18n.php
 ```
 
 `lib/bootstrap.php` requires `vendor/autoload.php` only when present, so these
-scripts work without `composer install` (S3 features need the AWS SDK).
+scripts work without `composer install` (the S3 driver needs the AWS SDK; the
+`local` driver in `lib/storage.php` does not, which is why it is the sane choice
+for a laptop: Settings → Storage → Driver → *Local disk*).
 
 ## Validation checklist
 

@@ -195,6 +195,17 @@ export function uploadDeviceFile(id: number, file: File): Promise<DeviceFile> {
   return apiRequest<DeviceFile>(`/devices/${id}/files`, { method: 'POST', form });
 }
 
+/**
+ * Download link for one attachment.
+ *
+ * A plain `<a href>`: the panel API answers `302` to a presigned S3 URL or streams
+ * the file itself when `storage.driver = local`, so the browser handles the
+ * download and the session cookie is sent as usual.
+ */
+export function deviceFileDownloadUrl(id: number, fileId: number): string {
+  return apiUrl(`/devices/${id}/files/${fileId}/download`);
+}
+
 export function deleteDeviceFile(id: number, fileId: number): Promise<{ id: number; deleted: boolean }> {
   return apiRequest<{ id: number; deleted: boolean }>(`/devices/${id}/files/${fileId}`, { method: 'DELETE' });
 }

@@ -15,3 +15,5 @@ ui/coverage/
 ui/playwright-report/
 ui/test-results/
 public/app/
+# Local attachment storage must never ship in an image.
+var/

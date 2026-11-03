@@ -106,7 +106,8 @@ the server-side guard.
 | `DELETE /panel-api/v1/devices/{id}` | soft delete (admin+); `?hard=1` is superadmin-only |
 | `POST /panel-api/v1/devices/{id}/restore` | undo a soft delete (admin+, idempotent) |
 | `GET /panel-api/v1/devices/{id}/events` | audit trail (who changed what, `[old, new]` per column), newest first |
-| `POST /panel-api/v1/devices/{id}/files` | multipart upload, server-side to S3 (manager+) |
+| `POST /panel-api/v1/devices/{id}/files` | multipart upload through `lib/storage.php` (S3 or local disk, manager+) |
+| `GET /panel-api/v1/devices/{id}/files/{fileId}/download` | `302` to a presigned S3 URL, or the file streamed for `storage.driver = local` |
 | `DELETE /panel-api/v1/devices/{id}/files/{fileId}` | remove object + row (admin+) |
 | `GET /panel-api/v1/settings` | every general/asset/API/storage setting, grouped, with locales/timezones and a `source` (`db`/`env`/`default`) per key |
 | `PATCH /panel-api/v1/settings` | `{"values": {"general.per_page": 50}}`; `422 validation_failed` carries a code per key |

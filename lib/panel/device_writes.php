@@ -721,22 +721,16 @@ function panel_devices_files_store(array $params = []): array
     $mime = trim((string) ($file['type'] ?? ''));
     $safeName = (string) preg_replace('/[^A-Za-z0-9._-]+/', '_', $name);
 
-    require_once __DIR__ . '/../../s3_client.php';
-    $s3 = new S3Client();
     $key = 'assets/' . $id . '/' . uniqid('', true) . '_' . ($safeName === '' ? 'file' : $safeName);
-    $result = $s3->uploadFile(
-        (string) $file['tmp_name'],
-        $key,
-        $mime === '' ? 'application/octet-stream' : $mime
-    );
-    if (empty($result['success'])) {
-        throw new ApiError('storage_error', (string) ($result['message'] ?? 'The file could not be stored.'), 502);
+    $stored = storage_put((string) $file['tmp_name'], $key, $mime === '' ? 'application/octet-stream' : $mime);
+    if (empty($stored['success'])) {
+        throw new ApiError('storage_error', (string) ($stored['message'] ?? 'The file could not be stored.'), 502);
     }
 
     $pdo->prepare(
         'INSERT INTO device_files (device_id, device_table, file_path, file_name, mime_type, size)
               VALUES (?, ?, ?, ?, ?, ?)'
-    )->execute([$id, 'assets', $s3->objectKey($key), $name, $mime === '' ? null : $mime, $size]);
+    )->execute([$id, 'assets', $stored['key'], $name, $mime === '' ? null : $mime, $size]);
 
     $fileId = (int) $pdo->lastInsertId();
     asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]]);
@@ -771,11 +765,7 @@ function panel_devices_files_delete(array $params = []): array
     }
 
     try {
-        require_once __DIR__ . '/../../s3_client.php';
-        $s3 = new S3Client();
-        if ($s3->isConfigured()) {
-            $s3->deleteFile((string) $file['file_path']);
-        }
+        storage_delete((string) $file['file_path']);
     } catch (Throwable $e) {
         // The row still has to go: a missing object must not make the panel
         // impossible to clean up.

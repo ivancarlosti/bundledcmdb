@@ -442,6 +442,63 @@ function panel_devices_files_index(array $params = []): array
 }
 
 /**
+ * GET /devices/{id}/files/{fileId}/download — stream or redirect to one object.
+ *
+ * `local` streams the file (the panel is the only way to reach it); `s3`
+ * redirects to a presigned GET so PHP never proxies a large object. Both paths
+ * are session+role checked here, which is what makes local storage safe to run
+ * with a web-visible document root (the directory lives outside `public/`).
+ */
+function panel_devices_files_download(array $params = []): never
+{
+    $user = session_require();
+    $pdo = db();
+    $id = panel_device_id($params);
+
+    $company = $user['company'] !== '' ? $user['company'] : null;
+    if (asset_get($pdo, $id, $company, true) === null) {
+        throw new ApiError('not_found', 'Device not found.', 404);
+    }
+
+    $rawFileId = (string) ($params['fileId'] ?? '');
+    if (preg_match('/^\d+$/', $rawFileId) !== 1) {
+        throw new ApiError('not_found', 'File not found.', 404);
+    }
+
+    $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = ? AND device_id = ? AND device_table = 'assets'");
+    $stmt->execute([(int) $rawFileId, $id]);
+    $file = $stmt->fetch();
+    if ($file === false) {
+        throw new ApiError('not_found', 'File not found.', 404);
+    }
+
+    $key = (string) $file['file_path'];
+    $name = (string) $file['file_name'];
+
+    $url = storage_presigned_url($key);
+    if ($url !== null) {
+        header('Location: ' . $url);
+        exit();
+    }
+
+    $path = storage_local_path($key);
+    if ($path === null) {
+        throw new ApiError('not_found', 'The stored file is missing.', 404);
+    }
+
+    $mime = trim((string) ($file['mime_type'] ?? ''));
+    header('Content-Type: ' . ($mime === '' ? 'application/octet-stream' : $mime));
+    header('Content-Length: ' . (string) filesize($path));
+    // Only a plain filename survives: quotes, separators and CR/LF would let a
+    // crafted name break the header.
+    $downloadName = preg_replace('/[^A-Za-z0-9._ -]+/', '_', $name) ?? 'file';
+    header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+    header('X-Content-Type-Options: nosniff');
+    readfile($path);
+    exit();
+}
+
+/**
  * GET /devices/{id}/events — the audit trail of one device.
  *
  * Readable by every role that can read the device itself (the company scope is

@@ -6,9 +6,11 @@
 # Panel: http://localhost:5600/
 # API:   http://localhost:5600/api/v1/health
 #
-# S3/MinIO is intentionally not bundled (the image registry used by CI does not
-# publish one). Point Settings → Storage at any S3-compatible endpoint, e.g. a
-# MinIO container you run yourself:
+# Attachments: set Settings → Storage → Driver to `local` (files land in
+# /var/www/html/var/storage inside the container) — no object storage needed.
+# For an S3-compatible endpoint, keep the driver on `s3` and point it at e.g. a
+# MinIO container you run yourself (S3/MinIO is not bundled: the image registry
+# used by CI does not publish one):
 #   docker run -d -p 9000:9000 -p 9001:9001 \
 #     -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
 #     minio/minio server /data --console-address ":9001"

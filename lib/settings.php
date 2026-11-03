@@ -78,6 +78,19 @@ function settings_definitions(): array
             'label' => 'Panel writes per minute (per user)',
         ],
 
+        // --- Storage ---
+        // `local` keeps attachments under `var/storage` (or `storage.local_path`),
+        // so a dev/lab install works without S3 (`lib/storage.php`).
+        'storage.driver' => [
+            'group' => 'storage', 'type' => 'select', 'default' => 's3',
+            'options' => ['s3' => 'S3-compatible', 'local' => 'Local disk'],
+            'label' => 'Attachment storage driver',
+        ],
+        'storage.local_path' => [
+            'group' => 'storage', 'type' => 'text', 'default' => '',
+            'label' => 'Local storage path (empty = var/storage)',
+        ],
+
         // --- Storage (S3) ---
         's3.region' => [
             'group' => 'storage', 'type' => 'text', 'default' => '',

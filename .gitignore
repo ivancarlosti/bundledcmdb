@@ -9,6 +9,9 @@ ui/.vite/
 # SPA build output (`npm --prefix ui run build` writes here; shipped in the image)
 public/app/
 
+# Local attachment storage (storage.driver = local, see lib/storage.php)
+var/
+
 # Editors / OS
 .DS_Store
 *.local

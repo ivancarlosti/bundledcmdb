@@ -716,8 +716,12 @@ bumps by hand.
 
 1. **TypeScript 7** once `typescript-eslint` accepts `>=6.1.0`.
 2. **TanStack Table v9** review after phase 5 (contained in `useDataGrid()`).
-3. **Local storage driver** for attachments (`lib/storage.php` with `s3` +
-   `local`) so dev and zip deployments without S3 can upload.
+3. ~~**Local storage driver** for attachments (`lib/storage.php` with `s3` +
+   `local`)~~ — done: `storage.driver` (`s3`/`local`) + `storage.local_path`
+   (default `var/storage`, `0700`), one interface for put/delete/read, and a new
+   `GET /devices/{id}/files/{fileId}/download` that streams for `local` and
+   redirects to a presigned GET for `s3`. Covered end to end (upload, bytes,
+   `0600`, download key, delete) by `bin/test-panel-api.php`.
 4. ~~**Audit trail** (`asset_events`: who changed what, when)~~ — done:
    migration `0010_asset_events`, `lib/asset_events.php` (append-only, `asset_id`
    is not a foreign key so the trail outlives a hard delete), recorded by every
@@ -841,3 +845,5 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 4 | `public/api.php` records events too (`api:<key label>`) | the plan's assumption was that "all writes already funnel through the panel API"; they do not — ESET-style integrations use the Bearer API. Recording only the panel would make the trail silently partial |
 | 2026-11-04 | 7 | Rate limiting is a fixed window in a table, not a sliding window in APCu/Redis | neither extension exists in the image and PHP-FPM spreads requests over workers, so an in-process counter would allow N × workers writes. One upsert per mutation is cheaper than the alternative (a new service) |
 | 2026-11-04 | 7 | The limit covers panel mutations only; `public/api.php` keeps its per-key limits on `api_keys` | the grid reloads `/devices` and `/session` constantly and a page load must never be throttled; integrations already have an explicit quota per key |
+| 2026-11-04 | 3 | Attachments go through `lib/storage.php` (`storage.driver` = `s3`/`local`) and the download is a panel route, not a public bucket URL | the plan asked for the driver; the download route fell out of it: `local` files live outside `public/` and `s3` buckets stay private, so `GET /devices/{id}/files/{fileId}/download` is the only way to read one — and it is the same session/role check as the rest of the panel |
+| 2026-11-04 | 2 | Fixed `panel_match()`: placeholder names may mix case | the helper only expanded `[a-z_]+`, so `{fileId}` never became a capture group and both attachment routes (`DELETE /devices/{id}/files/{fileId}` included) matched nothing — a file listed by the panel could not be removed over HTTP. The unit test drove the handlers directly, which is why it stayed hidden; the routing table now has explicit `{fileId}` assertions |

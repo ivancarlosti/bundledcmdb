@@ -109,6 +109,25 @@ check(
     panel_match('/settings/users/{email}', '/settings/users/a%40example.com') === ['email' => 'a%40example.com'],
     'routing: placeholders keep the encoded segment (the handler decodes it)'
 );
+// Mixed-case placeholder names (`{fileId}`) used to expand to nothing, so the
+// attachment routes matched no path at all — a listed file could not be removed.
+check(
+    panel_match('/devices/{id}/files/{fileId}', '/devices/7/files/3') === ['id' => '7', 'fileId' => '3'],
+    'routing: mixed-case placeholders are captured'
+);
+check(
+    panel_match('/devices/{id}/files/{fileId}/download', '/devices/7/files/3/download')
+        === ['id' => '7', 'fileId' => '3'],
+    'routing: the download route is reachable'
+);
+check(
+    route_for('DELETE', '/devices/7/files/3') === 'panel_devices_files_delete',
+    'routing: DELETE /devices/{id}/files/{fileId} reaches the handler'
+);
+check(
+    route_for('GET', '/devices/7/files/3/download') === 'panel_devices_files_download',
+    'routing: GET .../download reaches the handler'
+);
 
 $_SERVER['REQUEST_URI'] = '/panel-api/v1/settings/fields/reorder';
 check(panel_request_path() === '/settings/fields/reorder', 'routing: path drops the mount point and version');
@@ -552,6 +571,77 @@ try {
     }
     as_role('user', $companyA);
     check_error('files: user cannot upload → 403', fn () => panel_devices_files_store(['id' => (string) $id]), 'forbidden', 403);
+
+    // --- local storage driver (plan §14.3) --------------------------------
+    // The whole upload/list/delete path with `storage.driver = local`, so the
+    // driver is exercised against the real handlers and not just the helpers.
+    $localDir = sys_get_temp_dir() . '/bcmdb-storage-' . bin2hex(random_bytes(4));
+    $driverBefore = settings_all(true)['storage.driver'] ?? null;
+    $pathBefore = settings_all(true)['storage.local_path'] ?? null;
+    try {
+        settings_set('storage.driver', 'local', 'tester@example.com');
+        settings_set('storage.local_path', $localDir, 'tester@example.com');
+        check(storage_driver() === 'local', 'storage: the driver switch is honoured');
+        check(panel_storage_configured() === true, 'storage: local storage counts as configured');
+
+        $tmp = (string) tempnam(sys_get_temp_dir(), 'bcmdb-up');
+        file_put_contents($tmp, 'attachment body');
+        $_FILES['file'] = [
+            'name'     => 'note.txt',
+            'type'     => 'text/plain',
+            'tmp_name' => $tmp,
+            'error'    => UPLOAD_ERR_OK,
+            'size'     => strlen('attachment body'),
+        ];
+        as_role('manager', $companyA);
+        $uploaded = panel_devices_files_store(['id' => (string) $id]);
+        unset($_FILES['file']);
+        $uploadedId = (int) ($uploaded['data']['id'] ?? 0);
+        $key = (string) ($uploaded['data']['path'] ?? '');
+        check($uploadedId > 0, 'storage: local upload creates the row');
+        check(str_starts_with($key, 'assets/' . $id . '/'), 'storage: the key keeps the device prefix', $key);
+        $onDisk = storage_local_path($key);
+        check($onDisk !== null && is_file($onDisk), 'storage: the object is on disk', (string) $onDisk);
+        check($onDisk !== null && file_get_contents($onDisk) === 'attachment body', 'storage: the bytes round-trip');
+        check(
+            $onDisk !== null && (fileperms($onDisk) & 0777) === 0600,
+            'storage: the file is created 0600'
+        );
+
+        $events = panel_devices_events(['id' => (string) $id])['data']['rows'];
+        check(
+            in_array('file_add', array_map(static fn (array $event): string => $event['action'], $events), true),
+            'storage: the upload is in the audit trail'
+        );
+
+        as_role('admin', $companyA);
+        $removed = panel_devices_files_delete(['id' => (string) $id, 'fileId' => (string) $uploadedId]);
+        check(($removed['data']['deleted'] ?? false) === true, 'storage: the row is deleted');
+        check($onDisk === null || !is_file($onDisk), 'storage: the object is deleted with the row');
+
+        check(storage_safe_key('../../etc/passwd') === 'etc/passwd', 'storage: keys cannot escape the root');
+    } finally {
+        foreach (['storage.driver' => $driverBefore, 'storage.local_path' => $pathBefore] as $key_ => $previous) {
+            if ($previous === null) {
+                continue;
+            }
+            if (($previous['source'] ?? '') === 'db') {
+                settings_set($key_, (string) $previous['value'], 'tester@example.com');
+            } else {
+                settings_forget($key_);
+            }
+        }
+        if (is_dir($localDir)) {
+            $items = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($localDir, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($items as $item) {
+                $item->isDir() ? @rmdir((string) $item->getPathname()) : @unlink((string) $item->getPathname());
+            }
+            @rmdir($localDir);
+        }
+    }
 
     // --- bulk --------------------------------------------------------------
     // Bulk actions are the grid's "select some rows" path: one request, one

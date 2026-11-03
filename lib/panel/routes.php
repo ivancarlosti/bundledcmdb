@@ -34,6 +34,7 @@ function panel_routes(): array
         ['POST',  '/devices/bulk',        'panel_devices_bulk'],
         ['POST',  '/devices/{id}/restore', 'panel_devices_restore'],
         ['GET',   '/devices/{id}/files',  'panel_devices_files_index'],
+        ['GET',   '/devices/{id}/files/{fileId}/download', 'panel_devices_files_download'],
         ['GET',   '/devices/{id}/events', 'panel_devices_events'],
         ['POST',  '/devices/{id}/files',  'panel_devices_files_store'],
         ['DELETE', '/devices/{id}/files/{fileId}', 'panel_devices_files_delete'],
@@ -93,7 +94,10 @@ function panel_request_path(): string
  */
 function panel_match(string $pattern, string $path): ?array
 {
-    $regex = '#^' . preg_replace('#\\\{([a-z_]+)\\\}#', '(?P<$1>[^/]+)', preg_quote($pattern, '#')) . '$#';
+    // `{name}` -> one path segment. The name may mix case (`{fileId}`), which the
+    // first version of this helper did not allow: those routes matched nothing
+    // at all and the SPA saw a 404 for a file it could list.
+    $regex = '#^' . preg_replace('#\\\{([A-Za-z_][A-Za-z0-9_]*)\\\}#', '(?P<$1>[^/]+)', preg_quote($pattern, '#')) . '$#';
     if (preg_match($regex, $path, $matches) !== 1) {
         return null;
     }

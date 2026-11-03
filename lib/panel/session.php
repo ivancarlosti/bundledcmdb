@@ -26,14 +26,10 @@ function panel_locales_payload(): array
     return $out;
 }
 
-/** True when object storage can accept uploads (bucket + secret configured). */
+/** True when the active storage driver (s3 or local) can accept uploads. */
 function panel_storage_configured(): bool
 {
-    try {
-        return (string) settings_get('s3.bucket', '') !== '' && settings_secret_configured('s3.secret_key');
-    } catch (Throwable) {
-        return false;
-    }
+    return storage_configured();
 }
 
 /** Capability flags derived from the role (mirrors lib/assets.php role lists). */
