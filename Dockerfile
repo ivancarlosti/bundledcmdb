@@ -18,6 +18,15 @@ RUN npm run build
 # Stage 3: Final image
 FROM php:8.5-fpm-alpine
 
+# Release stamp. .github/workflows/build.yml passes both as build args; without
+# the ARG declarations the engine drops them and every image reports a version
+# that is not the code it contains. APP_VERSION is what /api/v1/health and
+# Settings → Maintenance show, and it takes precedence over manifest.json.
+ARG VERSION=dev
+ARG COMMIT=unknown
+ENV APP_VERSION=${VERSION} \
+    APP_COMMIT=${COMMIT}
+
 # Install Nginx and MariaDB client; install PHP extensions (mysqli, pdo_mysql) and clean up
 RUN apk add --no-cache --update nginx \
   && docker-php-ext-install mysqli pdo pdo_mysql \

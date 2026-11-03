@@ -1,6 +1,11 @@
 .git/
 .github/
-docker/
+# `docker/**` rather than `docker/`: the negation below can only re-include a
+# file when its parent directory itself is not excluded. Only the DBA DDL ships
+# (an operator may need it from inside the image); the dev compose file and the
+# legacy sample rows stay out.
+docker/**
+!docker/schema.sql
 docs/
 plans/
 .dockerignore

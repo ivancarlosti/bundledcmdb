@@ -18,7 +18,21 @@ define('DB_USER', getenv('DB_USERNAME') ?: 'YOURDBUSERNAME');
 define('DB_PASS', getenv('DB_PASSWORD') ?: 'YOURDBPASSWORD');
 
 // --- Application ---
-define('APP_VERSION', getenv('APP_VERSION') ?: '1.1.0');
+// Version: the environment wins (the Dockerfile stamps `ARG VERSION` as
+// APP_VERSION, and docker-compose passes it through), then `manifest.json`,
+// which semantic-release keeps at the released version and which ships with
+// both the image and the release zip. A literal here would be a version that
+// nobody bumps, so it is only the last resort for a tree without a manifest.
+$bcmdb_manifest_version = '';
+$bcmdb_manifest_path = __DIR__ . '/manifest.json';
+if (is_file($bcmdb_manifest_path)) {
+    $bcmdb_manifest_data = json_decode((string) file_get_contents($bcmdb_manifest_path), true);
+    if (is_array($bcmdb_manifest_data) && is_string($bcmdb_manifest_data['version'] ?? null)) {
+        $bcmdb_manifest_version = trim($bcmdb_manifest_data['version']);
+    }
+}
+define('APP_VERSION', getenv('APP_VERSION') ?: ($bcmdb_manifest_version !== '' ? $bcmdb_manifest_version : '0.0.0'));
+
 // Deployment environment: `production` disables the development login.
 define('APP_ENV', getenv('APP_ENV') ?: 'production');
 // Development-only session login (/auth/dev-login). Ignored in production.

@@ -182,6 +182,28 @@ check(
 );
 check(asset_event_diff([], ['SN' => 'A']) === ['SN' => [null, 'A']], 'events: a create reports every set column');
 
+// --- release stamping + DBA schema (no database needed) --------------------
+// `manifest.json` is the file semantic-release bumps. config.php used to fall
+// back to a literal that nobody updated, so 11.0.2 reported itself as 1.1.0;
+// the constant must now be the environment stamp (the Dockerfile's `ARG
+// VERSION`) or, without one, exactly manifest.json.
+$manifestPath = dirname(__DIR__) . '/manifest.json';
+$manifestVersion = (string) (json_decode((string) file_get_contents($manifestPath), true)['version'] ?? '');
+check($manifestVersion !== '', 'release: manifest.json carries a version');
+$envVersion = (string) (getenv('APP_VERSION') ?: '');
+check(APP_VERSION !== '', 'release: APP_VERSION is never empty');
+check(
+    $envVersion !== '' ? APP_VERSION === $envVersion : APP_VERSION === $manifestVersion,
+    'release: APP_VERSION is the env stamp, else manifest.json (' . APP_VERSION . ')'
+);
+
+// `docker/schema.sql` is the DBA path: it records itself as applied, so a table
+// it forgets never reaches those installations (user_preferences, asset_events
+// and saved_views were all missing). `bin/check-schema.php` prints the detail;
+// running the same helper here keeps the suite honest.
+$schemaDrift = migrate_dba_sql_drift(dirname(__DIR__));
+check($schemaDrift === [], 'schema: docker/schema.sql matches lib/migrate.php', implode('; ', $schemaDrift));
+
 $pdo = db_try();
 if ($pdo === null) {
     $passes = (int) $GLOBALS['passes'];
@@ -1073,6 +1095,7 @@ try {
     check(array_key_exists('ready', $maintenance['migrations'] ?? []), 'maintenance: migration status is included');
     check(($maintenance['diagnostics']['php_version'] ?? '') === PHP_VERSION, 'maintenance: diagnostics include PHP');
     check(is_bool($maintenance['diagnostics']['encryption'] ?? null), 'maintenance: encryption flag is a bool');
+    check(($maintenance['diagnostics']['app_version'] ?? '') === APP_VERSION, 'maintenance: diagnostics report the running version');
 
     body(['dry_run' => true]);
     $dryRun = panel_settings_maintenance_migrate();

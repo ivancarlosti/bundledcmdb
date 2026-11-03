@@ -6,6 +6,10 @@
 --
 -- Requires the legacy tables `assets`, `users`, `device_files` to exist.
 -- If assets.Id is BIGINT, change asset_custom_values.asset_id accordingly.
+--
+-- Because it records itself as applied, anything missing here is missing for
+-- good (bin/migrate.php will not come back for it). `php bin/check-schema.php`
+-- compares this file with lib/migrate.php and fails on drift.
 
 CREATE TABLE IF NOT EXISTS app_settings (
     skey VARCHAR(64) NOT NULL,
@@ -104,6 +108,46 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     PRIMARY KEY (bucket)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Per-user panel preferences (locale, theme, page size, grid layout).
+CREATE TABLE IF NOT EXISTS user_preferences (
+    email VARCHAR(191) NOT NULL,
+    locale VARCHAR(16) NULL,
+    theme VARCHAR(16) NOT NULL DEFAULT 'system',
+    per_page SMALLINT NOT NULL DEFAULT 25,
+    grid_state LONGTEXT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Audit trail. asset_id is deliberately not a foreign key: the history has to
+-- outlive a hard delete. `changes` holds {field: [old, new]} as JSON.
+CREATE TABLE IF NOT EXISTS asset_events (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    asset_id INT NULL,
+    action VARCHAR(32) NOT NULL,
+    actor VARCHAR(191) NOT NULL,
+    changes LONGTEXT NULL,
+    note VARCHAR(255) NULL,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_asset_events_asset (asset_id, id),
+    KEY idx_asset_events_created (created_at),
+    KEY idx_asset_events_actor (actor)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Named grid presets; (email, name) is unique so "save as …" with an existing
+-- name overwrites that view instead of piling up duplicates.
+CREATE TABLE IF NOT EXISTS saved_views (
+    id INT NOT NULL AUTO_INCREMENT,
+    email VARCHAR(191) NOT NULL,
+    name VARCHAR(64) NOT NULL,
+    state LONGTEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_saved_view (email, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Provenance columns (run once; each statement fails if the column exists,
 -- which is why bin/migrate.php is the recommended path).
 ALTER TABLE assets ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'eset';
@@ -126,7 +170,9 @@ ALTER TABLE assets ADD INDEX idx_assets_deleted (deleted_at);
 ALTER TABLE assets ADD INDEX idx_assets_source (source);
 ALTER TABLE assets ADD INDEX idx_assets_status (Status);
 
--- Record the versions so bin/migrate.php does not try to re-apply them.
+-- Record every version in lib/migrate.php::migrations() so bin/migrate.php does
+-- not try to re-apply them. `php bin/check-schema.php` fails when this file and
+-- the migrations drift apart (a table added to one but not the other).
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -136,4 +182,7 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0006_user_preferences'),
     ('2026_11_02_0007_assets_indexes'),
     ('2026_11_04_0008_retire_spa_flag'),
-    ('2026_11_04_0009_rate_limits');
+    ('2026_11_04_0009_rate_limits'),
+    ('2026_11_04_0010_asset_events'),
+    ('2026_11_04_0011_saved_views');
+

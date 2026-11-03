@@ -13,6 +13,76 @@ declare(strict_types=1);
  * panel shows a banner and a DBA can apply `docker/schema.sql` instead.
  */
 
+/**
+ * Static drift check between `migrations()` and `docker/schema.sql`.
+ *
+ * `docker/schema.sql` is the DBA path: an installation applies it once and it
+ * records the versions as applied, so `bin/migrate.php` afterwards believes the
+ * work is done and never comes back. A table that a later migration creates must
+ * therefore also appear in that file — otherwise the feature protected by its
+ * `db_table_exists()` guard disappears silently on those installs, which is
+ * exactly what happened to `user_preferences`, `asset_events` and `saved_views`.
+ *
+ * No database is touched; both inputs are read as text, so this can run in CI
+ * and in `bin/test-panel-api.php` without a connection.
+ *
+ * @return list<string> human-readable problems; empty when the two agree.
+ */
+function migrate_dba_sql_drift(string $root): array
+{
+    $schemaPath = rtrim($root, '/') . '/docker/schema.sql';
+    if (!is_file($schemaPath)) {
+        return ['docker/schema.sql is missing.'];
+    }
+
+    $errors = [];
+    $migrationTables = migrate_sql_tables((string) file_get_contents(__DIR__ . '/migrate.php'));
+    $schemaTables = migrate_sql_tables((string) file_get_contents($schemaPath));
+
+    $missing = array_keys(array_diff_key($migrationTables, $schemaTables));
+    sort($missing);
+    if ($missing !== []) {
+        $errors[] = 'docker/schema.sql is missing tables that lib/migrate.php creates: ' . implode(', ', $missing);
+    }
+
+    $schemaSql = (string) file_get_contents($schemaPath);
+    $recorded = [];
+    if (preg_match('/INSERT\s+IGNORE\s+INTO\s+schema_migrations\b[\s\S]*?(?:;|\z)/i', $schemaSql, $block)
+        && preg_match_all("/'([^']+)'/", $block[0], $matches)) {
+        foreach ($matches[1] as $version) {
+            $recorded[$version] = true;
+        }
+    }
+
+    $versions = array_keys(migrations());
+    $notRecorded = array_values(array_diff($versions, array_keys($recorded)));
+    if ($notRecorded !== []) {
+        $errors[] = 'docker/schema.sql does not record these migrations as applied: ' . implode(', ', $notRecorded);
+    }
+    $unknown = array_values(array_diff(array_keys($recorded), $versions));
+    if ($unknown !== []) {
+        $errors[] = 'docker/schema.sql records versions that no longer exist: ' . implode(', ', $unknown);
+    }
+
+    return $errors;
+}
+
+/**
+ * Table names created by a chunk of SQL (`CREATE TABLE [IF NOT EXISTS] name`).
+ *
+ * @return array<string, true> lower-cased table name as key
+ */
+function migrate_sql_tables(string $sql): array
+{
+    $tables = [];
+    if (preg_match_all('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?/i', $sql, $matches)) {
+        foreach ($matches[1] as $table) {
+            $tables[strtolower($table)] = true;
+        }
+    }
+    return $tables;
+}
+
 /** @return array<string, array{description: string, run: callable-string}> */
 function migrations(): array
 {
