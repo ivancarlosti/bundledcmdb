@@ -112,12 +112,12 @@ function panel_settings_entry(string $key, array $entry): array
 function panel_settings_payload(): array
 {
     $groups = [];
-    // `assets` shares the General tab in the legacy page, so it shares the label.
     $labels = [
-        'general' => 'set_tab_general',
-        'assets'  => 'set_tab_general',
-        'api'     => 'set_tab_api',
-        'storage' => 'set_tab_storage',
+        'general' => 'set_group_general',
+        'assets'  => 'set_group_assets',
+        'api'     => 'set_group_api',
+        'storage' => 'set_group_storage',
+        's3'      => 'set_group_s3',
     ];
 
     foreach (settings_all(true) as $key => $entry) {
@@ -125,7 +125,7 @@ function panel_settings_payload(): array
         if (!isset($groups[$group])) {
             $groups[$group] = [
                 'id'        => $group,
-                'label_key' => $labels[$group] ?? 'set_tab_general',
+                'label_key' => $labels[$group] ?? 'set_group_general',
                 'settings'  => [],
             ];
         }

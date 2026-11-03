@@ -132,9 +132,16 @@ describe('initialFormValues', () => {
     expect(admin.custom.admin_only).toBe('');
   });
 
-  it('produces empty values for a new device', () => {
-    const { values } = initialFormValues(['sn', 'byod'], null, []);
-    expect(values).toEqual({ sn: '', byod: '' });
+  it('produces empty values for a new device except bools, which start false', () => {
+    const { values } = initialFormValues(['sn', 'byod'], null, [], { byod: 'bool' });
+    expect(values).toEqual({ sn: '', byod: false });
+  });
+
+  it('normalises stored bool values from either the API or a SQL dump', () => {
+    const one = initialFormValues(['byod'], { byod: 1 } as unknown as DeviceDetail, [], { byod: 'bool' });
+    const text = initialFormValues(['byod'], { byod: '1' } as unknown as DeviceDetail, [], { byod: 'bool' });
+    expect(one.values.byod).toBe(true);
+    expect(text.values.byod).toBe(true);
   });
 });
 

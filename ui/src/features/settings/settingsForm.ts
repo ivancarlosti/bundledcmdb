@@ -38,6 +38,11 @@ export function settingsFormFrom(entries: SettingEntry[]): SettingsForm {
   return { values, clears: {} };
 }
 
+/** Booleans first in every card; a stable sort keeps the server order inside each block. */
+export function sortSettings(entries: SettingEntry[]): SettingEntry[] {
+  return [...entries].sort((a, b) => Number(b.type === 'bool') - Number(a.type === 'bool'));
+}
+
 /** `PATCH /settings` body for the current form state. */
 export function buildSettingsPatch(entries: SettingEntry[], form: SettingsForm): SettingsPatchBody {
   const values: Record<string, string> = {};

@@ -33,7 +33,7 @@ function asset_column_defs(): array
         'OS'              => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Operating System'],
         'OSVersion'       => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'OS Version'],
         'Hostname'        => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Hostname'],
-        'Mobile'          => ['type' => 'bool', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Mobile'],
+        'Mobile'          => ['type' => 'bool', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Mobile device'],
         'Manufacturer'    => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => [], 'label' => 'Manufacturer'],
         'LastSeen'        => ['type' => 'datetime', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Last Seen'],
         'UserEmail'       => ['type' => 'email', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'User Email'],

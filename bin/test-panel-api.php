@@ -831,6 +831,17 @@ try {
     as_role('admin', $companyA);
     $settingsPayload = panel_settings_show()['data'] ?? [];
     check(($settingsPayload['groups'] ?? []) !== [], 'settings: admin reads the groups');
+    $settingsGroupIds = array_column($settingsPayload['groups'], 'id');
+    check(
+        $settingsGroupIds === ['general', 'assets', 'api', 'storage', 's3'],
+        'settings: cards have one group each (general, assets, api, storage, s3)'
+    );
+    $settingsGroupLabels = array_column($settingsPayload['groups'], 'label_key', 'id');
+    check(
+        ($settingsGroupLabels['assets'] ?? '') === 'set_group_assets'
+        && ($settingsGroupLabels['s3'] ?? '') === 'set_group_s3',
+        'settings: cards use distinct headings'
+    );
     check(($settingsPayload['locales'] ?? []) !== [], 'settings: locales are included');
     check(($settingsPayload['timezones'] ?? []) !== [], 'settings: timezones are included');
 

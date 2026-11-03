@@ -91,7 +91,7 @@ export function GridCell({ value, columnKey, type, locale, t, statusLabels, sour
   );
 }
 
-/** Inline editing of a cell (Status / BYOD) inside the grid. */
+/** Inline editing of a cell (Status and boolean columns) inside the grid. */
 export type InlineEditOptions = {
   /** True while a write is in flight — the controls are disabled meanwhile. */
   busy: boolean;
@@ -136,36 +136,6 @@ function InlineSelect({
     </select>
   );
 }
-
-function InlineCheckbox({
-  label,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <input
-      type="checkbox"
-      aria-label={label}
-      className="size-4 accent-[var(--color-accent)]"
-      checked={checked}
-      disabled={disabled}
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
-      onChange={(event) => {
-        event.stopPropagation();
-        onChange(event.target.checked);
-      }}
-    />
-  );
-}
-
-/**
 
 /**
  * Build the TanStack Table column model from `/meta`.
@@ -226,12 +196,17 @@ export function buildColumns(
         }
 
         if (column.type === 'bool') {
+          const current = getValue();
           return (
-            <InlineCheckbox
+            <InlineSelect
               label={label}
-              checked={getValue() === true}
+              value={current === true || current === 1 || current === '1' ? '1' : '0'}
               disabled={inline.busy}
-              onChange={(next) => inline.onEdit(row.original, column.api_key, next)}
+              options={[
+                { value: '1', label: t('yes') },
+                { value: '0', label: t('no') },
+              ]}
+              onChange={(next) => inline.onEdit(row.original, column.api_key, next === '1')}
             />
           );
         }

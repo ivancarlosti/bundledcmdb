@@ -26,6 +26,10 @@ export function initialFormValues(
       continue;
     }
     const raw = record[key];
+    if (types[key] === 'bool') {
+      values[key] = raw === true || raw === 1 || raw === '1';
+      continue;
+    }
     if (typeof raw === 'boolean') {
       values[key] = raw;
       continue;
@@ -43,7 +47,7 @@ export function initialFormValues(
   for (const field of fields) {
     const raw = customValues[field.key];
     if (field.type === 'bool') {
-      custom[field.key] = raw === true;
+      custom[field.key] = raw === true || raw === 1 || raw === '1';
       continue;
     }
     custom[field.key] = raw === null || raw === undefined ? '' : String(raw);

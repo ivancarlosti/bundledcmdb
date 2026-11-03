@@ -51,13 +51,13 @@ function settings_definitions(): array
         ],
         'assets.require_sn' => [
             'group' => 'assets', 'type' => 'bool', 'default' => '1',
-            'label' => 'Require serial number',
+            'label' => 'Enable serial number requirement',
         ],
 
         // --- API ---
         'api.enabled' => [
             'group' => 'api', 'type' => 'bool', 'default' => '1',
-            'label' => 'API enabled',
+            'label' => 'Enable API',
         ],
         'api.ip_allowlist' => [
             'group' => 'api', 'type' => 'textarea', 'default' => '',
@@ -65,7 +65,7 @@ function settings_definitions(): array
         ],
         'api.trust_proxy' => [
             'group' => 'api', 'type' => 'bool', 'default' => '0',
-            'label' => 'Trust X-Forwarded-For',
+            'label' => 'Enable X-Forwarded-For trust',
         ],
         'api.max_page_size' => [
             'group' => 'api', 'type' => 'int', 'default' => '200', 'min' => 1, 'max' => 1000,
@@ -91,37 +91,37 @@ function settings_definitions(): array
             'label' => 'Local storage path (empty = var/storage)',
         ],
 
-        // --- Storage (S3) ---
+        // --- S3 connection ---
         's3.region' => [
-            'group' => 'storage', 'type' => 'text', 'default' => '',
+            'group' => 's3', 'type' => 'text', 'default' => '',
             'env' => 'S3_REGION', 'label' => 'Region',
         ],
         's3.bucket' => [
-            'group' => 'storage', 'type' => 'text', 'default' => '',
+            'group' => 's3', 'type' => 'text', 'default' => '',
             'env' => 'S3_BUCKET', 'label' => 'Bucket',
         ],
         's3.endpoint' => [
-            'group' => 'storage', 'type' => 'text', 'default' => '',
+            'group' => 's3', 'type' => 'text', 'default' => '',
             'env' => 'S3_ENDPOINT', 'label' => 'Endpoint',
         ],
         's3.access_key' => [
-            'group' => 'storage', 'type' => 'text', 'default' => '',
+            'group' => 's3', 'type' => 'text', 'default' => '',
             'env' => 'S3_ACCESS_KEY', 'label' => 'Access key ID',
         ],
         's3.secret_key' => [
-            'group' => 'storage', 'type' => 'secret', 'default' => '', 'secret' => true,
+            'group' => 's3', 'type' => 'secret', 'default' => '', 'secret' => true,
             'env' => 'S3_SECRET_KEY', 'label' => 'Secret access key',
         ],
         's3.path_style' => [
-            'group' => 'storage', 'type' => 'bool', 'default' => '1',
-            'label' => 'Path-style URLs (MinIO / self-hosted)',
+            'group' => 's3', 'type' => 'bool', 'default' => '1',
+            'label' => 'Enable path-style URLs (MinIO / self-hosted)',
         ],
         's3.presign_seconds' => [
-            'group' => 'storage', 'type' => 'int', 'default' => '3600', 'min' => 60, 'max' => 604800,
+            'group' => 's3', 'type' => 'int', 'default' => '3600', 'min' => 60, 'max' => 604800,
             'label' => 'Presigned URL lifetime (seconds)',
         ],
         's3.prefix' => [
-            'group' => 'storage', 'type' => 'text', 'default' => 'uploads',
+            'group' => 's3', 'type' => 'text', 'default' => 'uploads',
             'label' => 'Object key prefix',
         ],
     ];

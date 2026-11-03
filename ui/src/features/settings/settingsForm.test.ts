@@ -11,6 +11,7 @@ import {
   parseOptions,
   settingsErrorKey,
   settingsFormFrom,
+  sortSettings,
 } from './settingsForm';
 
 function setting(overrides: Partial<SettingEntry> & { key: string }): SettingEntry {
@@ -71,6 +72,24 @@ describe('buildSettingsPatch', () => {
     const form = { ...settingsFormFrom(entries), values: { 's3.path_style': '0' } };
 
     expect(buildSettingsPatch(entries, form).values['s3.path_style']).toBe('0');
+  });
+});
+
+describe('sortSettings', () => {
+  it('puts booleans first while keeping the server order inside each block', () => {
+    const entries = [
+      setting({ key: 's3.region' }),
+      setting({ key: 's3.path_style', type: 'bool' }),
+      setting({ key: 's3.bucket' }),
+      setting({ key: 's3.presign_seconds', type: 'bool' }),
+    ];
+
+    expect(sortSettings(entries).map((entry) => entry.key)).toEqual([
+      's3.path_style',
+      's3.presign_seconds',
+      's3.region',
+      's3.bucket',
+    ]);
   });
 });
 

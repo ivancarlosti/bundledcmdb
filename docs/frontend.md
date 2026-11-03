@@ -156,8 +156,14 @@ gated by the capabilities `GET /session` publishes (`can_admin` opens the screen
 `can_superadmin` adds the roster) — and the server enforces the same matrix, so a
 hidden tab is never a security boundary on its own.
 
-The three behaviours worth knowing when you touch this screen:
+The five behaviours worth knowing when you touch this screen:
 
+* **Cards are server-side groups.** `general`, `assets`, `api`, `storage` and
+  `s3` are rendered as separate cards with their own `set_group_*` heading;
+  Storage shows **Attachment storage** and **S3 connection** as two cards in one
+  tab. `sortSettings()` puts every boolean first while keeping the server order
+  inside each block, and each checkbox uses the setting's explicit **Enable …**
+  label instead of a generic "Yes".
 * **Secrets blank means unchanged.** `settingsFormFrom()` starts every `secret`
   input empty and `buildSettingsPatch()` only includes it when it has text;
   wiping a stored secret is an explicit `clear` entry, never an empty value.
@@ -169,6 +175,10 @@ The three behaviours worth knowing when you touch this screen:
 * **Writes seed the cache.** Every settings mutation answers the refreshed list
   and the hook writes it into the query cache, so nothing re-fetches and the
   stale value cannot flash back (the same rule as the device writes).
+* **The user roster filters on the client.** `GET /settings/users` already
+  returns the full list; the search box matches e-mail, company and role, the
+  company `<select>` includes a "No company" option, and the summary line stays
+  in sync through `aria-live`.
 
 ### Bulk actions
 
@@ -286,7 +296,9 @@ Vite's own errors show up in the job output.
 * **Writes are optimistic-locked.** `PATCH` carries `expected_updated_at`; a
   `409 stale_record` leaves the form untouched, shows a "reload before saving"
   alert and refreshes the cached row instead of overwriting someone else's edit.
-  Inline grid edits (Status, BYOD) use the same contract.
+  Inline grid edits (Status and boolean columns) use the same contract; both
+  render as a `<select>` so Yes/No is explicit and needs no keyboard-only
+  checkbox handling.
 * **Forms are generated from `/meta`.** `writeColumns.create|update` decide which
   inputs exist for the current role — a manager's form has no `cypher_id` field,
   and the API would reject it anyway.

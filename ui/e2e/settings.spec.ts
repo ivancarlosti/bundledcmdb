@@ -5,11 +5,13 @@ import { mockPanel, mockSettings } from './fixtures';
 /**
  * Settings screens (phase 7).
  *
- * The three behaviours that only exist in the SPA and are easy to regress:
+ * The behaviours that only exist in the SPA and are easy to regress:
  *
  *  - a save must not resend an untouched secret (the API sends `""` for one);
  *  - a `422` with per-key `errors` is rendered next to the input, not as one
  *    opaque banner;
+ *  - cards follow the server groups (Storage is split into attachment and S3)
+ *    and the user roster filters on the client;
  *  - the tab list follows `capabilities` (`can_admin` opens the screen, the user
  *    roster stays `can_superadmin`).
  */
@@ -36,6 +38,54 @@ test.describe('settings', () => {
     // Blank means unchanged: the key is absent, not present-and-empty.
     expect((saved[0]?.values as Record<string, unknown>)['s3.secret_key']).toBeUndefined();
     expect(saved[0]?.clear).toBeUndefined();
+  });
+
+  test('splits storage into two cards and starts each with its booleans', async ({ page }) => {
+    await mockPanel(page);
+    await mockSettings(page);
+
+    await page.goto('/app/settings?tab=general');
+    await expect(page.getByRole('heading', { name: 'General' })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Assets' })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Enable serial number requirement' })).toBeVisible();
+
+    await page.getByRole('tab', { name: 'Storage' }).click();
+    await expect(page.getByRole('heading', { name: 'Attachment storage' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'S3 connection' })).toBeVisible();
+
+    const s3Card = page.locator('section').filter({ has: page.getByRole('heading', { name: 'S3 connection' }) });
+    await expect(s3Card.getByRole('checkbox').first()).toHaveAccessibleName(
+      'Enable path-style URLs (MinIO / self-hosted)',
+    );
+  });
+
+  test('filters the user roster by search and company', async ({ page }) => {
+    await mockPanel(page, {
+      session: {
+        user: { email: 'qa@example.com', company: '', role: 'superadmin' },
+        capabilities: { role: 'superadmin', rank: 4, can_write: true, can_admin: true, can_superadmin: true },
+      },
+    });
+    await mockSettings(page);
+
+    await page.goto('/app/settings?tab=users');
+    await expect(page.getByText('Showing 2 of 2 users')).toBeVisible();
+
+    await page.getByLabel('Search users').fill('Acme');
+    await expect(page.getByText('Showing 1 of 2 users')).toBeVisible();
+    await expect(page.getByRole('row', { name: /ops@example.com/ })).toBeVisible();
+    await expect(page.getByRole('row', { name: /qa@example.com/ })).toHaveCount(0);
+
+    await page.getByLabel('Search users').fill('');
+    await page.getByLabel('Company').selectOption('Acme');
+    await expect(page.getByText('Showing 1 of 2 users')).toBeVisible();
+
+    await page.getByLabel('Company').selectOption('__unassigned__');
+    await expect(page.getByText('Showing 1 of 2 users')).toBeVisible();
+    await expect(page.getByRole('row', { name: /qa@example.com/ })).toBeVisible();
+
+    await page.getByLabel('Search users').fill('nobody');
+    await expect(page.getByText('No users match the filters.')).toBeVisible();
   });
 
   test('renders per-key validation errors from a 422', async ({ page }) => {

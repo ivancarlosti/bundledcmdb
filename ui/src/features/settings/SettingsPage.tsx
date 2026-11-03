@@ -102,7 +102,6 @@ export function SettingsPage() {
         <h1 id={headingId} className="m-0 text-xl font-semibold">
           {t('set_title')}
         </h1>
-        <p className="m-0 text-xs text-[var(--color-muted)]">{t('set_general_intro')}</p>
       </div>
 
       <div role="tablist" aria-labelledby={headingId} className="flex flex-wrap gap-1">
@@ -134,7 +133,7 @@ export function SettingsPage() {
           <SettingsGroupPanel groups={['general', 'assets']} intro={t('set_general_intro')} labelledBy={headingId} />
         ) : null}
         {tab === 'storage' ? (
-          <SettingsGroupPanel groups={['storage']} intro={t('set_storage_intro')} labelledBy={headingId} />
+          <SettingsGroupPanel groups={['storage', 's3']} intro={t('set_storage_intro')} labelledBy={headingId} />
         ) : null}
         {tab === 'sources' ? <SourcesTab labelledBy={headingId} /> : null}
         {tab === 'api' ? (

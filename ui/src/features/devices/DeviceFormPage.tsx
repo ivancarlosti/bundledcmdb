@@ -4,7 +4,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { PanelApiError } from '@/api/client';
-import { Alert, Button, Checkbox, Input, Select, Spinner, Textarea } from '@/components/ui';
+import { Alert, Button, Input, Select, Spinner, Textarea } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
 import { zodResolver } from '@/lib/zodResolver';
 
@@ -50,12 +50,15 @@ function DeviceControl({ id, value, column, field, meta, invalid, onChange }: Co
 
   if (type === 'bool') {
     return (
-      <Checkbox
+      <Select
         id={id}
-        label={t('yes')}
-        checked={value === true}
-        onChange={(event) => onChange(event.target.checked)}
-      />
+        className={invalidClass}
+        value={value === true ? '1' : '0'}
+        onChange={(event) => onChange(event.target.value === '1')}
+      >
+        <option value="1">{t('yes')}</option>
+        <option value="0">{t('no')}</option>
+      </Select>
     );
   }
 

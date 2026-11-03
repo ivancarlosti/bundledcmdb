@@ -32,18 +32,21 @@ environment-only: they are needed *before* the settings table can be read.
 > `/` always redirects to `/app/`. Migration `0008_retire_spa_flag` removes the
 > stored row and the option is no longer rendered.
 
-### Storage
-**Driver** — `s3` (default) or `local` (`lib/storage.php`). `local` keeps the
-attachments under `var/storage` (git-ignored, created `0700` on first upload) or
-under **Local storage path** when you set one; nothing else changes, because the
-driver is selected at upload time and the database row keeps the same object key.
-Downloads go through `GET /panel-api/v1/devices/{id}/files/{fileId}/download`,
-which streams the file for `local` and redirects to a presigned GET for `s3`, so
-the bucket never has to be public and the local directory never lives inside the
-document root. Use `local` for a laptop, a lab install or a zip deployment
-without object storage; `s3` for anything with more than one app container.
+### Attachment storage
+The Storage tab has two cards: **Attachment storage** (`storage.*`) and **S3
+connection** (`s3.*`). This card's **Driver** is `s3` (default) or `local`
+(`lib/storage.php`). `local` keeps the attachments under `var/storage`
+(git-ignored, created `0700` on first upload) or under **Local storage path**
+when you set one; nothing else changes, because the driver is selected at upload
+time and the database row keeps the same object key. Boolean settings render
+first in each card with their explicit **Enable …** label. Downloads go through
+`GET /panel-api/v1/devices/{id}/files/{fileId}/download`, which streams the file
+for `local` and redirects to a presigned GET for `s3`, so the bucket never has to
+be public and the local directory never lives inside the document root. Use
+`local` for a laptop, a lab install or a zip deployment without object storage;
+`s3` for anything with more than one app container.
 
-### Storage (S3)
+### S3 connection
 Region, bucket, endpoint, access key, secret key, path-style URLs, presigned URL
 lifetime and key prefix. The secret is encrypted with AES-256-GCM using
 `APP_ENCRYPTION_KEY` and is never echoed back (masked, "clear" checkbox).
@@ -105,7 +108,9 @@ counts).
 
 ### Users (superadmin)
 The `users` roster with one role per e-mail. The e-mail is the identity of the
-row, so it is the path parameter of the write. A superadmin cannot change their
+row, so it is the path parameter of the write. The search box and company filter
+work on the roster the endpoint already returned (no extra request while typing)
+and a summary reports how many rows are shown. A superadmin cannot change their
 own role (`409 self_role_change`): that would lock the instance out of user
 management with no way back in from the panel.
 

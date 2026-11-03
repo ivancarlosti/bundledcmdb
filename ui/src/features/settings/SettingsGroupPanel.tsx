@@ -1,10 +1,11 @@
 /**
  * The settings form for one tab.
  *
- * The tab gets a list of server-side groups (`general` + `assets` share a tab,
- * `storage` has its own) and renders one control per setting — the control is
- * chosen from the `type` the server published, so adding a setting never needs
- * a change here.
+ * The tab gets a list of server-side groups (`general` and `assets` are separate
+ * cards, as are `storage` and `s3`) and renders one control per setting — the
+ * control is chosen from the `type` the server published, so adding a setting
+ * never needs a change here. Booleans are sorted first and use the setting label
+ * as their checkbox text, so every card starts with an explicit `Enable …`.
  */
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -14,7 +15,13 @@ import { PanelApiError } from '@/api/client';
 import { Alert, Button, Checkbox, Input, Select, Spinner, Textarea } from '@/components/ui';
 
 import type { SettingEntry, SettingGroup, SettingsPayload } from './api';
-import { buildSettingsPatch, settingsErrorKey, settingsFormFrom, type SettingsForm } from './settingsForm';
+import {
+  buildSettingsPatch,
+  settingsErrorKey,
+  settingsFormFrom,
+  sortSettings,
+  type SettingsForm,
+} from './settingsForm';
 import { useSaveSettings, useSettings } from './useSettings';
 
 const BADGE =
@@ -39,7 +46,7 @@ function SettingControl({ entry, payload, value, invalid, onChange }: ControlPro
       return (
         <Checkbox
           id={id}
-          label={t('yes')}
+          label={t(entry.label_key, { defaultValue: entry.label })}
           checked={value === '1'}
           onChange={(event) => onChange(event.target.checked ? '1' : '0')}
         />
@@ -160,7 +167,10 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
   const save = useSaveSettings();
 
   const sections = useMemo(
-    () => (query.data?.groups ?? []).filter((group) => wanted.includes(group.id)),
+    () =>
+      (query.data?.groups ?? [])
+        .filter((group) => wanted.includes(group.id))
+        .map((group) => ({ ...group, settings: sortSettings(group.settings) })),
     [query.data, wanted],
   );
   const entries = useMemo(() => flatten(query.data?.groups ?? [], wanted), [query.data, wanted]);
@@ -214,7 +224,7 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
 
       {sections.map((section) => (
         <section key={section.id} className="card flex flex-col gap-3 p-4">
-          <h3 className="m-0 text-sm font-semibold">{t(section.label_key)}</h3>
+          <h3 className="m-0 text-sm font-semibold">{t(section.label_key, { defaultValue: section.id })}</h3>
           {section.settings.map((entry) => {
             const id = `set_${entry.key.replace(/\./g, '_')}`;
             const code = fieldErrors[entry.key];
@@ -223,7 +233,7 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
               <div key={entry.key} className="flex flex-col gap-1">
                 {entry.type === 'bool' ? null : (
                   <label htmlFor={id} className="text-xs font-medium text-[var(--color-muted)]">
-                    {t(entry.label_key)}
+                    {t(entry.label_key, { defaultValue: entry.label })}
                   </label>
                 )}
                 <SettingControl
