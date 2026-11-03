@@ -139,6 +139,10 @@ function migrations(): array
             'description' => 'Drop the storage.local_path setting (the directory is fixed at var/storage)',
             'run' => 'migration_0013_retire_storage_local_path',
         ],
+        '2026_11_07_0014_asset_deletion_reason' => [
+            'description' => 'Add assets.deleted_reason/duplicate_of_id + index (why a device was deleted)',
+            'run' => 'migration_0014_asset_deletion_reason',
+        ],
     ];
 }
 
@@ -661,5 +665,30 @@ function migration_0013_retire_storage_local_path(PDO $pdo): void
     if ($stmt->rowCount() > 0) {
         migrate_note('DELETE app_settings storage.local_path');
     }
+}
+
+/**
+ * Why a device was deleted, and which asset it duplicates.
+ *
+ * The trash view already keeps the row, but "deleted" alone cannot answer the
+ * question an auditor asks next: was it a duplicate (and of what) or a record
+ * that should never have existed? `deleted_reason` holds one of
+ * `asset_deletion_reasons()`; `duplicate_of_id` points at the asset that was
+ * kept. Both are NULL for rows deleted before this migration and for callers
+ * that do not send a reason, so nothing has to be backfilled.
+ *
+ * `duplicate_of_id` uses the exact type of `assets.Id` (INT or BIGINT in the
+ * legacy schema) so no join needs a cast.
+ */
+function migration_0014_asset_deletion_reason(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'assets')) {
+        return;
+    }
+
+    migrate_add_column($pdo, 'assets', 'deleted_reason', 'VARCHAR(32) NULL');
+    migrate_add_column($pdo, 'assets', 'duplicate_of_id', migrate_assets_id_type($pdo) . ' NULL');
+    // The trash view groups by reason; the index keeps that a range scan.
+    migrate_add_index($pdo, 'assets', 'idx_assets_deleted_reason', '`deleted_reason`');
 }
 

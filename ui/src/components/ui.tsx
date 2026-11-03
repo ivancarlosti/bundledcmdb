@@ -9,6 +9,7 @@
 
 import type {
   ButtonHTMLAttributes,
+  ComponentPropsWithRef,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
@@ -43,7 +44,7 @@ export function Button({ variant = 'secondary', className, type = 'button', ...p
   );
 }
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: ComponentPropsWithRef<'input'>) {
   return (
     <input
       className={cn(

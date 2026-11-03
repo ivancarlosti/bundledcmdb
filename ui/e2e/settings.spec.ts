@@ -100,6 +100,49 @@ test.describe('settings', () => {
     await expect(page.getByText('Required.')).toBeVisible();
   });
 
+  test('inserts a prefix placeholder at the caret', async ({ page }) => {
+    await mockPanel(page);
+    await mockSettings(page);
+
+    await page.goto('/app/settings?tab=storage');
+
+    const prefix = page.getByLabel('Object key prefix');
+    await expect(prefix).toHaveValue('uploads');
+    // The chips come from the entry's catalogue, so a new token needs no release.
+    await expect(page.getByRole('button', { name: '{{company}}' })).toHaveAttribute('title', 'Company');
+
+    // Insertion follows the caret instead of appending: with the caret after
+    // "up" the token lands there, which is what editing a template expects.
+    await prefix.press('Home');
+    await prefix.press('ArrowRight');
+    await prefix.press('ArrowRight');
+    await page.getByRole('button', { name: '{{company}}' }).click();
+    await expect(prefix).toHaveValue('up{{company}}loads');
+
+    // A second chip at the tail keeps the first insertion intact.
+    await prefix.press('End');
+    await page.getByRole('button', { name: '{{asset}}' }).click();
+    await expect(prefix).toHaveValue('up{{company}}loads{{asset}}');
+  });
+
+  test('resets a stored setting to its default without dropping the form', async ({ page }) => {
+    const saved: Record<string, unknown>[] = [];
+    await mockPanel(page);
+    await mockSettings(page, { onSave: (body) => saved.push(body) });
+
+    await page.goto('/app/settings?tab=storage');
+
+    // Only a DB hit offers the button, and it lives in that setting's row, so the
+    // label of the input it belongs to scopes it.
+    await page.getByLabel('Object key prefix').locator('..').getByRole('button', { name: 'Reset to default' }).click();
+
+    await expect.poll(() => saved.length).toBe(1);
+    expect(saved[0]?.reset).toEqual(['s3.prefix']);
+    // The rest of the form rides along: dropping the DB row re-seeds every field
+    // from the answer, so a reset may not throw away an edit in another card.
+    expect((saved[0]?.values as Record<string, unknown>)['s3.bucket']).toBe('cmdb');
+  });
+
   test('shows the settings link to an admin and hides the user roster', async ({ page }) => {
     await mockPanel(page);
     await mockSettings(page);

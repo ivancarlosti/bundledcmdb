@@ -8,7 +8,7 @@
  * as their checkbox text, so every card starts with an explicit `Enable …`.
  */
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PanelApiError } from '@/api/client';
@@ -16,6 +16,7 @@ import { Alert, Button, Checkbox, Input, Select, Spinner, Textarea } from '@/com
 
 import type { SettingEntry, SettingGroup, SettingsPayload } from './api';
 import {
+  buildSettingReset,
   buildSettingsPatch,
   settingsErrorKey,
   settingsFormFrom,
@@ -27,16 +28,26 @@ import { useSaveSettings, useSettings } from './useSettings';
 const BADGE =
   'rounded-[var(--radius-md)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--color-muted)]';
 
+const CHIP =
+  'rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-text)] hover:border-[var(--color-accent)]';
+
+/** `{{token}}` catalogue of a setting; empty for the ones that expand nothing. */
+function placeholdersOf(entry: SettingEntry): [string, string][] {
+  return Object.entries(entry.placeholders ?? {});
+}
+
 type ControlProps = {
   entry: SettingEntry;
   payload: SettingsPayload;
   value: string;
   invalid: boolean;
+  /** Only set for a field whose `placeholders` chips insert at the caret. */
+  inputRef?: Ref<HTMLInputElement>;
   onChange: (value: string) => void;
 };
 
 /** One input, picked from `entry.type`. */
-function SettingControl({ entry, payload, value, invalid, onChange }: ControlProps) {
+function SettingControl({ entry, payload, value, invalid, inputRef, onChange }: ControlProps) {
   const { t } = useTranslation();
   const id = `set_${entry.key.replace(/\./g, '_')}`;
   const invalidClass = invalid ? 'border-[var(--color-danger)]' : undefined;
@@ -144,7 +155,16 @@ function SettingControl({ entry, payload, value, invalid, onChange }: ControlPro
 
     default:
       return (
-        <Input id={id} className={invalidClass} value={value} onChange={(event) => onChange(event.target.value)} />
+        <Input
+          id={id}
+          ref={inputRef}
+          className={invalidClass}
+          value={value}
+          // The built-in default doubles as the hint, so an empty field shows
+          // what a reset would bring back (`{{company}}-{{asset}}-`).
+          placeholder={entry.default === null || entry.default === '' ? undefined : entry.default}
+          onChange={(event) => onChange(event.target.value)}
+        />
       );
   }
 }
@@ -165,6 +185,9 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
   const { t } = useTranslation();
   const query = useSettings();
   const save = useSaveSettings();
+  // The one field that renders `placeholders` chips (`s3.prefix`) owns this ref,
+  // so a chip inserts at the caret instead of the end of the value.
+  const tokensInput = useRef<HTMLInputElement | null>(null);
 
   const sections = useMemo(
     () =>
@@ -209,6 +232,23 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
     setForm((current) => ({ ...current, values: { ...current.values, [key]: value } }));
   };
 
+  /** Insert `{{token}}` where the caret is (the selection survives the click). */
+  const insertToken = (key: string, token: string) => {
+    const input = tokensInput.current;
+    const current = form.values[key] ?? '';
+    const start = input?.selectionStart ?? current.length;
+    const end = input?.selectionEnd ?? start;
+    setValue(key, `${current.slice(0, start)}${token}${current.slice(end)}`);
+    if (input === null) {
+      return;
+    }
+    input.focus();
+    // Controlled input: React writes the new value on the next commit, so the
+    // caret is restored after the browser has painted it.
+    const caret = start + token.length;
+    requestAnimationFrame(() => input.setSelectionRange(caret, caret));
+  };
+
   const toggleClear = (key: string, cleared: boolean) => {
     setForm((current) => ({ ...current, clears: { ...current.clears, [key]: cleared } }));
   };
@@ -229,6 +269,7 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
             const id = `set_${entry.key.replace(/\./g, '_')}`;
             const code = fieldErrors[entry.key];
             const errorKey = code === undefined ? null : settingsErrorKey(code);
+            const tokens = placeholdersOf(entry);
             return (
               <div key={entry.key} className="flex flex-col gap-1">
                 {entry.type === 'bool' ? null : (
@@ -241,10 +282,42 @@ export function SettingsGroupPanel({ groups: wanted, intro, labelledBy }: Props)
                   payload={payload}
                   value={form.values[entry.key] ?? ''}
                   invalid={code !== undefined}
+                  inputRef={tokens.length === 0 ? undefined : tokensInput}
                   onChange={(value) => setValue(entry.key, value)}
                 />
+                {tokens.length === 0 ? null : (
+                  <div className="flex flex-col gap-1">
+                    <p className="m-0 text-xs text-[var(--color-muted)]">{t('set_prefix_placeholders')}</p>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {tokens.map(([token, label]) => (
+                        <button
+                          key={token}
+                          type="button"
+                          className={CHIP}
+                          title={label}
+                          onClick={() => insertToken(entry.key, `{{${token}}}`)}
+                        >
+                          {`{{${token}}}`}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="m-0 text-xs text-[var(--color-muted)]">{t('set_prefix_hint')}</p>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={BADGE}>{t(`set_source_${entry.source}`)}</span>
+                  {entry.source === 'db' && !entry.secret ? (
+                    // Dropping the DB row restores the env/default tier; the rest
+                    // of the form rides along so no other card loses an edit.
+                    <Button
+                      variant="ghost"
+                      className="px-2 py-0.5 text-xs"
+                      disabled={save.isPending}
+                      onClick={() => save.mutate(buildSettingReset(entries, form, entry.key))}
+                    >
+                      {t('set_reset_default')}
+                    </Button>
+                  ) : null}
                   {entry.secret && entry.configured === true ? (
                     <Checkbox
                       label={t('set_secret_clear')}

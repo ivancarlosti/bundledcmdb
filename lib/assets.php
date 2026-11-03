@@ -123,6 +123,19 @@ function asset_status_values(): array
     return ['In Use', 'In Stock', 'In Repair', 'Decommissioned', 'Lost or Stolen'];
 }
 
+/**
+ * Machine values for why a device was deleted (`assets.deleted_reason`).
+ *
+ * Stored as English like the status values; the panel shows them through the
+ * `ui_delete_reason_*` translations, so the column is stable for reports.
+ *
+ * @return list<string>
+ */
+function asset_deletion_reasons(): array
+{
+    return ['duplicated', 'created_by_mistake'];
+}
+
 
 // --- Value normalisation / validation -----------------------------------
 
@@ -361,15 +374,39 @@ function asset_update(PDO $pdo, int $id, array $data, string $actor, ?string $co
     return $stmt->rowCount();
 }
 
-/** Soft delete; falls back to a hard delete before the migration ran. */
-function asset_soft_delete(PDO $pdo, int $id, string $actor, ?string $company = null): bool
-{
+/**
+ * Soft delete; falls back to a hard delete before the migration ran.
+ *
+ * `$reason` is one of `asset_deletion_reasons()` and `$duplicateOf` the asset
+ * that was kept instead; both are optional (older callers and the Bearer API
+ * delete without them) and both are skipped on an un-migrated database, where
+ * the columns do not exist yet.
+ */
+function asset_soft_delete(
+    PDO $pdo,
+    int $id,
+    string $actor,
+    ?string $company = null,
+    ?string $reason = null,
+    ?int $duplicateOf = null
+): bool {
     if (!db_column_exists($pdo, 'assets', 'deleted_at')) {
         return asset_hard_delete($pdo, $id, $company);
     }
     $now = gmdate('Y-m-d H:i:s');
-    $sql = 'UPDATE assets SET deleted_at = ?, updated_at = ?, updated_by = ? WHERE `Id` = ?';
-    $params = [$now, $now, $actor, $id];
+    $set = ['`deleted_at` = ?', '`updated_at` = ?', '`updated_by` = ?'];
+    $params = [$now, $now, $actor];
+    if ($reason !== null && db_column_exists($pdo, 'assets', 'deleted_reason')) {
+        $set[] = '`deleted_reason` = ?';
+        $params[] = $reason;
+    }
+    if ($duplicateOf !== null && db_column_exists($pdo, 'assets', 'duplicate_of_id')) {
+        $set[] = '`duplicate_of_id` = ?';
+        $params[] = $duplicateOf;
+    }
+    $params[] = $id;
+
+    $sql = 'UPDATE assets SET ' . implode(', ', $set) . ' WHERE `Id` = ?';
     if ($company !== null && $company !== '') {
         $sql .= ' AND `company` = ?';
         $params[] = $company;
@@ -379,13 +416,23 @@ function asset_soft_delete(PDO $pdo, int $id, string $actor, ?string $company = 
     return $stmt->rowCount() > 0;
 }
 
+/** Restore a trashed asset; the deletion reason and the duplicate link go too. */
 function asset_restore(PDO $pdo, int $id, string $actor, ?string $company = null): bool
 {
     if (!db_column_exists($pdo, 'assets', 'deleted_at')) {
         return false;
     }
-    $sql = 'UPDATE assets SET deleted_at = NULL, updated_at = ?, updated_by = ? WHERE `Id` = ?';
-    $params = [gmdate('Y-m-d H:i:s'), $actor, $id];
+    $set = ['`deleted_at` = NULL', '`updated_at` = ?', '`updated_by` = ?'];
+    $params = [gmdate('Y-m-d H:i:s'), $actor];
+    if (db_column_exists($pdo, 'assets', 'deleted_reason')) {
+        $set[] = '`deleted_reason` = NULL';
+    }
+    if (db_column_exists($pdo, 'assets', 'duplicate_of_id')) {
+        $set[] = '`duplicate_of_id` = NULL';
+    }
+    $params[] = $id;
+
+    $sql = 'UPDATE assets SET ' . implode(', ', $set) . ' WHERE `Id` = ?';
     if ($company !== null && $company !== '') {
         $sql .= ' AND `company` = ?';
         $params[] = $company;
@@ -410,6 +457,12 @@ function asset_hard_delete(PDO $pdo, int $id, ?string $company = null): bool
     }
     if (db_table_exists($pdo, 'device_files')) {
         $pdo->prepare("DELETE FROM device_files WHERE device_id = ? AND device_table = 'assets'")->execute([$id]);
+    }
+    if (db_column_exists($pdo, 'assets', 'duplicate_of_id')) {
+        // The reference only makes sense while both rows exist. Other trashed
+        // rows keep pointing nowhere rather than at a recycled AUTO_INCREMENT id,
+        // and `updated_at` stays untouched: nothing about them changed.
+        $pdo->prepare('UPDATE assets SET `duplicate_of_id` = NULL WHERE `duplicate_of_id` = ?')->execute([$id]);
     }
     $stmt = $pdo->prepare('DELETE FROM assets WHERE `Id` = ?' . $companyClause);
     $stmt->execute($params);
@@ -696,6 +749,8 @@ function asset_api_payload(array $row, array $custom = []): array
         'created_by'        => $row['created_by'] ?? null,
         'updated_by'        => $row['updated_by'] ?? null,
         'deleted_at'        => asset_iso_datetime($row['deleted_at'] ?? null),
+        'deleted_reason'    => $row['deleted_reason'] ?? null,
+        'duplicate_of_id'   => isset($row['duplicate_of_id']) ? (int) $row['duplicate_of_id'] : null,
         'custom'            => (object) $custom,
     ];
 }

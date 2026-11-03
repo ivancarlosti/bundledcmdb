@@ -268,8 +268,34 @@ function panel_device_payload(array $row, array $custom = [], int $filesCount = 
         'created_by'        => $row['created_by'] ?? null,
         'updated_by'        => $row['updated_by'] ?? null,
         'deleted_at'        => asset_iso_datetime(isset($row['deleted_at']) ? (string) $row['deleted_at'] : null),
+        'deleted_reason'    => $row['deleted_reason'] ?? null,
+        'duplicate_of_id'   => isset($row['duplicate_of_id']) ? (int) $row['duplicate_of_id'] : null,
         'files_count'       => $filesCount,
         'custom'            => $custom === [] ? new stdClass() : $custom,
+    ];
+}
+
+/**
+ * Minimal reference to the asset a trashed duplicate points at.
+ *
+ * The detail page links to it, so the SPA needs an id, a label and nothing it
+ * could not already read. A row outside the caller's company (or one that was
+ * purged since) resolves to null and the UI falls back to the stored id.
+ *
+ * @return array{id: int, sn: ?string, hostname: ?string, deleted_at: ?string}|null
+ */
+function panel_device_duplicate_ref(PDO $pdo, int $id, ?string $company): ?array
+{
+    $row = asset_get($pdo, $id, $company, true);
+    if ($row === null) {
+        return null;
+    }
+
+    return [
+        'id'         => (int) $row['Id'],
+        'sn'         => $row['SN'] ?? null,
+        'hostname'   => $row['Hostname'] ?? null,
+        'deleted_at' => asset_iso_datetime(isset($row['deleted_at']) ? (string) $row['deleted_at'] : null),
     ];
 }
 
@@ -421,6 +447,11 @@ function panel_devices_show(array $params = []): array
 
     $payload = panel_device_payload($row, $custom, count($files));
     $payload['files'] = $files;
+    if ($payload['duplicate_of_id'] !== null) {
+        // Only trashed duplicates carry a reference; resolving it here keeps the
+        // grid free of an N+1 and lets the detail page link to what was kept.
+        $payload['duplicate_of'] = panel_device_duplicate_ref($pdo, (int) $payload['duplicate_of_id'], $company);
+    }
 
     return ['data' => $payload];
 }

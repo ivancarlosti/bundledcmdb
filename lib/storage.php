@@ -90,11 +90,129 @@ function storage_local_ensure_dir(): bool
 }
 
 /**
+ * Tokens the object-key prefix understands, straight from the setting
+ * definition, so the panel and the resolver can never disagree.
+ *
+ * @return array<string, string> token => English label
+ */
+function storage_prefix_tokens(): array
+{
+    try {
+        $tokens = settings_definitions()['s3.prefix']['placeholders'] ?? [];
+    } catch (Throwable) {
+        return [];
+    }
+    return is_array($tokens) ? $tokens : [];
+}
+
+/**
+ * One placeholder value: safe for a key segment, or `''` when nothing is left.
+ *
+ * A company called `ACME / BR` must not invent a folder, and `..` must not
+ * survive — `local` writes below `var/storage` and S3 clients treat `/` as a
+ * namespace, so both matter.
+ */
+function storage_prefix_segment(string $value): string
+{
+    $value = (string) preg_replace('/[^A-Za-z0-9._-]+/', '_', trim($value));
+    return trim($value, '._-');
+}
+
+/**
+ * Expand the `{{token}}` placeholders in `s3.prefix` for one asset.
+ *
+ * Uploads are the only place the prefix is applied: the key stored in
+ * `device_files.file_path` is already fully qualified, and reads/deletes use it
+ * verbatim (`new S3Client(['prefix' => ''])`), so changing the prefix later can
+ * never strand an object.
+ *
+ * Rules, in order:
+ *  - a known token becomes the asset value passed through
+ *    `storage_prefix_segment()`; a token that resolves to nothing expands to
+ *    nothing (`{{company}}-{{asset}}-` on a tagless asset reads `ACME--` →
+ *    `ACME-`, which `S3Client::objectKey()` still glues straight onto the key);
+ *  - runs of the same separator collapse (`a--b` → `a-b`) and leading
+ *    separators are trimmed, because a prefix never starts with `-`, `_` or `/`;
+ *  - a *literal* trailing `-`/`_` survives, because it is what asks
+ *    `S3Client::objectKey()` to run into the key instead of creating a folder;
+ *  - unknown tokens stay literal (a typo is visible instead of swallowed); the
+ *    settings form rejects them on save (`storage_prefix_unknown_token()`).
+ */
+function storage_prefix_resolve(array $asset = []): string
+{
+    try {
+        $template = trim((string) settings_get('s3.prefix', ''));
+    } catch (Throwable) {
+        return '';
+    }
+    if ($template === '') {
+        return '';
+    }
+
+    $catalog = storage_prefix_tokens();
+    $values = [
+        'company'  => (string) ($asset['company'] ?? ''),
+        'asset'    => (string) ($asset['Asset'] ?? ''),
+        'id'       => (string) ($asset['Id'] ?? ''),
+        'sn'       => (string) ($asset['SN'] ?? ''),
+        'hostname' => (string) ($asset['Hostname'] ?? ''),
+        'source'   => (string) ($asset['source'] ?? ''),
+    ];
+
+    // Literal and token segments alternate: [literal, token, literal, …].
+    $parts = preg_split('/\{\{\s*([A-Za-z_]+)\s*\}\}/', $template, -1, PREG_SPLIT_DELIM_CAPTURE);
+    if (!is_array($parts)) {
+        return '';
+    }
+
+    $out = '';
+    $count = count($parts);
+    for ($i = 0; $i < $count; $i++) {
+        if ($i % 2 === 0) {
+            $out .= $parts[$i];
+            continue;
+        }
+        $token = strtolower((string) $parts[$i]);
+        if (!array_key_exists($token, $catalog) || !array_key_exists($token, $values)) {
+            $out .= '{{' . $token . '}}';
+            continue;
+        }
+        $out .= storage_prefix_segment($values[$token]);
+    }
+
+    // A prefix is a path fragment: a doubled separator is an artefact of an
+    // empty token (`ACME--` → `ACME-`), it never starts with a separator, and a
+    // folder prefix may not end with one. The trailing `-`/`_` stays.
+    $out = (string) preg_replace('#([-_/])\1+#', '$1', $out);
+    $out = ltrim($out, '-_/');
+    return rtrim($out, '/');
+}
+
+/** First unknown `{{token}}` in a template, or null. Used to reject a typo on save. */
+function storage_prefix_unknown_token(string $template): ?string
+{
+    $catalog = storage_prefix_tokens();
+    if (preg_match_all('/\{\{\s*([A-Za-z_]+)\s*\}\}/', $template, $matches) === false) {
+        return null;
+    }
+    foreach ($matches[1] as $token) {
+        if (!array_key_exists(strtolower((string) $token), $catalog)) {
+            return (string) $token;
+        }
+    }
+    return null;
+}
+
+/**
  * Store a file.
  *
+ * `$asset` feeds the `{{token}}` placeholders of `s3.prefix`; the local driver
+ * ignores the prefix, so both drivers keep storing `assets/<id>/<name>` rows.
+ *
+ * @param array<string, mixed> $asset Asset row the key belongs to
  * @return array{success: bool, message: string, key: string}
  */
-function storage_put(string $tmpPath, string $key, string $mime = 'application/octet-stream'): array
+function storage_put(string $tmpPath, string $key, string $mime = 'application/octet-stream', array $asset = []): array
 {
     $key = storage_safe_key($key);
     if ($key === '') {
@@ -118,7 +236,9 @@ function storage_put(string $tmpPath, string $key, string $mime = 'application/o
     }
 
     require_once __DIR__ . '/../s3_client.php';
-    $s3 = new S3Client();
+    // The prefix is expanded here and nowhere else: this is the moment the asset
+    // the placeholders refer to is known.
+    $s3 = new S3Client(['prefix' => storage_prefix_resolve($asset)]);
     if (!$s3->isConfigured()) {
         return ['success' => false, 'message' => 'Object storage is not configured.', 'key' => $key];
     }
@@ -145,7 +265,9 @@ function storage_delete(string $key): bool
     }
 
     require_once __DIR__ . '/../s3_client.php';
-    $s3 = new S3Client();
+    // No prefix: the row already carries the fully-qualified key, so expanding
+    // the template again would target the wrong object after a prefix change.
+    $s3 = new S3Client(['prefix' => '']);
     if (!$s3->isConfigured()) {
         return false;
     }
@@ -178,7 +300,8 @@ function storage_presigned_url(string $key): ?string
         return null;
     }
     require_once __DIR__ . '/../s3_client.php';
-    $s3 = new S3Client();
+    // Same reason as `storage_delete()`: the key is already fully qualified.
+    $s3 = new S3Client(['prefix' => '']);
     if (!$s3->isConfigured()) {
         return null;
     }

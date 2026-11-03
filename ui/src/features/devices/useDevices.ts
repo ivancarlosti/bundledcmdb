@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import type { GridState } from '@/features/grid/gridSearch';
-import { devicesPageQuery } from '@/features/grid/gridSearch';
+import { defaultGridState, devicesPageQuery } from '@/features/grid/gridSearch';
 
 import { fetchCompanyUsers, fetchDevice, fetchDeviceEvents, fetchDevices, fetchMeta } from './api';
 
@@ -64,5 +64,27 @@ export function useCompanyUsers(company: string) {
     queryKey: ['company-users', company],
     queryFn: () => fetchCompanyUsers(company),
     staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * Up to eight devices matching a typed serial number / hostname.
+ *
+ * Backs the "duplicate of" picker of the delete action. The server resolves the
+ * reference to a live row in the caller's company, so this only has to offer what
+ * a grid search would (`/devices?q=…`): trashed rows are excluded by default and
+ * the row being deleted is filtered out here. Two characters is the floor — one
+ * letter matches a page of unrelated rows and is not worth a request.
+ */
+export function useDeviceSearch(term: string, excludeId: number | null = null) {
+  const q = term.trim();
+  return useQuery({
+    queryKey: ['device-search', q, excludeId],
+    queryFn: async () => {
+      const result = await fetchDevices({ ...defaultGridState(), q, perPage: 8 });
+      return result.payload.rows.filter((row) => row.id !== excludeId);
+    },
+    enabled: q.length >= 2,
+    staleTime: 10_000,
   });
 }

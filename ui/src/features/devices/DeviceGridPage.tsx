@@ -184,17 +184,22 @@ export function DeviceGridPage() {
     [meta?.statuses, t],
   );
 
+  const deleteReasonOptions = useMemo(
+    () => (meta?.deleteReasons ?? []).map((option) => ({ value: option.value, label: t(option.label_key) })),
+    [meta?.deleteReasons, t],
+  );
+
   /**
    * One bulk request per action; the server answers per row, so a stale or
    * deleted row no longer swallows the whole action. The selection is cleared
    * only after the response, so a failed request can be retried as-is.
    */
-  const runBulk = (op: BulkOp, value?: string | boolean) => {
+  const runBulk = (op: BulkOp, value?: string | boolean, reason?: string | null) => {
     if (selected.length === 0) {
       return;
     }
     bulk.mutate(
-      { op, ids: selected, value },
+      { op, ids: selected, value, reason },
       {
         onSuccess: () => {
           setSelected([]);
@@ -351,11 +356,12 @@ export function DeviceGridPage() {
         <BulkActions
           count={selected.length}
           statuses={statusOptions}
+          deleteReasons={deleteReasonOptions}
           canAdmin={session.capabilities.can_admin}
           pending={bulk.isPending}
           onStatus={(status) => runBulk('status', status)}
           onByod={(value) => runBulk('byod', value)}
-          onDelete={() => runBulk('delete')}
+          onDelete={(reason) => runBulk('delete', undefined, reason)}
           onRestore={() => runBulk('restore')}
           onClear={clearSelection}
         />

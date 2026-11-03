@@ -73,5 +73,8 @@ test.describe('bulk actions', () => {
 
     await expect.poll(() => bulk).toBeDefined();
     expect(bulk).toMatchObject({ op: 'delete', ids: [7] });
+    // The bulk reason is optional: nothing chosen means no `reason` in the body,
+    // which is how the API tells "no answer" from an actual value.
+    expect(bulk).not.toHaveProperty('reason');
   });
 });

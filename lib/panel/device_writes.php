@@ -482,6 +482,102 @@ function panel_devices_replace(array $params = []): array
 }
 
 
+/**
+ * Validate the optional "why was this deleted" inputs.
+ *
+ * Both are optional — the Bearer API and older SPA builds delete without them —
+ * but a value that is sent has to be usable: an unknown reason or a dangling
+ * duplicate reference would be recorded as a fact that nobody can act on.
+ *
+ * @return array{reason: ?string, duplicate_of: ?int}
+ *
+ * @throws ApiError('validation_failed', …, 422)
+ */
+function panel_delete_reason_input(mixed $reasonRaw, mixed $duplicateRaw): array
+{
+    $reason = null;
+    if (is_string($reasonRaw) && trim($reasonRaw) !== '') {
+        $reason = trim($reasonRaw);
+        if (!in_array($reason, asset_deletion_reasons(), true)) {
+            throw new ApiError(
+                'validation_failed',
+                'Unknown deletion reason.',
+                422,
+                ['reason' => 'invalid_reason']
+            );
+        }
+    }
+
+    $duplicateOf = null;
+    if (is_int($duplicateRaw) || (is_string($duplicateRaw) && trim($duplicateRaw) !== '')) {
+        $raw = trim((string) $duplicateRaw);
+        if (ctype_digit($raw) === false || (int) $raw < 1) {
+            throw new ApiError(
+                'validation_failed',
+                'duplicate_of must be a device id.',
+                422,
+                ['duplicate_of' => 'invalid']
+            );
+        }
+        $duplicateOf = (int) $raw;
+        if ($reason !== 'duplicated') {
+            throw new ApiError(
+                'validation_failed',
+                'duplicate_of only applies to the "duplicated" reason.',
+                422,
+                ['duplicate_of' => 'reason_not_duplicated']
+            );
+        }
+    }
+
+    return ['reason' => $reason, 'duplicate_of' => $duplicateOf];
+}
+
+/**
+ * The duplicate reference must be another, still-live device the caller can see.
+ *
+ * @throws ApiError('validation_failed', …, 422)
+ */
+function panel_delete_validate_duplicate(PDO $pdo, array $user, int $id, int $duplicateOf): void
+{
+    if ($duplicateOf === $id) {
+        throw new ApiError('validation_failed', 'A device cannot duplicate itself.', 422, ['duplicate_of' => 'self']);
+    }
+    $company = $user['company'] !== '' ? $user['company'] : null;
+    $target = asset_get($pdo, $duplicateOf, $company, true);
+    if ($target === null) {
+        throw new ApiError('validation_failed', 'The duplicate reference was not found.', 422, ['duplicate_of' => 'not_found']);
+    }
+    if (!empty($target['deleted_at'])) {
+        throw new ApiError(
+            'validation_failed',
+            'The duplicate reference is itself deleted.',
+            422,
+            ['duplicate_of' => 'deleted']
+        );
+    }
+}
+
+/**
+ * Audit diff for a soft delete: the reason and the kept asset are new values.
+ *
+ * The Logs screen already renders `field: old → new`, so recording them as a
+ * change keeps the history readable without a delete-specific renderer.
+ *
+ * @return array<string, array{0: ?string, 1: ?string}>
+ */
+function panel_delete_event_changes(?string $reason, ?int $duplicateOf): array
+{
+    $changes = [];
+    if ($reason !== null) {
+        $changes['deleted_reason'] = [null, $reason];
+    }
+    if ($duplicateOf !== null) {
+        $changes['duplicate_of_id'] = [null, (string) $duplicateOf];
+    }
+    return $changes;
+}
+
 /** DELETE /devices/{id} */
 function panel_devices_delete(array $params = []): array
 {
@@ -502,15 +598,45 @@ function panel_devices_delete(array $params = []): array
         throw new ApiError('conflict', 'This device is already deleted.', 409, ['deleted_at' => 'trashed']);
     }
 
+    // A hard delete removes the row the reason would describe, so the query
+    // string is only honoured for the soft path (and ignored, not rejected, so
+    // the two callers can share one URL shape).
+    $reason = null;
+    $duplicateOf = null;
+    if (!$hard) {
+        $input = panel_delete_reason_input($_GET['reason'] ?? null, $_GET['duplicate_of'] ?? null);
+        $reason = $input['reason'];
+        $duplicateOf = $input['duplicate_of'];
+        if ($duplicateOf !== null) {
+            panel_delete_validate_duplicate($pdo, $user, $id, $duplicateOf);
+        }
+    }
+
     if ($hard) {
         asset_hard_delete($pdo, $id, $company);
         asset_event_record($pdo, $id, 'purge', $user['email'], [], null, asset_event_device_meta($row, $id));
     } else {
-        asset_soft_delete($pdo, $id, $user['email'], $company);
-        asset_event_record($pdo, $id, 'delete', $user['email'], [], null, asset_event_device_meta($row, $id));
+        asset_soft_delete($pdo, $id, $user['email'], $company, $reason, $duplicateOf);
+        asset_event_record(
+            $pdo,
+            $id,
+            'delete',
+            $user['email'],
+            panel_delete_event_changes($reason, $duplicateOf),
+            null,
+            asset_event_device_meta($row, $id)
+        );
     }
 
-    return ['data' => ['id' => $id, 'deleted' => true, 'hard' => $hard]];
+    return [
+        'data' => [
+            'id'              => $id,
+            'deleted'         => true,
+            'hard'            => $hard,
+            'deleted_reason'  => $reason,
+            'duplicate_of_id' => $duplicateOf,
+        ],
+    ];
 }
 
 /** POST /devices/{id}/restore — idempotent: restoring a live row is a no-op. */
@@ -586,6 +712,7 @@ function panel_bulk_ids(mixed $raw): array
  *   {"ids": [1, 2], "op": "status", "value": "In Use"}   manager+
  *   {"ids": [1, 2], "op": "byod",   "value": true}       manager+
  *   {"ids": [1, 2], "op": "delete", "hard": false}       admin+
+ *   {"ids": [1, 2], "op": "delete", "reason": "duplicated"}  admin+
  *   {"ids": [1, 2], "op": "restore"}                     admin+
  *
  * Each row goes through the same single-row helpers in its own transaction, so
@@ -622,6 +749,14 @@ function panel_devices_bulk(array $params = []): array
 
     $ids = panel_bulk_ids($body['ids'] ?? null);
 
+    // One shared reason for the whole batch: the SPA offers it next to the bulk
+    // action and it stays optional there, so a one-click delete still works.
+    // Duplicate references are single-row only — a list has no single kept asset.
+    $reason = null;
+    if ($op === 'delete') {
+        $reason = panel_delete_reason_input($body['reason'] ?? null, null)['reason'];
+    }
+
     $value = null;
     if ($op === 'status') {
         $value = (string) ($body['value'] ?? '');
@@ -653,8 +788,16 @@ function panel_devices_bulk(array $params = []): array
                     asset_hard_delete($pdo, $id, $company);
                     asset_event_record($pdo, $id, 'purge', $user['email'], [], null, asset_event_device_meta($row, $id));
                 } else {
-                    asset_soft_delete($pdo, $id, $user['email'], $company);
-                    asset_event_record($pdo, $id, 'delete', $user['email'], [], null, asset_event_device_meta($row, $id));
+                    asset_soft_delete($pdo, $id, $user['email'], $company, $reason);
+                    asset_event_record(
+                        $pdo,
+                        $id,
+                        'delete',
+                        $user['email'],
+                        panel_delete_event_changes($reason, null),
+                        null,
+                        asset_event_device_meta($row, $id)
+                    );
                 }
             } elseif ($op === 'restore') {
                 if (empty($row['deleted_at'])) {
@@ -681,7 +824,7 @@ function panel_devices_bulk(array $params = []): array
     }
 
     return [
-        'data' => ['op' => $op, 'updated' => $changed, 'skipped' => $skipped],
+        'data' => ['op' => $op, 'updated' => $changed, 'skipped' => $skipped, 'reason' => $reason],
         'meta' => ['changed' => count($changed), 'skipped' => count($skipped)],
     ];
 }
@@ -748,7 +891,9 @@ function panel_devices_files_store(array $params = []): array
     $safeName = (string) preg_replace('/[^A-Za-z0-9._-]+/', '_', $name);
 
     $key = 'assets/' . $id . '/' . uniqid('', true) . '_' . ($safeName === '' ? 'file' : $safeName);
-    $stored = storage_put((string) $file['tmp_name'], $key, $mime === '' ? 'application/octet-stream' : $mime);
+    // `$device` is what the `{{company}}`/`{{asset}}`/… placeholders of
+    // `s3.prefix` read; the returned key is the fully-qualified one the row keeps.
+    $stored = storage_put((string) $file['tmp_name'], $key, $mime === '' ? 'application/octet-stream' : $mime, $device);
     if (empty($stored['success'])) {
         throw new ApiError('storage_error', (string) ($stored['message'] ?? 'The file could not be stored.'), 502);
     }
@@ -782,7 +927,7 @@ function panel_devices_files_presign(array $params = []): array
 
     $id = panel_device_id($params);
     $pdo = db();
-    panel_device_for_write($pdo, $user, $id);
+    $device = panel_device_for_write($pdo, $user, $id);
 
     if (!panel_storage_configured()) {
         throw new ApiError('storage_not_configured', 'Object storage is not configured.', 503);
@@ -815,7 +960,9 @@ function panel_devices_files_presign(array $params = []): array
     $contentType = $mime === '' ? 'application/octet-stream' : $mime;
 
     require_once __DIR__ . '/../../s3_client.php';
-    $s3 = new S3Client();
+    // Same resolution the multipart path does (`storage_put()`), so the signed
+    // URL and the `key` returned to the SPA describe the same object.
+    $s3 = new S3Client(['prefix' => storage_prefix_resolve($device)]);
     $signed = $s3->getPresignedPutUrl($key, $contentType);
     if ($signed === null) {
         // A signature failure must not strand the upload: the client falls back.
@@ -835,7 +982,8 @@ function panel_devices_files_presign(array $params = []): array
  * Register an object the browser uploaded with the presigned PUT.
  *
  * Two checks keep this from being an "attach anything in the bucket" endpoint:
- * the key has to live under `assets/<this device>/`, and the object has to exist.
+ * the key has to live in this device's `assets/<id>/` folder (the object-key
+ * prefix may be glued in front of it), and the object has to exist.
  */
 function panel_devices_files_register(PDO $pdo, array $user, int $id, array $device = []): array
 {
@@ -858,7 +1006,10 @@ function panel_devices_files_register(PDO $pdo, array $user, int $id, array $dev
     if ($size <= 0 || $size > PANEL_MAX_UPLOAD_BYTES) {
         $errors['size'] = $size <= 0 ? 'required' : 'too_large';
     }
-    if ($errors === [] && !str_contains($key, '/assets/' . $id . '/') && !str_starts_with($key, 'assets/' . $id . '/')) {
+    if ($errors === [] && preg_match('#(?:^|[-_/])assets/' . $id . '/#', $key) !== 1) {
+        // The prefix may or may not be glued with a separator
+        // (`acme-001-assets/42/…`, `uploads/assets/42/…`, `assets/42/…`), so the
+        // segment boundary is what counts — never `assets/<other id>/`.
         $errors['key'] = 'invalid_key';
     }
     if ($errors !== []) {
@@ -867,7 +1018,8 @@ function panel_devices_files_register(PDO $pdo, array $user, int $id, array $dev
 
     if (storage_driver() === 's3') {
         require_once __DIR__ . '/../../s3_client.php';
-        $s3 = new S3Client();
+        // No prefix: `presign` already returned the fully-qualified key.
+        $s3 = new S3Client(['prefix' => '']);
         if (!$s3->objectExists(preg_replace('#^' . preg_quote($s3->bucket(), '#') . '/#', '', $key) ?? $key)) {
             throw new ApiError('validation_failed', 'The uploaded object was not found.', 422, ['key' => 'missing']);
         }

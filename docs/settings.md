@@ -77,6 +77,44 @@ lifetime and key prefix. The secret is encrypted with AES-256-GCM using
 **Test connection** performs a `HeadBucket` with the values in the form (or the
 saved ones) before you commit them.
 
+**Object key prefix** is a template, not a folder name. It ships as
+`{{company}}-{{asset}}-` and expands per asset at upload time
+(`storage_prefix_resolve()` in `lib/storage.php`):
+
+| Placeholder | Value |
+| --- | --- |
+| `{{company}}` | company of the asset |
+| `{{asset}}` | asset tag |
+| `{{id}}` | asset id |
+| `{{sn}}` | serial number |
+| `{{hostname}}` | hostname |
+| `{{source}}` | source slug |
+
+Values are sanitised to `[A-Za-z0-9._-]`, so a company called `ACME / BR` cannot
+invent a folder. A token with no value expands to nothing and the doubled
+separator it leaves collapses (`{{company}}-{{asset}}-` on a tagless asset is
+`ACME-`). An unknown token is refused on save (`422 invalid_placeholder`) rather
+than being written into every key. The panel lists the tokens as chips under the
+field and inserts them at the caret; the catalogue comes from
+`settings_definitions()` (`s3.prefix.placeholders`), so the two cannot drift.
+
+The join depends on the last character: a prefix ending in `-` or `_` runs into
+the key (`ACME-NB-1-assets/42/x.pdf`), anything else is a folder
+(`uploads/assets/42/x.pdf`). Expanding an empty template yields no prefix at all
+(`assets/42/x.pdf`). Uploads are the only place the prefix is applied — the row
+in `device_files.file_path` holds the final key, and downloads/deletes build the
+client with `prefix => ''` — so **changing the prefix only affects new uploads**
+and never strands a stored file. That also makes the default a behaviour change
+for an instance that never saved a prefix: new keys start with the company and
+asset tag instead of `uploads/`.
+
+Any setting whose badge says **DB** has a **Reset to default** button
+(`PATCH /settings` with `{"reset": [...]}`): it deletes the `app_settings` row so
+the environment or built-in default answers again, and the form is re-seeded from
+the response — the rest of the form is sent along, so edits in other cards are
+not discarded. Secrets are the exception: they are wiped with `{"clear": [...]}`
+and a reset on one answers `422 not_a_secret`.
+
 Generate a key once per environment:
 
 ```bash
@@ -167,7 +205,7 @@ cannot disagree about validation, defaults or protection rules.
 | Method + path | Role | Notes |
 |---|---|---|
 | `GET /settings` | admin | Settings grouped for the tabs + sources, locales, timezones and themes |
-| `PATCH /settings` | admin | `{ "values": {...}, "clear": [...] }`; answers the refreshed payload + `meta.saved` |
+| `PATCH /settings` | admin | `{ "values": {...}, "clear": [...], "reset": [...] }`; answers the refreshed payload + `meta.saved` |
 | `GET /settings/sources` | admin | Includes `usage` (assets per source) |
 | `POST /settings/sources` | admin | `{ slug, label, color, is_default }` |
 | `PATCH /settings/sources/{slug}` | admin | `slug` is immutable |
@@ -192,6 +230,13 @@ Two rules are worth calling out because they protect working installations:
 * **Secrets are write-only.** `GET` returns `value: ""` and `configured: true`, so
   the SPA never holds a stored secret. `PATCH` treats an empty string on a
   `secret` key as "unchanged"; wiping one is explicit (`{"clear": ["s3.secret_key"]}`).
+* **`reset` is how a DB hit goes back to DEFAULT/ENV.** It deletes the row, audits
+  old → new, and lists the key in `meta.saved`; `values` are applied first, so a
+  reset always wins for its own key. Secrets are refused (`not_a_secret`) because
+  `clear` is the operation that keeps the old value out of the audit trail.
+* **Every entry carries `default` and `placeholders`.** The first is the built-in
+  value the reset restores (never for a secret), the second is the `{{token}}`
+  catalogue — only `s3.prefix` has one today.
 * **Validation is per key.** A rejected write answers
   `422 { "error": { "code": "validation_failed", "errors": { "<key or field>": "<code>" } } }`,
   the same envelope the device writes use, and the SPA renders each code next to

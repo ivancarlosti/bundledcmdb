@@ -620,6 +620,96 @@ try {
     $again = panel_devices_restore(['id' => (string) $id]);
     check(($again['meta']['restored'] ?? true) === false, 'restore: idempotent');
 
+    // --- deletion reason ----------------------------------------------------
+    // "Deleted" alone does not answer why an asset went away, so the reason and
+    // the kept duplicate are columns (0014) and validated before the write.
+    $metaPayload = panel_meta_show()['data'];
+    check(
+        array_column($metaPayload['deleteReasons'] ?? [], 'value') === asset_deletion_reasons(),
+        'meta: deleteReasons matches asset_deletion_reasons()'
+    );
+
+    // The asset that was kept: the duplicate reference has to point at a live row
+    // of the same company, so the test owns the row it points at.
+    $duplicateBody = $createBody;
+    $duplicateBody['sn'] = $sn . '-DUP';
+    $duplicateBody['hostname'] = 'TEST-HOST-DUP';
+    body($duplicateBody);
+    $duplicate = panel_devices_create();
+    $duplicateId = (int) $duplicate['data']['id'];
+    $createdIds[] = $duplicateId;
+
+    as_role('admin', $companyA);
+    $_GET = ['reason' => 'because', 'duplicate_of' => (string) $duplicateId];
+    check_error(
+        'delete: unknown reason → 422',
+        fn () => panel_devices_delete(['id' => (string) $id]),
+        'validation_failed',
+        422,
+        ['reason' => 'invalid_reason']
+    );
+
+    $_GET = ['reason' => 'created_by_mistake', 'duplicate_of' => (string) $duplicateId];
+    check_error(
+        'delete: duplicate_of needs the duplicated reason → 422',
+        fn () => panel_devices_delete(['id' => (string) $id]),
+        'validation_failed',
+        422,
+        ['duplicate_of' => 'reason_not_duplicated']
+    );
+
+    $_GET = ['reason' => 'duplicated', 'duplicate_of' => (string) $id];
+    check_error(
+        'delete: a device cannot duplicate itself → 422',
+        fn () => panel_devices_delete(['id' => (string) $id]),
+        'validation_failed',
+        422,
+        ['duplicate_of' => 'self']
+    );
+
+    $_GET = ['reason' => 'duplicated', 'duplicate_of' => '999999'];
+    check_error(
+        'delete: unknown duplicate_of → 422',
+        fn () => panel_devices_delete(['id' => (string) $id]),
+        'validation_failed',
+        422,
+        ['duplicate_of' => 'not_found']
+    );
+
+    $_GET = ['reason' => 'duplicated', 'duplicate_of' => (string) $duplicateId];
+    $reasonDeleted = panel_devices_delete(['id' => (string) $id]);
+    check(($reasonDeleted['data']['deleted_reason'] ?? '') === 'duplicated', 'delete: reason is echoed');
+    check(($reasonDeleted['data']['duplicate_of_id'] ?? 0) === $duplicateId, 'delete: duplicate_of is echoed');
+
+    $trashedWithReason = asset_get($pdo, $id, null, true);
+    check(($trashedWithReason['deleted_reason'] ?? '') === 'duplicated', 'delete: reason is stored');
+    check((int) ($trashedWithReason['duplicate_of_id'] ?? 0) === $duplicateId, 'delete: duplicate_of is stored');
+
+    $_GET = [];
+    $shown = panel_devices_show(['id' => (string) $id])['data'];
+    check(($shown['deleted_reason'] ?? '') === 'duplicated', 'show: the reason is exposed');
+    check((int) ($shown['duplicate_of']['id'] ?? 0) === $duplicateId, 'show: duplicate_of resolves to the kept device');
+
+    $_GET = ['limit' => '5'];
+    $reasonEvents = panel_devices_events(['id' => (string) $id])['data'];
+    $_GET = [];
+    check(
+        ($reasonEvents['rows'][0]['changes']['deleted_reason'] ?? null) === [null, 'duplicated'],
+        'events: the delete records why it happened'
+    );
+
+    $restoredAgain = panel_devices_restore(['id' => (string) $id]);
+    // `?? 'kept'` would treat an existing NULL as missing, so the keys are asserted
+    // explicitly: the payload has to carry the cleared values, not omit them.
+    check(
+        array_key_exists('deleted_reason', $restoredAgain['data']) && $restoredAgain['data']['deleted_reason'] === null,
+        'restore: reason is cleared'
+    );
+    check(
+        array_key_exists('duplicate_of_id', $restoredAgain['data']) && $restoredAgain['data']['duplicate_of_id'] === null,
+        'restore: duplicate_of is cleared'
+    );
+
     $_GET = ['hard' => '1'];
     check_error('delete: admin cannot hard delete → 403', fn () => panel_devices_delete(['id' => (string) $id]), 'forbidden', 403);
     $_GET = [];
@@ -699,6 +789,44 @@ try {
             'path_style' => true, 'prefix' => 'uploads', 'presign_seconds' => 60,
         ]);
         check($s3Ready->isConfigured() === true, 'storage: a bucket plus an explicit key pair is configured');
+
+        // The join rule decides the folder layout of every upload: a prefix that
+        // ends in `-`/`_` runs into the key (`acme-1-assets/42/x.pdf`), anything
+        // else is a folder (`uploads/assets/42/x.pdf`), and an already-qualified
+        // key is never prefixed twice.
+        $dashPrefix = new S3Client([
+            'region' => 'us-east-1', 'endpoint' => '', 'bucket' => 'cmdb',
+            'access_key' => 'AKIAEXAMPLE', 'secret_key' => 'secret',
+            'path_style' => true, 'prefix' => 'acme-1-', 'presign_seconds' => 60,
+        ]);
+        check(
+            $dashPrefix->objectKey('assets/42/x.pdf') === 'acme-1-assets/42/x.pdf',
+            'storage: a prefix ending in - runs into the key',
+            $dashPrefix->objectKey('assets/42/x.pdf')
+        );
+        check(
+            $dashPrefix->objectKey('acme-1-assets/42/x.pdf') === 'acme-1-assets/42/x.pdf',
+            'storage: an already-prefixed key is not prefixed twice'
+        );
+        $folderPrefix = new S3Client([
+            'region' => 'us-east-1', 'endpoint' => '', 'bucket' => 'cmdb',
+            'access_key' => 'AKIAEXAMPLE', 'secret_key' => 'secret',
+            'path_style' => true, 'prefix' => 'uploads', 'presign_seconds' => 60,
+        ]);
+        check(
+            $folderPrefix->objectKey('assets/42/x.pdf') === 'uploads/assets/42/x.pdf',
+            'storage: any other prefix becomes a folder',
+            $folderPrefix->objectKey('assets/42/x.pdf')
+        );
+        $noPrefix = new S3Client([
+            'region' => 'us-east-1', 'endpoint' => '', 'bucket' => 'cmdb',
+            'access_key' => 'AKIAEXAMPLE', 'secret_key' => 'secret',
+            'path_style' => true, 'prefix' => '', 'presign_seconds' => 60,
+        ]);
+        check(
+            $noPrefix->objectKey('acme-1-assets/42/x.pdf') === 'acme-1-assets/42/x.pdf',
+            'storage: reads and deletes use the stored key verbatim'
+        );
     } else {
         fwrite(STDOUT, "  skip storage: S3 client configuration (AWS SDK is not installed)\n");
     }
@@ -792,6 +920,29 @@ try {
             422,
             ['key' => 'invalid_key']
         );
+
+        // …but the key the presign step handed out carries the object-key prefix
+        // (`ACME-1-assets/42/…`), so the segment boundary is what counts.
+        body(['key' => 'ACME-1-assets/' . $id . '/note.txt', 'name' => 'note.txt', 'mime' => 'text/plain', 'size' => 10]);
+        $registered = panel_devices_files_store(['id' => (string) $id]);
+        check(
+            ($registered['data']['path'] ?? '') === 'ACME-1-assets/' . $id . '/note.txt',
+            'storage: a prefixed key of this device registers',
+            (string) ($registered['data']['path'] ?? '')
+        );
+        panel_devices_files_delete(['id' => (string) $id, 'fileId' => (string) ($registered['data']['id'] ?? 0)]);
+
+        // A prefix only widens the check by a separator, never by a substring.
+        foreach (['xassets/' . $id . '/note.txt', 'uploads/assets/999/note.txt'] as $badKey) {
+            body(['key' => $badKey, 'name' => 'note.txt', 'mime' => 'text/plain', 'size' => 10]);
+            check_error(
+                'storage: ' . $badKey . ' is rejected',
+                fn () => panel_devices_files_store(['id' => (string) $id]),
+                'validation_failed',
+                422,
+                ['key' => 'invalid_key']
+            );
+        }
         unset($_SERVER['CONTENT_TYPE']);
     } finally {
         putenv($pathBefore === '' ? 'BCMDB_STORAGE_PATH' : 'BCMDB_STORAGE_PATH=' . $pathBefore);
@@ -900,6 +1051,31 @@ try {
     $bulkNoop = panel_devices_bulk();
     check(($bulkNoop['data']['skipped'][0]['code'] ?? '') === 'unchanged', 'bulk: restoring a live row is skipped');
 
+    // The bulk reason is optional (a mixed batch has no single answer) but the
+    // value that is sent is validated and stored on every row it deletes.
+    as_role('admin', $companyA);
+    check_error('bulk: unknown reason → 422', function (): void {
+        body(['ids' => [1], 'op' => 'delete', 'reason' => 'because']);
+        panel_devices_bulk();
+    }, 'validation_failed', 422, ['reason' => 'invalid_reason']);
+
+    body(['ids' => [$secondId], 'op' => 'delete', 'reason' => 'created_by_mistake']);
+    $bulkReason = panel_devices_bulk();
+    check(($bulkReason['data']['reason'] ?? '') === 'created_by_mistake', 'bulk: the reason is echoed');
+    $bulkReasonRow = asset_get($pdo, $secondId, null, true);
+    check(
+        ($bulkReasonRow['deleted_reason'] ?? '') === 'created_by_mistake',
+        'bulk: the reason is stored on the row'
+    );
+
+    body(['ids' => [$secondId], 'op' => 'restore']);
+    panel_devices_bulk();
+    $bulkRestoredRow = asset_get($pdo, $secondId, null, true);
+    check(
+        is_array($bulkRestoredRow) && $bulkRestoredRow['deleted_reason'] === null,
+        'bulk: restore clears the reason'
+    );
+
     if ($companyB !== '') {
         as_role('manager', $companyB, 'other-company@example.com');
         body(['ids' => [$id], 'op' => 'status', 'value' => $statusB]);
@@ -1001,6 +1177,94 @@ try {
         }
     }
     check($storedEntry !== null && $storedEntry['source'] === 'db', 'settings: source badge switches to db');
+
+    // --- settings: object-key prefix placeholders and reset ----------------
+    // `s3.prefix` is the one setting whose value is a template: the tokens are
+    // rejected on save, expanded at upload time, and the entry publishes both the
+    // catalogue and the default the "Reset to default" button restores.
+    $prefixBefore = settings_all(true)['s3.prefix'] ?? null;
+    try {
+        check_error('settings: an unknown placeholder → 422', function (): void {
+            body(['values' => ['s3.prefix' => '{{nope}}-']]);
+            panel_settings_update();
+        }, 'validation_failed', 422, ['s3.prefix' => 'invalid_placeholder']);
+
+        check_error('settings: resetting a secret → 422', function (): void {
+            body(['values' => [], 'reset' => ['s3.secret_key']]);
+            panel_settings_update();
+        }, 'validation_failed', 422, ['s3.secret_key' => 'not_a_secret']);
+
+        body(['values' => ['s3.prefix' => '{{company}}-{{asset}}-']]);
+        $savedPrefix = panel_settings_update();
+        check(
+            ($savedPrefix['meta']['saved'] ?? []) === ['s3.prefix'],
+            'settings: a template built from known placeholders is saved'
+        );
+        check(
+            storage_prefix_resolve(['company' => 'ACME', 'Asset' => 'NB-1']) === 'ACME-NB-1-',
+            'settings: the prefix expands from the asset row',
+            storage_prefix_resolve(['company' => 'ACME', 'Asset' => 'NB-1'])
+        );
+        check(
+            storage_prefix_resolve(['company' => 'ACME']) === 'ACME-',
+            'settings: a missing placeholder still leaves the dash that joins the key',
+            storage_prefix_resolve(['company' => 'ACME'])
+        );
+        check(storage_prefix_resolve([]) === '', 'settings: an all-empty template resolves to no prefix');
+
+        $prefixEntry = null;
+        foreach ($savedPrefix['data']['groups'] as $group) {
+            foreach ($group['settings'] as $entry) {
+                if ($entry['key'] === 's3.prefix') {
+                    $prefixEntry = $entry;
+                }
+            }
+        }
+        check(
+            $prefixEntry !== null && ($prefixEntry['default'] ?? null) === '{{company}}-{{asset}}-',
+            'settings: the entry publishes its default'
+        );
+        check(
+            $prefixEntry !== null && array_key_exists('company', (array) ($prefixEntry['placeholders'] ?? [])),
+            'settings: the entry publishes the placeholder catalogue'
+        );
+        check(
+            $prefixEntry !== null && $prefixEntry['source'] === 'db',
+            'settings: the saved prefix is a db hit'
+        );
+
+        // `reset` drops the row: the value falls back to the built-in default and
+        // the badge flips back, which is what the SPA button reads.
+        body(['values' => [], 'reset' => ['s3.prefix']]);
+        $resetPrefix = panel_settings_update();
+        check(
+            ($resetPrefix['meta']['saved'] ?? []) === ['s3.prefix'],
+            'settings: reset reports the key as saved'
+        );
+        $resetEntry = null;
+        foreach ($resetPrefix['data']['groups'] as $group) {
+            foreach ($group['settings'] as $entry) {
+                if ($entry['key'] === 's3.prefix') {
+                    $resetEntry = $entry;
+                }
+            }
+        }
+        check(
+            $resetEntry !== null && $resetEntry['source'] === 'default',
+            'settings: reset switches the source badge back to default'
+        );
+        check(
+            $resetEntry !== null && $resetEntry['value'] === '{{company}}-{{asset}}-',
+            'settings: reset restores the built-in default',
+            (string) ($resetEntry['value'] ?? '')
+        );
+    } finally {
+        if ($prefixBefore !== null && ($prefixBefore['source'] ?? '') === 'db') {
+            settings_set('s3.prefix', (string) $prefixBefore['value'], 'tester@example.com');
+        } else {
+            settings_forget('s3.prefix');
+        }
+    }
 
     // --- settings: sources ------------------------------------------------
     $testSource = 'panel_api_test';

@@ -187,6 +187,13 @@ ALTER TABLE assets ADD INDEX idx_assets_status (Status);
 -- `var/storage`, which the Docker stacks bind-mount.
 DELETE FROM app_settings WHERE skey = 'storage.local_path';
 
+-- 0014 records why a device was deleted (`duplicated` / `created_by_mistake`)
+-- and, for a duplicate, the asset that was kept. INT matches the common
+-- `assets.Id` type; bin/migrate.php uses the exact type of the column.
+ALTER TABLE assets ADD COLUMN deleted_reason VARCHAR(32) NULL;
+ALTER TABLE assets ADD COLUMN duplicate_of_id INT NULL;
+ALTER TABLE assets ADD INDEX idx_assets_deleted_reason (deleted_reason);
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -200,5 +207,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_04_0010_asset_events'),
     ('2026_11_04_0011_saved_views'),
     ('2026_11_05_0012_audit_entities'),
-    ('2026_11_06_0013_retire_storage_local_path');
+    ('2026_11_06_0013_retire_storage_local_path'),
+    ('2026_11_07_0014_asset_deletion_reason');
 

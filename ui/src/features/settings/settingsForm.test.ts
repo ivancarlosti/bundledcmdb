@@ -5,6 +5,7 @@ import {
   apiKeyFormFrom,
   buildApiKeyInput,
   buildFieldInput,
+  buildSettingReset,
   buildSettingsPatch,
   fieldFormFrom,
   moveField,
@@ -27,6 +28,8 @@ function setting(overrides: Partial<SettingEntry> & { key: string }): SettingEnt
     secret: false,
     configured: null,
     value: '',
+    default: '',
+    placeholders: {},
     ...overrides,
   };
 }
@@ -72,6 +75,41 @@ describe('buildSettingsPatch', () => {
     const form = { ...settingsFormFrom(entries), values: { 's3.path_style': '0' } };
 
     expect(buildSettingsPatch(entries, form).values['s3.path_style']).toBe('0');
+  });
+});
+
+describe('buildSettingReset', () => {
+  const PREFIX = setting({
+    key: 's3.prefix',
+    default: '{{company}}-{{asset}}-',
+    placeholders: { company: 'Company', asset: 'Asset tag' },
+    value: 'old/',
+  });
+
+  it('sends the rest of the form plus the key to reset, in that order', () => {
+    const entries = [BUCKET, PREFIX];
+    const form = settingsFormFrom(entries);
+    const body = buildSettingReset(entries, form, 's3.prefix');
+
+    // The values ride along so the re-seed cannot discard edits in other cards.
+    expect(body.values).toEqual({ 's3.bucket': 'cmdb', 's3.prefix': 'old/' });
+    expect(body.reset).toEqual(['s3.prefix']);
+  });
+
+  it('carries the current edits of the other settings', () => {
+    const entries = [BUCKET, PREFIX];
+    const form = { ...settingsFormFrom(entries), values: { 's3.bucket': 'elsewhere', 's3.prefix': 'old/' } };
+
+    expect(buildSettingReset(entries, form, 's3.prefix').values['s3.bucket']).toBe('elsewhere');
+  });
+
+  it('never sends a secret through a reset', () => {
+    const entries = [SECRET, PREFIX];
+    const form = settingsFormFrom(entries);
+
+    const body = buildSettingReset(entries, form, 's3.prefix');
+    expect(body.values['s3.secret_key']).toBeUndefined();
+    expect(body.clear).toBeUndefined();
   });
 });
 

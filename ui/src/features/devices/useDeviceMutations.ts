@@ -122,8 +122,17 @@ export function useBulkDeviceAction() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: ({ op, ids, value }: { op: BulkOp; ids: number[]; value?: string | boolean }) =>
-      bulkDevices(op, ids, { value }),
+    mutationFn: ({
+      op,
+      ids,
+      value,
+      reason,
+    }: {
+      op: BulkOp;
+      ids: number[];
+      value?: string | boolean;
+      reason?: string | null;
+    }) => bulkDevices(op, ids, { value, reason }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['devices'] });
       for (const id of result.updated) {
@@ -149,7 +158,8 @@ export function useDeleteDevice() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: (options: { id: number; hard?: boolean }) => deleteDevice(options.id, options.hard ?? false),
+    mutationFn: (options: { id: number; hard?: boolean; reason?: string | null; duplicateOf?: number | null }) =>
+      deleteDevice(options.id, { hard: options.hard, reason: options.reason, duplicateOf: options.duplicateOf }),
     onSuccess: (result) => {
       queryClient.removeQueries({ queryKey: ['device', result.id] });
       void queryClient.invalidateQueries({ queryKey: ['devices'] });

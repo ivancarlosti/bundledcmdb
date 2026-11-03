@@ -145,6 +145,8 @@ export const MESSAGES: Record<string, string> = {
   set_saved: 'Settings saved.',
   set_error: 'Some values could not be saved.',
   set_err_required: 'Required.',
+  set_prefix_placeholders: 'Insert a placeholder:',
+  set_reset_default: 'Reset to default',
   set_key_company: 'Company',
   set_user_all_companies: 'All companies',
   set_user_empty: 'No users yet.',
@@ -156,6 +158,7 @@ export const MESSAGES: Record<string, string> = {
   setting_assets_require_sn: 'Enable serial number requirement',
   setting_s3_bucket: 'Bucket',
   setting_s3_path_style: 'Enable path-style URLs (MinIO / self-hosted)',
+  setting_s3_prefix: 'Object key prefix',
   setting_s3_secret_key: 'Secret access key',
   setting_storage_driver: 'Attachment storage driver',
   role_user: 'User',
@@ -188,6 +191,19 @@ export const MESSAGES: Record<string, string> = {
   ui_bulk_done: '{{done}} device(s) updated.',
   ui_bulk_partial: '{{done}} updated, {{skipped}} skipped.',
   ui_restore: 'Restore',
+  delete_confirm: 'Delete this asset?',
+  ui_delete_reason: 'Reason',
+  ui_delete_reason_choose: 'Choose a reason…',
+  ui_delete_reason_duplicated: 'Duplicated',
+  ui_delete_reason_mistake: 'Created by mistake',
+  ui_delete_reason_none: 'No reason',
+  ui_delete_reason_required: 'Choose a reason before deleting.',
+  ui_duplicate_of: 'Duplicate of',
+  ui_duplicate_of_empty: 'No device matches “{{q}}”.',
+  ui_duplicate_of_hint: 'Only live devices of this company are listed.',
+  ui_duplicate_of_missing: 'Device #{{id}} (no longer available)',
+  ui_duplicate_of_placeholder: 'Search serial number or hostname',
+  ui_trashed_reason: 'Deleted because: {{reason}}',
 };
 
 export const SESSION = {
@@ -373,6 +389,10 @@ export const META = {
     { value: 'In Use', label_key: 'status_in_use' },
     { value: 'In Stock', label_key: 'status_stock' },
   ],
+  deleteReasons: [
+    { value: 'duplicated', label_key: 'ui_delete_reason_duplicated' },
+    { value: 'created_by_mistake', label_key: 'ui_delete_reason_mistake' },
+  ],
   sources: [],
   fields: [],
   companies: [],
@@ -478,6 +498,8 @@ export type MockOptions = {
   onCreate?: (body: Record<string, unknown>) => void;
   /** Called with the JSON body of every `POST /devices/bulk`. */
   onBulk?: (body: Record<string, unknown>) => void;
+  /** Called with the full URL of every `DELETE /devices/{id}` (query string included). */
+  onDelete?: (url: string) => void;
   /** Called with the JSON body of every `PATCH /session/preferences`. */
   onPreferences?: (patch: Record<string, unknown>) => void;
   /** Answer `POST /devices/{id}/files/presign` with this (default: server mode). */
@@ -619,8 +641,26 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
   });
 
   // Registered last so it wins over the generic list route for /devices/{id}.
-  await page.route('**/panel-api/v1/devices/**', (route) =>
-    json(route, {
+  // A delete lands here too (it is `DELETE /devices/{id}`): the reason travels as
+  // a query parameter, so the test reads it from the URL instead of a body.
+  await page.route('**/panel-api/v1/devices/**', (route) => {
+    if (route.request().method() === 'DELETE') {
+      const url = route.request().url();
+      options.onDelete?.(url);
+      const parsed = new URL(url);
+      const id = Number(parsed.pathname.split('/devices/')[1] ?? 0);
+      return json(route, {
+        id,
+        deleted: true,
+        hard: parsed.searchParams.get('hard') === '1',
+        deleted_reason: parsed.searchParams.get('reason'),
+        duplicate_of_id: parsed.searchParams.has('duplicate_of')
+          ? Number(parsed.searchParams.get('duplicate_of'))
+          : null,
+      });
+    }
+
+    return json(route, {
       ...ROWS[0],
       ...(options.detail ?? {}),
       files: [
@@ -633,8 +673,8 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
           uploaded_at: '2026-10-01T12:00:00Z',
         },
       ],
-    }),
-  );
+    });
+  });
 
   // ...and after that one so `POST /devices/bulk` is not read as `POST /devices/{id}`.
   await page.route('**/panel-api/v1/devices/bulk', (route) => {
@@ -759,6 +799,10 @@ type SettingStub = {
   secret: boolean;
   configured: boolean | null;
   value: string;
+  /** Built-in default; `null` for a secret. Feeds "Reset to default". */
+  default: string | null;
+  /** `{{token}}` catalogue; only `s3.prefix` has one. */
+  placeholders: Record<string, string>;
 };
 
 function settingStub(key: string, type: string, value: string, extra: Partial<SettingStub> = {}): SettingStub {
@@ -775,6 +819,8 @@ function settingStub(key: string, type: string, value: string, extra: Partial<Se
     secret: false,
     configured: null,
     value,
+    default: '',
+    placeholders: {},
     ...extra,
   };
 }
@@ -817,6 +863,12 @@ export const SETTINGS_PAYLOAD = {
       label_key: 'set_group_s3',
       settings: [
         settingStub('s3.bucket', 'text', 'cmdb'),
+        // The one template setting: the tokens travel with the entry, so the
+        // panel can offer chips instead of only documenting them.
+        settingStub('s3.prefix', 'text', 'uploads', {
+          default: '{{company}}-{{asset}}-',
+          placeholders: { company: 'Company', asset: 'Asset tag', id: 'Asset id' },
+        }),
         settingStub('s3.path_style', 'bool', '1'),
         // A stored secret: the API sends an empty value and `configured: true`,
         // which is what "leave blank to keep" is built on.
@@ -874,8 +926,9 @@ export async function mockSettings(page: Page, options: SettingsMockOptions = {}
     }
 
     const values = (body.values ?? {}) as Record<string, unknown>;
+    const reset = (body.reset ?? []) as string[];
     await route.fulfill({
-      json: { ok: true, data: SETTINGS_PAYLOAD, meta: { saved: Object.keys(values) } },
+      json: { ok: true, data: SETTINGS_PAYLOAD, meta: { saved: [...Object.keys(values), ...reset] } },
     });
   });
 

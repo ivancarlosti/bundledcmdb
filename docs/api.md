@@ -149,6 +149,11 @@ Each item is processed independently:
 Soft delete by default (`deleted_at`), hidden from lists. `?hard=1` removes the
 row plus its custom values and attachment metadata (files stay in S3).
 
+A trashed row also carries `deleted_reason` (`duplicated` / `created_by_mistake`)
+and `duplicate_of_id` **when the web panel deleted it** — the panel asks why and
+stores the kept asset, this API does not take a reason. Both are `null` for rows
+deleted here or before migration `0014`, and a restore clears them.
+
 > The web panel does **not** use this API. It talks to its own session-authenticated
 > `/panel-api/v1` (same envelope, CSRF header instead of a Bearer token), which
 > shares the model layer with the endpoints above. Its route table, including the

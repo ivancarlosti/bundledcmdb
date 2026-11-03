@@ -130,8 +130,19 @@ function settings_definitions(): array
             'label' => 'Presigned URL lifetime (seconds)',
         ],
         's3.prefix' => [
-            'group' => 's3', 'type' => 'text', 'default' => 'uploads',
+            'group' => 's3', 'type' => 'text', 'default' => '{{company}}-{{asset}}-',
             'label' => 'Object key prefix',
+            // `{{token}}` expands from the asset at upload time
+            // (`storage_prefix_resolve()`); the catalogue is published to the panel
+            // so the form can offer the tokens instead of only documenting them.
+            'placeholders' => [
+                'company'  => 'Company',
+                'asset'    => 'Asset tag',
+                'id'       => 'Asset id',
+                'sn'       => 'Serial number',
+                'hostname' => 'Hostname',
+                'source'   => 'Source',
+            ],
         ],
     ];
 }

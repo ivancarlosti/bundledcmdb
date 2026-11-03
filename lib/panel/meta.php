@@ -108,6 +108,27 @@ function panel_status_payload(): array
 }
 
 /**
+ * Why-a-device-was-deleted options, with their translation keys.
+ *
+ * Published next to `statuses` so the delete dialog and the trash view read the
+ * same list the API validates against (order matches `asset_deletion_reasons()`).
+ *
+ * @return list<array{value: string, label_key: string}>
+ */
+function panel_delete_reason_payload(): array
+{
+    $keys = [
+        'duplicated'         => 'ui_delete_reason_duplicated',
+        'created_by_mistake' => 'ui_delete_reason_mistake',
+    ];
+    $out = [];
+    foreach (asset_deletion_reasons() as $value) {
+        $out[] = ['value' => $value, 'label_key' => $keys[$value] ?? 'ui_delete_reason_mistake'];
+    }
+    return $out;
+}
+
+/**
  * Column payload. `files` is virtual (COUNT(device_files)) and columns that are
  * not in `asset_column_defs()` (custom fields) are added by the SPA from
  * `/meta.fields`.
@@ -244,23 +265,24 @@ function panel_meta_show(array $params = []): array
     }
 
     return ['data' => [
-        'columns'      => panel_columns_payload($user['role']),
-        'statuses'     => panel_status_payload(),
-        'sources'      => $sources,
-        'fields'       => panel_fields_payload($pdo),
-        'companies'    => $companies,
-        'locales'      => panel_locales_payload(),
-        'themes'       => user_preferences_themes(),
-        'pageSizes'    => user_preferences_page_sizes(),
-        'capabilities' => panel_capabilities($user['role']),
-        'defaultSort'  => ['sort' => 'updated_at', 'dir' => 'desc'],
-        'virtualSorts' => ['files'],
-        'writeColumns' => panel_write_columns_payload($user['role']),
-        'limits'       => [
+        'columns'       => panel_columns_payload($user['role']),
+        'statuses'      => panel_status_payload(),
+        'deleteReasons' => panel_delete_reason_payload(),
+        'sources'       => $sources,
+        'fields'        => panel_fields_payload($pdo),
+        'companies'     => $companies,
+        'locales'       => panel_locales_payload(),
+        'themes'        => user_preferences_themes(),
+        'pageSizes'     => user_preferences_page_sizes(),
+        'capabilities'  => panel_capabilities($user['role']),
+        'defaultSort'   => ['sort' => 'updated_at', 'dir' => 'desc'],
+        'virtualSorts'  => ['files'],
+        'writeColumns'  => panel_write_columns_payload($user['role']),
+        'limits'        => [
             'requireSn'      => $requireSn,
             'maxUploadBytes' => defined('PANEL_MAX_UPLOAD_BYTES') ? PANEL_MAX_UPLOAD_BYTES : 104857600,
         ],
-        'schemaReady'  => app_schema_ready(),
+        'schemaReady'   => app_schema_ready(),
     ]];
 }
 

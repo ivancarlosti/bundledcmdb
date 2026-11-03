@@ -45,8 +45,20 @@ export type DeviceRow = {
   created_by: string | null;
   updated_by: string | null;
   deleted_at: string | null;
+  /** Why it was trashed (`duplicated` / `created_by_mistake`), NULL before 0014. */
+  deleted_reason: string | null;
+  /** The asset that was kept instead, when `deleted_reason` is `duplicated`. */
+  duplicate_of_id: number | null;
   files_count: number;
   custom: Record<string, unknown>;
+};
+
+/** Minimal shape of the kept asset a trashed duplicate points at. */
+export type DeviceDuplicateRef = {
+  id: number;
+  sn: string | null;
+  hostname: string | null;
+  deleted_at: string | null;
 };
 
 export type DeviceFile = {
@@ -58,7 +70,11 @@ export type DeviceFile = {
   uploaded_at: string | null;
 };
 
-export type DeviceDetail = DeviceRow & { files: DeviceFile[] };
+export type DeviceDetail = DeviceRow & {
+  files: DeviceFile[];
+  /** Only sent for a trashed duplicate: the asset that was kept. */
+  duplicate_of?: DeviceDuplicateRef | null;
+};
 
 export type DeviceListPayload = {
   rows: DeviceRow[];
@@ -108,6 +124,8 @@ export type MetaSource = {
 export type MetaPayload = {
   columns: MetaColumn[];
   statuses: { value: string; label_key: string }[];
+  /** Values `DELETE /devices/{id}?reason=` accepts, with their translation keys. */
+  deleteReasons: { value: string; label_key: string }[];
   sources: MetaSource[];
   fields: MetaField[];
   companies: string[];
@@ -187,7 +205,23 @@ export type DeviceWriteBody = {
   [key: string]: unknown;
 };
 
-export type DeviceDeleteResult = { id: number; deleted: boolean; hard: boolean };
+export type DeviceDeleteResult = {
+  id: number;
+  deleted: boolean;
+  hard: boolean;
+  deleted_reason: string | null;
+  duplicate_of_id: number | null;
+};
+
+/** Options of a single delete (`DELETE /devices/{id}`). */
+export type DeviceDeleteOptions = {
+  /** Superadmin only: drop the row instead of trashing it. */
+  hard?: boolean;
+  /** `meta.deleteReasons` value; the API rejects anything else. */
+  reason?: string | null;
+  /** Asset that was kept, only with `reason: 'duplicated'`. */
+  duplicateOf?: number | null;
+};
 
 export function createDevice(body: DeviceWriteBody): Promise<DeviceDetail> {
   return apiRequest<DeviceDetail>('/devices', { method: 'POST', body });
@@ -197,10 +231,15 @@ export function updateDevice(id: number, body: DeviceWriteBody): Promise<DeviceD
   return apiRequest<DeviceDetail>(`/devices/${id}`, { method: 'PATCH', body });
 }
 
-export function deleteDevice(id: number, hard = false): Promise<DeviceDeleteResult> {
-  return apiRequest<DeviceDeleteResult>(`/devices/${id}${hard ? '?hard=1' : ''}`, {
-    method: 'DELETE',
+export function deleteDevice(id: number, options: DeviceDeleteOptions = {}): Promise<DeviceDeleteResult> {
+  // `reason`/`duplicate_of` ride on the query string: a DELETE body is legal but
+  // some proxies strip it, and the audit trail already stores both columns.
+  const query = buildQuery({
+    hard: options.hard === true ? 1 : null,
+    reason: options.reason ?? null,
+    duplicate_of: options.duplicateOf ?? null,
   });
+  return apiRequest<DeviceDeleteResult>(`/devices/${id}${query}`, { method: 'DELETE' });
 }
 
 /** Restore a soft-deleted device; the payload is the refreshed device. */
@@ -347,6 +386,15 @@ export type BulkResult = {
   updated: number[];
   /** Ids left alone: stale, deleted, out of scope or invalid. */
   skipped: BulkSkipped[];
+  /** Echo of the shared deletion reason, `null` when none was sent. */
+  reason?: string | null;
+};
+
+/** Options shared by every bulk op; `reason` only applies to `delete`. */
+export type BulkOptions = {
+  value?: string | boolean;
+  hard?: boolean;
+  reason?: string | null;
 };
 
 /**
@@ -356,17 +404,16 @@ export type BulkResult = {
  * `updated` + `skipped`, so a partially failing selection still reports the rows
  * it did change instead of one opaque 4xx.
  */
-export function bulkDevices(
-  op: BulkOp,
-  ids: number[],
-  options: { value?: string | boolean; hard?: boolean } = {},
-): Promise<BulkResult> {
+export function bulkDevices(op: BulkOp, ids: number[], options: BulkOptions = {}): Promise<BulkResult> {
   const body: Record<string, unknown> = { ids, op };
   if (options.value !== undefined) {
     body.value = options.value;
   }
   if (options.hard !== undefined) {
     body.hard = options.hard;
+  }
+  if (options.reason !== undefined && options.reason !== null && options.reason !== '') {
+    body.reason = options.reason;
   }
   return apiRequest<BulkResult>('/devices/bulk', { method: 'POST', body });
 }

@@ -1,13 +1,16 @@
 /**
  * Thin typed client for `/panel-api/v1`.
  *
- * Every call goes through this module so three rules are enforced in one place:
+ * Every call goes through this module so four rules are enforced in one place:
  *  - the CSRF token header is added to non-GET requests (session cookie only,
- *    no tokens in JS storage);
+ *    no tokens in JS storage) and refreshed once when the server rejects it —
+ *    `session_login()` rotates the token, so an open tab can hold a stale one;
  *  - the `{ok, data, meta}` envelope is unwrapped, and an error envelope becomes
  *    a typed `PanelApiError` carrying `code`/`message`/`errors`;
  *  - `401` is reported with `isUnauthorized` so the shell can show the login
- *    screen instead of a generic failure.
+ *    screen instead of a generic failure;
+ *  - `419 invalid_csrf` is reported with `isCsrf`, which is what the retry keys
+ *    off (a second failure is thrown, never looped).
  */
 
 export type ApiErrorEnvelope = {
@@ -53,6 +56,11 @@ export class PanelApiError extends Error {
   get isStale(): boolean {
     return this.code === 'stale_record';
   }
+
+  /** 419 means the session holds a different CSRF token (usually a re-login). */
+  get isCsrf(): boolean {
+    return this.status === 419 || this.code === 'invalid_csrf';
+  }
 }
 
 const API_BASE = '/panel-api/v1';
@@ -66,6 +74,39 @@ export function setCsrfToken(token: string | null): void {
 
 export function getCsrfToken(): string | null {
   return csrfToken;
+}
+
+/**
+ * Ask `GET /session` for the current CSRF token.
+ *
+ * The token lives in the PHP session and is rotated on every login
+ * (`session_regenerate_id()`), so a tab that was already open keeps a stale
+ * copy, and a write fired before the session query resolved has none at all.
+ * Both cases used to end in "Invalid or missing CSRF token." until a reload.
+ *
+ * This is a raw `fetch` on purpose: routing it through `apiRequestEnvelope`
+ * would recurse, and a failure here must return `null` instead of masking the
+ * error the caller actually cares about.
+ */
+async function refreshCsrfToken(): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_BASE}/session`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = (await response.json()) as ApiEnvelope<{ csrfToken?: unknown }>;
+    const token = payload?.data?.csrfToken;
+    if (typeof token !== 'string' || token === '') {
+      return null;
+    }
+    csrfToken = token;
+    return token;
+  } catch {
+    return null;
+  }
 }
 
 /** Build a query string, skipping empty values so URLs stay readable. */
@@ -105,8 +146,36 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 /**
  * Same as `apiRequest`, but keeps the `meta` block. The device grid needs it to
  * echo the sort and the effective company scope the server actually applied.
+ *
+ * Self-healing CSRF: a write with no token in memory fetches one first, and a
+ * `419 invalid_csrf` (stale token from before a re-login) refreshes the token
+ * and retries once. Everything else is thrown untouched.
  */
 export async function apiRequestEnvelope<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
+  const method = options.method ?? 'GET';
+  const isWrite = method !== 'GET';
+
+  if (isWrite && csrfToken === null) {
+    await refreshCsrfToken();
+  }
+
+  const sentToken = csrfToken;
+  try {
+    return await performRequest<T>(path, options);
+  } catch (error) {
+    if (!isWrite || !(error instanceof PanelApiError) || !error.isCsrf) {
+      throw error;
+    }
+    const fresh = await refreshCsrfToken();
+    if (fresh === null || fresh === sentToken) {
+      throw error;
+    }
+    return performRequest<T>(path, options);
+  }
+}
+
+/** One HTTP round trip: build the headers, send, unwrap the envelope. */
+async function performRequest<T>(path: string, options: RequestOptions): Promise<ApiResult<T>> {
   const method = options.method ?? 'GET';
   const headers: Record<string, string> = { Accept: 'application/json' };
 

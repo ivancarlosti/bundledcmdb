@@ -105,10 +105,10 @@ the server-side guard.
 | `GET /panel-api/v1/devices/export` | CSV (`?format=csv`, default) or native `.xlsx` (`?format=xlsx`) with the same filters/sort |
 | `GET /panel-api/v1/devices/{id}` | one device + custom values + attachments |
 | `POST /panel-api/v1/devices` | create (manager+), `201` + the created row |
-| `POST /panel-api/v1/devices/bulk` | one operation (`status`, `byod`, `delete`, `restore`) on up to 200 ids, per-row results |
+| `POST /panel-api/v1/devices/bulk` | one operation (`status`, `byod`, `delete`, `restore`) on up to 200 ids, per-row results; delete takes an optional `reason` |
 | `PATCH /panel-api/v1/devices/{id}` | partial update (manager+); `expected_updated_at` → `409 stale_record` |
 | `PUT /panel-api/v1/devices/{id}` | full replace (manager+, parity with the Bearer API) |
-| `DELETE /panel-api/v1/devices/{id}` | soft delete (admin+); `?hard=1` is superadmin-only |
+| `DELETE /panel-api/v1/devices/{id}` | soft delete (admin+) with `?reason=duplicated` or `?reason=created_by_mistake`, plus `?duplicate_of=<id>` for a duplicate; `?hard=1` is superadmin-only and takes no reason |
 | `POST /panel-api/v1/devices/{id}/restore` | undo a soft delete (admin+, idempotent) |
 | `GET /panel-api/v1/devices/{id}/events` | audit trail (who changed what, `[old, new]` per column), newest first |
 | `POST /panel-api/v1/devices/{id}/files/presign` | `{mode: "s3", url, key, headers}` for a direct PUT, or `{mode: "server"}` when the driver is `local` |
@@ -143,6 +143,29 @@ Writes go through the same helpers as `public/api.php` (`asset_validate()`,
 `custom_values_save()`), so the two APIs cannot disagree about what a valid
 device is. Role rules come from the server: `/meta.writeColumns` lists the keys
 the signed-in role may send, and the API rejects everything else with `422`.
+
+**Deleting asks why.** The row survives in the trash, but "deleted" cannot answer
+the question an auditor asks next, so a soft delete stores one of
+`asset_deletion_reasons()` in `assets.deleted_reason` (`duplicated`,
+`created_by_mistake`) and, for a duplicate, the kept asset in
+`assets.duplicate_of_id`. The SPA requires the reason for a single delete
+(`DeleteReasonFields.tsx`, with `DuplicatePicker.tsx` searching `/devices?q=` and
+excluding the row being deleted) and leaves it optional in the bulk toolbar; the
+API validates whatever it is given (`422 invalid_reason`, `duplicate_of`:
+`not_found`, `self`, `deleted`, `reason_not_duplicated`), records it as the
+`[old, new]` diff of the `delete` audit event, exposes it in
+`GET /devices/{id}` (plus a resolved `duplicate_of` reference) and clears both
+columns on restore. A hard delete nulls the references pointing at the row it
+drops. Options for the picker come from `/meta.deleteReasons`, so a new reason is
+one array entry in `lib/assets.php` plus one translation key per locale.
+
+**CSRF has a retry.** `session_login()` rotates `csrf_token` with the session id,
+so a tab that was open before the login keeps a stale copy — the request had the
+header, the server just disagreed, and the user saw "Invalid or missing CSRF
+token." until a reload. `src/api/client.ts` now fetches `GET /session` when a
+write has no token at all and, on `419 invalid_csrf`, refreshes once and replays
+the request (a second failure is thrown, never looped). `client.test.ts` pins all
+three paths down.
 
 The settings handlers (`lib/panel/settings.php`) are thin wrappers over the model
 helpers (`settings_set()`, `source_create/update/delete()`, `field_*`,

@@ -43,7 +43,7 @@ class S3Client
         $this->bucket = trim((string) ($overrides['bucket'] ?? settings_get('s3.bucket', '')));
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
-        $this->prefix = trim((string) ($overrides['prefix'] ?? settings_get('s3.prefix', 'uploads')), '/');
+        $this->prefix = trim((string) ($overrides['prefix'] ?? settings_get('s3.prefix', '')), '/');
         $this->presignSeconds = max(60, (int) ($overrides['presign_seconds'] ?? settings_int('s3.presign_seconds')));
 
         $config = [
@@ -84,14 +84,26 @@ class S3Client
         return $this->bucket;
     }
 
-    /** Prefix an object key with the configured prefix (no double prefixing). */
+    /**
+     * Prefix an object key with the configured prefix (no double prefixing).
+     *
+     * A prefix that ends in `-`/`_` was written to run into the key, which is
+     * what the shipped `{{company}}-{{asset}}-` template does
+     * (`acme-nb-001-assets/42/x.pdf`); any other prefix is a folder
+     * (`uploads/assets/42/x.pdf`). Only uploads pass a prefix — reads and deletes
+     * build the client with `''` because the row stores the final key.
+     */
     public function objectKey(string $key): string
     {
         $key = ltrim($key, '/');
-        if ($this->prefix === '' || str_starts_with($key, $this->prefix . '/')) {
+        if ($this->prefix === '') {
             return $key;
         }
-        return $this->prefix . '/' . $key;
+        $glue = preg_match('/[-_]$/', $this->prefix) === 1 ? '' : '/';
+        if (str_starts_with($key, $this->prefix . $glue)) {
+            return $key;
+        }
+        return $this->prefix . $glue . $key;
     }
 
     /**

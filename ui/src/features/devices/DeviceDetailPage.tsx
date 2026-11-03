@@ -1,7 +1,8 @@
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { PanelApiError } from '@/api/client';
 import { Alert, Button, Spinner } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
 import { formatBytes, formatDateTime } from '@/lib/format';
@@ -9,6 +10,13 @@ import { formatBytes, formatDateTime } from '@/lib/format';
 import type { DeviceDetail, MetaPayload } from './api';
 import { deviceFileDownloadUrl } from './api';
 import { cellContext, cellValue, GridCell } from './columns';
+import {
+  DeleteReasonFields,
+  deleteReasonLabelKey,
+  EMPTY_DELETE_REASON,
+  type DeleteReasonState,
+} from './DeleteReasonFields';
+import { deviceLabel } from './DuplicatePicker';
 import { useDeleteDevice, useDeleteDeviceFile, useRestoreDevice, useUploadDeviceFile } from './useDeviceMutations';
 import { useDevice, useDeviceEvents, useMeta } from './useDevices';
 
@@ -54,8 +62,14 @@ function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayloa
   );
 }
 
-/** Edit / delete / restore actions, gated by the server-published capabilities. */
-function DeviceActions({ device }: { device: DeviceDetail }) {
+/**
+ * Edit / delete / restore actions, gated by the server-published capabilities.
+ *
+ * Deleting asks why: the row survives in the trash, but the reason is the part
+ * an auditor or a colleague needs ("was it a duplicate?"). A permanent delete
+ * drops the row the reason would describe, so it keeps the plain confirm.
+ */
+function DeviceActions({ device, meta }: { device: DeviceDetail; meta: MetaPayload }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const session = useCurrentSession();
@@ -63,13 +77,56 @@ function DeviceActions({ device }: { device: DeviceDetail }) {
   const restoreDevice = useRestoreDevice();
   const trashed = device.deleted_at !== null;
 
-  const onDelete = async (hard: boolean) => {
-    const message = hard ? t('ui_confirm_hard_delete') : t('delete_confirm');
-    if (!window.confirm(message)) {
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState<DeleteReasonState>(EMPTY_DELETE_REASON);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+
+  const reasons = useMemo(
+    () => meta.deleteReasons.map((option) => ({ value: option.value, label: t(option.label_key) })),
+    [meta.deleteReasons, t],
+  );
+
+  const closeConfirm = () => {
+    setConfirming(false);
+    setReasonError(null);
+    setDuplicateError(null);
+  };
+
+  const onSoftDelete = async () => {
+    if (reason.reason === '') {
+      setReasonError(t('ui_delete_reason_required'));
+      return;
+    }
+    setReasonError(null);
+    setDuplicateError(null);
+    try {
+      await deleteDevice.mutateAsync({
+        id: device.id,
+        reason: reason.reason,
+        duplicateOf: reason.duplicateOf?.id ?? null,
+      });
+      void navigate({ to: '/devices' });
+    } catch (error) {
+      // The mutation already toasted the failure; the form keeps the field that
+      // the server pointed at, so the answer does not have to be reconstructed
+      // from the toast text.
+      if (error instanceof PanelApiError) {
+        if (error.errors.duplicate_of !== undefined) {
+          setDuplicateError(error.message);
+        } else if (error.errors.reason !== undefined) {
+          setReasonError(error.message);
+        }
+      }
+    }
+  };
+
+  const onHardDelete = async () => {
+    if (!window.confirm(t('ui_confirm_hard_delete'))) {
       return;
     }
     try {
-      await deleteDevice.mutateAsync({ id: device.id, hard });
+      await deleteDevice.mutateAsync({ id: device.id, hard: true });
       void navigate({ to: '/devices' });
     } catch {
       // the mutation already toasted the error
@@ -77,30 +134,60 @@ function DeviceActions({ device }: { device: DeviceDetail }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {session.capabilities.can_write && !trashed ? (
-        <Link
-          to="/devices/$deviceId/edit"
-          params={{ deviceId: String(device.id) }}
-          className="inline-flex items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-surface-2)]"
-        >
-          {t('edit')}
-        </Link>
-      ) : null}
-      {session.capabilities.can_admin && trashed ? (
-        <Button variant="primary" disabled={restoreDevice.isPending} onClick={() => restoreDevice.mutate(device.id)}>
-          {t('ui_restore')}
-        </Button>
-      ) : null}
-      {session.capabilities.can_admin && !trashed ? (
-        <Button variant="danger" disabled={deleteDevice.isPending} onClick={() => void onDelete(false)}>
-          {t('delete')}
-        </Button>
-      ) : null}
-      {session.capabilities.can_superadmin ? (
-        <Button variant="ghost" disabled={deleteDevice.isPending} onClick={() => void onDelete(true)}>
-          {t('ui_hard_delete')}
-        </Button>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {session.capabilities.can_write && !trashed ? (
+          <Link
+            to="/devices/$deviceId/edit"
+            params={{ deviceId: String(device.id) }}
+            className="inline-flex items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-surface-2)]"
+          >
+            {t('edit')}
+          </Link>
+        ) : null}
+        {session.capabilities.can_admin && trashed ? (
+          <Button variant="primary" disabled={restoreDevice.isPending} onClick={() => restoreDevice.mutate(device.id)}>
+            {t('ui_restore')}
+          </Button>
+        ) : null}
+        {session.capabilities.can_admin && !trashed ? (
+          <Button
+            variant="danger"
+            disabled={deleteDevice.isPending}
+            aria-expanded={confirming}
+            onClick={() => (confirming ? closeConfirm() : setConfirming(true))}
+          >
+            {t('delete')}
+          </Button>
+        ) : null}
+        {session.capabilities.can_superadmin ? (
+          <Button variant="ghost" disabled={deleteDevice.isPending} onClick={() => void onHardDelete()}>
+            {t('ui_hard_delete')}
+          </Button>
+        ) : null}
+      </div>
+
+      {confirming ? (
+        <div className="card flex flex-col gap-2 p-3" data-testid="delete-reason">
+          <p className="m-0 text-sm font-medium">{t('delete_confirm')}</p>
+          <DeleteReasonFields
+            reasons={reasons}
+            value={reason}
+            onChange={setReason}
+            deviceId={device.id}
+            required
+            error={reasonError}
+            duplicateError={duplicateError}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="danger" disabled={deleteDevice.isPending} onClick={() => void onSoftDelete()}>
+              {t('delete')}
+            </Button>
+            <Button variant="ghost" disabled={deleteDevice.isPending} onClick={closeConfirm}>
+              {t('cancel')}
+            </Button>
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -214,7 +301,30 @@ function HistorySection({ device, meta }: { device: DeviceDetail; meta: MetaPayl
   const events = eventsQuery.data ?? [];
   const labelFor = (column: string): string => {
     const match = meta.columns.find((entry) => entry.key === column);
-    return match === undefined ? column : t(match.label_key, { defaultValue: match.label });
+    if (match !== undefined) {
+      return t(match.label_key, { defaultValue: match.label });
+    }
+    // The deletion reason and its duplicate reference are not asset columns, so
+    // they have no `col_*` entry to fall back on.
+    if (column === 'deleted_reason') {
+      return t('ui_delete_reason');
+    }
+    if (column === 'duplicate_of_id') {
+      return t('ui_duplicate_of');
+    }
+    return column;
+  };
+
+  /** `duplicated` → "Duplicated"; every other recorded value is shown as stored. */
+  const valueFor = (column: string, value: string | null): string => {
+    if (value === null || value === '') {
+      return '∅';
+    }
+    if (column !== 'deleted_reason') {
+      return value;
+    }
+    const key = deleteReasonLabelKey(meta, value);
+    return key === null ? value : t(key, { defaultValue: value });
   };
 
   return (
@@ -243,9 +353,8 @@ function HistorySection({ device, meta }: { device: DeviceDetail; meta: MetaPayl
                 <ul className="m-0 mt-1 list-none p-0 text-xs text-[var(--color-muted)]">
                   {Object.entries(event.changes).map(([column, [oldValue, newValue]]) => (
                     <li key={column}>
-                      <span className="font-medium">{labelFor(column)}</span>:{' '}
-                      {oldValue === null || oldValue === '' ? '∅' : oldValue} →{' '}
-                      {newValue === null || newValue === '' ? '∅' : newValue}
+                      <span className="font-medium">{labelFor(column)}</span>: {valueFor(column, oldValue)} →{' '}
+                      {valueFor(column, newValue)}
                     </li>
                   ))}
                 </ul>
@@ -310,6 +419,17 @@ export function DeviceDetailPage() {
 
   const device = deviceQuery.data;
   const title = device.sn ?? device.hostname ?? `#${device.id}`;
+  // `?? null` also covers a payload that predates 0014 (and the e2e fixtures),
+  // where the keys are absent instead of NULL.
+  const deletedReason = device.deleted_reason ?? null;
+  const duplicateOfId = device.duplicate_of_id ?? null;
+  const deletedReasonKey = deleteReasonLabelKey(metaQuery.data, deletedReason);
+  const deletedReasonLabel =
+    deletedReason === null
+      ? null
+      : deletedReasonKey === null
+        ? deletedReason
+        : t(deletedReasonKey, { defaultValue: deletedReason });
 
   return (
     <section className="flex flex-col gap-3">
@@ -324,7 +444,7 @@ export function DeviceDetailPage() {
             {device.company !== null && device.company !== '' ? ` · ${device.company}` : ''}
           </p>
         </div>
-        <DeviceActions device={device} />
+        <DeviceActions device={device} meta={metaQuery.data} />
       </div>
 
       {device.deleted_at !== null ? (
@@ -332,6 +452,27 @@ export function DeviceDetailPage() {
           <p className="m-0">
             {t('col_deleted_at')}: {formatDateTime(device.deleted_at, locale)}
           </p>
+          {deletedReasonLabel === null ? null : (
+            <p className="m-0">{t('ui_trashed_reason', { reason: deletedReasonLabel })}</p>
+          )}
+          {duplicateOfId === null ? null : (
+            <p className="m-0">
+              {t('ui_duplicate_of')}:{' '}
+              {device.duplicate_of === null || device.duplicate_of === undefined ? (
+                // The kept asset was purged since, or belongs to another company:
+                // the reference is still in the row, so it is shown as an id.
+                t('ui_duplicate_of_missing', { id: duplicateOfId })
+              ) : (
+                <Link
+                  to="/devices/$deviceId"
+                  params={{ deviceId: String(device.duplicate_of.id) }}
+                  className="text-[var(--color-accent)]"
+                >
+                  {deviceLabel(device.duplicate_of)}
+                </Link>
+              )}
+            </p>
+          )}
         </Alert>
       ) : null}
 

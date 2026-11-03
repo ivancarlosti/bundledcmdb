@@ -71,6 +71,19 @@ export function buildSettingsPatch(entries: SettingEntry[], form: SettingsForm):
 }
 
 /**
+ * `PATCH /settings` body for the "Reset to default" button.
+ *
+ * The rest of the form rides along on purpose: dropping the DB row re-seeds
+ * every field from the response, so a reset that silently threw away edits made
+ * in other cards would be worse than the reset itself. `values` and `reset`
+ * travel together because the server applies `values` first and `reset` last —
+ * the reset always wins for its own key.
+ */
+export function buildSettingReset(entries: SettingEntry[], form: SettingsForm, key: string): SettingsPatchBody {
+  return { ...buildSettingsPatch(entries, form), reset: [key] };
+}
+
+/**
  * Validation code → catalogue key.
  *
  * Unknown codes are returned as `null` and shown verbatim, which is what the
@@ -90,6 +103,7 @@ const ERROR_KEYS: Record<string, string> = {
   invalid_type: 'set_err_invalid_type',
   invalid_color: 'set_err_invalid_color',
   invalid_ip: 'set_err_invalid_ip',
+  invalid_placeholder: 'set_err_invalid_placeholder',
   invalid_key: 'set_err_invalid_key',
   invalid_slug: 'set_err_invalid_key',
   system_source: 'set_err_system_source',

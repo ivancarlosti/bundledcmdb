@@ -37,6 +37,16 @@ export type SettingEntry = {
   /** Secrets only: something is stored, so "leave blank to keep" applies. */
   configured: boolean | null;
   value: string;
+  /**
+   * Built-in default from `settings_definitions()`; `null` for a secret, whose
+   * value the API never sends. Feeds the "Reset to default" button.
+   */
+  default: string | null;
+  /**
+   * `{{token}}` catalogue for a setting that expands placeholders (`s3.prefix`);
+   * empty for everything else. Token => English label, used as the chip title.
+   */
+  placeholders: Record<string, string>;
 };
 
 export type SettingGroup = { id: string; label_key: string; settings: SettingEntry[] };
@@ -61,10 +71,17 @@ export type SettingsPayload = {
   themes: string[];
 };
 
-/** Body of `PATCH /settings`; `clear` wipes a stored secret. */
+/**
+ * Body of `PATCH /settings`.
+ *
+ * `clear` wipes a stored secret, `reset` deletes the DB row so the value falls
+ * back to the environment/built-in default. The server applies `values` first
+ * and `reset` last.
+ */
 export type SettingsPatchBody = {
   values: Record<string, string>;
   clear?: string[];
+  reset?: string[];
 };
 
 export type SettingsSaveResult = {

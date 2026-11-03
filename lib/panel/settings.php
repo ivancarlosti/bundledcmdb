@@ -93,18 +93,23 @@ function panel_settings_entry(string $key, array $entry): array
     $isSecret = !empty($def['secret']);
 
     return [
-        'key'        => $key,
-        'group'      => (string) ($def['group'] ?? 'general'),
-        'label'      => (string) ($def['label'] ?? $key),
-        'label_key'  => 'setting_' . str_replace('.', '_', $key),
-        'type'       => (string) ($def['type'] ?? 'text'),
-        'options'    => panel_settings_options((array) ($def['options'] ?? [])),
-        'min'        => $def['min'] ?? null,
-        'max'        => $def['max'] ?? null,
-        'source'     => (string) $entry['source'],
-        'secret'     => $isSecret,
-        'configured' => $isSecret ? settings_secret_configured($key) : null,
-        'value'      => $isSecret ? '' : (string) ($entry['value'] ?? ''),
+        'key'          => $key,
+        'group'        => (string) ($def['group'] ?? 'general'),
+        'label'        => (string) ($def['label'] ?? $key),
+        'label_key'    => 'setting_' . str_replace('.', '_', $key),
+        'type'         => (string) ($def['type'] ?? 'text'),
+        'options'      => panel_settings_options((array) ($def['options'] ?? [])),
+        'min'          => $def['min'] ?? null,
+        'max'          => $def['max'] ?? null,
+        'source'       => (string) $entry['source'],
+        'secret'       => $isSecret,
+        'configured'   => $isSecret ? settings_secret_configured($key) : null,
+        'value'        => $isSecret ? '' : (string) ($entry['value'] ?? ''),
+        // The SPA's "Reset to default" button deletes the DB row and re-seeds the
+        // form from this, so the default has to travel with the entry (never for
+        // a secret: its value is write-only).
+        'default'      => $isSecret ? null : (string) ($def['default'] ?? ''),
+        'placeholders' => (array) ($def['placeholders'] ?? []),
     ];
 }
 
@@ -186,6 +191,10 @@ function panel_settings_store(string $key, mixed $raw, string $actor): ?string
     if ($key === 'api.ip_allowlist' && !ip_allowlist_validate((string) $raw)['ok']) {
         return 'invalid_ip';
     }
+    if ($key === 's3.prefix' && storage_prefix_unknown_token((string) $raw) !== null) {
+        // A typo would otherwise land in every object key verbatim.
+        return 'invalid_placeholder';
+    }
 
     $normalized = settings_normalize($key, $raw);
     if (!$normalized['ok']) {
@@ -245,9 +254,12 @@ function panel_settings_audit(
 /**
  * PATCH /settings
  *
- * Body: `{ "values": { "<key>": <value> }, "clear": ["<secret key>"] }`.
+ * Body: `{ "values": { "<key>": <value> }, "clear": ["<secret key>"], "reset": ["<key>"] }`.
  * A secret is only written when a non-empty value is sent, so an untouched form
- * field can never wipe a stored secret.
+ * field can never wipe a stored secret. `reset` drops the DB row, which is what
+ * the "Reset to default" button sends: the value falls back to the environment
+ * or the built-in default and the badge switches back. `values` are applied
+ * first, `reset` last, so a reset always wins for its own key.
  */
 function panel_settings_update(array $params = []): array
 {
@@ -259,6 +271,7 @@ function panel_settings_update(array $params = []): array
         throw new ApiError('validation_failed', 'Expected a `values` object.', 422, ['values' => 'required']);
     }
     $clear = array_values(array_filter((array) ($body['clear'] ?? []), 'is_string'));
+    $reset = array_values(array_filter((array) ($body['reset'] ?? []), 'is_string'));
 
     $errors = [];
     $saved = [];
@@ -299,6 +312,24 @@ function panel_settings_update(array $params = []): array
             $errors[$key] = $error;
             continue;
         }
+        $audit[] = ['key' => $key, 'old' => $before, 'new' => settings_get($key)];
+        $saved[] = $key;
+    }
+
+    foreach ($reset as $key) {
+        $def = settings_definitions()[$key] ?? null;
+        if ($def === null) {
+            $errors[$key] = 'unknown_setting';
+            continue;
+        }
+        if (!empty($def['secret'])) {
+            // A stored secret is wiped with `clear` (which audits a placeholder
+            // instead of the value); "reset" only applies to plain settings.
+            $errors[$key] = 'not_a_secret';
+            continue;
+        }
+        $before = settings_get($key);
+        settings_forget($key);
         $audit[] = ['key' => $key, 'old' => $before, 'new' => settings_get($key)];
         $saved[] = $key;
     }

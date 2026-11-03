@@ -182,6 +182,96 @@ describe('apiRequest', () => {
     expect(error.code).toBe('forbidden');
     expect(error.status).toBe(403);
   });
+
+  it('fetches a token before the first write when none is in memory', async () => {
+    stubFetch(() =>
+      calls.length === 1
+        ? respond({ ok: true, data: { csrfToken: 'csrf-late' } })
+        : respond({ ok: true, data: { id: 1 } }),
+    );
+
+    await apiRequest('/devices/1', { method: 'DELETE' });
+
+    expect(calls.map((call) => call.url)).toEqual(['/panel-api/v1/session', '/panel-api/v1/devices/1']);
+    expect(calls[1]?.init.headers).toMatchObject({ 'X-CSRF-Token': 'csrf-late' });
+  });
+
+  it('refreshes a stale token once after a 419 and replays the write', async () => {
+    setCsrfToken('csrf-old');
+    stubFetch(() => {
+      if (calls.length === 1) {
+        return respond(
+          { ok: false, error: { code: 'invalid_csrf', message: 'Invalid or missing CSRF token.' } },
+          419,
+          'Page Expired',
+        );
+      }
+      return calls.length === 2
+        ? respond({ ok: true, data: { csrfToken: 'csrf-new' } })
+        : respond({ ok: true, data: { id: 1 } });
+    });
+
+    const data = await apiRequest('/devices/1', { method: 'DELETE' });
+
+    expect(data).toEqual({ id: 1 });
+    expect(calls.map((call) => call.url)).toEqual([
+      '/panel-api/v1/devices/1',
+      '/panel-api/v1/session',
+      '/panel-api/v1/devices/1',
+    ]);
+    expect(calls[2]?.init.headers).toMatchObject({ 'X-CSRF-Token': 'csrf-new' });
+    expect(getCsrfToken()).toBe('csrf-new');
+  });
+
+  it('retries only once when the refreshed token is rejected too', async () => {
+    setCsrfToken('csrf-old');
+    let sessions = 0;
+    stubFetch(() => {
+      const url = calls[calls.length - 1]?.url ?? '';
+      if (url.endsWith('/session')) {
+        sessions += 1;
+        return respond({ ok: true, data: { csrfToken: `csrf-${sessions}` } });
+      }
+      return respond(
+        { ok: false, error: { code: 'invalid_csrf', message: 'Invalid or missing CSRF token.' } },
+        419,
+        'Page Expired',
+      );
+    });
+
+    const error = (await apiRequest('/devices/1', { method: 'DELETE' }).catch(
+      (caught: unknown) => caught,
+    )) as PanelApiError;
+
+    expect(error).toBeInstanceOf(PanelApiError);
+    expect(error.isCsrf).toBe(true);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('never retries a GET and keeps the original error when there is no session', async () => {
+    stubFetch(() => respond({ ok: false, error: { code: 'invalid_csrf', message: 'Nope.' } }, 419, 'Page Expired'));
+    await expect(apiRequest('/devices')).rejects.toBeInstanceOf(PanelApiError);
+    expect(calls).toHaveLength(1);
+
+    calls.length = 0;
+    stubFetch(() => {
+      const url = calls[calls.length - 1]?.url ?? '';
+      if (url.endsWith('/session')) {
+        return respond({ ok: false, error: { code: 'unauthorized', message: 'Sign in.' } }, 401, 'Unauthorized');
+      }
+      return respond({ ok: false, error: { code: 'invalid_csrf', message: 'Nope.' } }, 419, 'Page Expired');
+    });
+
+    const error = (await apiRequest('/devices/1', { method: 'DELETE' }).catch(
+      (caught: unknown) => caught,
+    )) as PanelApiError;
+    expect(error.status).toBe(419);
+    expect(calls.map((call) => call.url)).toEqual([
+      '/panel-api/v1/session',
+      '/panel-api/v1/devices/1',
+      '/panel-api/v1/session',
+    ]);
+  });
 });
 
 describe('buildQuery', () => {
