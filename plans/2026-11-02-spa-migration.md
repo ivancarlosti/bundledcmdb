@@ -402,9 +402,17 @@ Estimates are focus days for one developer.
   `files_count`, `custom`), batched attachment counts and custom values.
 * [x] Unknown sort column → `400 invalid_sort`; unknown status/boolean →
   `400 invalid_filter`; page past the end clamps to the last page.
-* [ ] `EXPLAIN` + 100k-row fixture timing (§10) — needs a large dataset; the
-  index set from migration 0004 (`updated_at`, `source`, `SN`) covers the
-  documented sorts.
+* [x] `EXPLAIN` + 100k-row fixture timing (§10) — `bin/bench-devices.php`
+  seeds a throwaway fixture through the production
+  `panel_devices_where()`/`panel_devices_order_by()` helpers and prints the plan
+  plus wall time per access pattern (2026-11-02, MariaDB 11.8, 90k live rows):
+  default/`SN`/`source`/`Status` sorts 0.3 ms page and ~12 ms count; `files` and
+  `custom:` sorts ~155 ms (filesort over a computed expression); `q=` ~300+400 ms
+  (`LIKE '%…%'` on ~20 columns); last page 176 ms. The run found two real bugs,
+  both fixed: `idx_assets_source`/`idx_assets_status` were missing (and
+  installations that had already applied `0004` never got `idx_assets_updated`
+  either → migration `0007_assets_indexes` repairs them), and the `byod=true`
+  filter matched nothing because a `VARCHAR` column was compared to integer `1`.
 * Done when: sort by `SN` asc/desc, `files` desc (2 attachments sorts first),
   paging (`total 8 → pages 2`), company isolation (Acme manager cannot read
   Globex, Globex admin cannot read Acme), CSV with `Anexos`/`Não` in pt-BR — all
@@ -560,11 +568,16 @@ Estimates are focus days for one developer.
   `docs/api.md` cross-links the panel API; `docs/development.md` documents
   `npm run dev` + proxy.
 
-### Phase 9 — cutover (2–3 d)
+### Phase 9 — cutover (2–3 d) 🚧 step 1 done
 
-* `ui.spa_enabled` default `1` → `/` redirects to `/app/`; legacy pages still
-  reachable by direct URL for one release.
-* Then a breaking `feat!:` release deletes `main.php`, `asset.php`,
+* [x] `ui.spa_enabled` default `1` → `/` redirects to `/app/`; legacy pages still
+  reachable by direct URL for one release. `public/index.php` picks the target
+  from `settings_spa_enabled()` (falls back to `main.php` when the database is
+  unreachable), anonymous visitors go to the SPA's own login screen, and
+  `/app/` renders a localised "turned off" notice (`features.spa`) instead of a
+  half-working shell when an administrator rolls back. Covered by
+  `bin/test-panel-api.php` (flag default) and `e2e/smoke.spec.ts` (notice).
+* [ ] Then a breaking `feat!:` release deletes `main.php`, `asset.php`,
   `asset_new.php`, `export.php`, `save_row.php`, `save_rows.php`,
   `settings.php`, `manage_permissions.php`, `style.css`, `theme.js`,
   `lang_flag_buttons`/`theme_toggle_button` helpers, and the nginx `*.php`
@@ -581,6 +594,7 @@ Estimates are focus days for one developer.
 | PHP behaviour | `php bin/migrate.php --dry-run`, `php bin/check-i18n.php` | every commit touching `lib/`, `bin/`, `public/lang/` |
 | Panel API (manual) | `curl -i -c /tmp/c -b /tmp/c …` (§10.1) | phase 1+ |
 | Panel API (auto) | `php bin/test-panel-api.php` (integration, dev DB, self-cleaning) | phase 2+ |
+| Device list perf | `php bin/bench-devices.php --rows=100000` (EXPLAIN + timings, self-cleaning) | before each release |
 | SPA types | `npm --prefix ui run typecheck` | every UI commit |
 | SPA lint | `npm --prefix ui run lint` | every UI commit |
 | SPA unit | `npm --prefix ui run test` (`vitest run --coverage`) | every UI commit |
@@ -680,10 +694,17 @@ bumps by hand.
 4. **Audit trail** (`asset_events`: who changed what, when) — all writes already
    funnel through the panel API, so this is cheap to add.
 5. **Saved views** (named filter+sort+column presets) — `grid_state` leaves room.
-6. **Keyset pagination** for very deep pages if `OFFSET` shows up in profiling.
+6. **Keyset pagination** for very deep pages if `OFFSET` shows up in profiling —
+   measured at 100k rows: the last page costs 176 ms against 0.3 ms for page 1
+   (`bin/bench-devices.php`, "deep page" row). Not user-visible yet (nobody pages
+   to 3600), but it is the number to act on if it is.
 7. **Rate limiting** on panel mutations (`rate_limited` reserved in §4.1).
-8. **`col_*` translations** for `fr-FR`, `zh-CN`, `hi-IN`, `ar-SA` (they fall
-   back to en-US labels today; see §16, 2026-11-02 phase 2).
+8. ~~`col_*` translations for `fr-FR`, `zh-CN`, `hi-IN`, `ar-SA`~~ — done: the
+   whole panel family (`ui_*`, `col_*`, `status_*`, `theme_*`, `role_*`) plus the
+   shell strings are translated in all seven catalogues (47 % coverage for the
+   four community locales, floor raised to 45 % in `bin/check-i18n.php` and
+   enforced per locale by `ui/src/i18n/coverage.test.ts`). The legacy `set_*` /
+   `perm_*` keys of the PHP pages still fall back to en-US there.
 9. **Presigned PUT upload** (`POST /devices/{id}/files/presign`) if uploads ever
     need to bypass PHP-FPM; today the server puts the object itself (§16, phase 3).
 10. **Pointer drag-and-drop** for the column picker (buttons already cover the
@@ -762,3 +783,11 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-03 | 7 | `/app/settings` is one route with `?tab=`, not seven nested routes | the legacy page already models the tabs as `?tab=`, and a bookmark/reload keeps the tab either way; `settingsForm.ts` stays testable without a router |
 | 2026-11-03 | 7 | The custom-field body uses the model's short keys (`key`, `type`, `default`, `required`, …) | `panel_settings_field_apply()` only copies the names it knows, so database column names would be accepted and silently ignored |
 | 2026-11-03 | 7 | New catalogue keys (`set_tab_users`, `set_user_*`, `set_err_self_role`) in en-US, pt-BR and es-MX | the settings screens need a Users tab and the self-role hint; the other four locales fall back to en-US and stay above their coverage floor |
+| 2026-11-04 | 9 | `ui.spa_enabled` flipped to `1` and `/` redirects, but the legacy pages stay on disk for one release | the plan's own rollout (D7): shipping the default and deleting the files in the same release would remove the rollback at the moment it is most likely to be needed |
+| 2026-11-04 | 9 | The SPA renders a "turned off" notice from `features.spa` instead of `/app/` returning 404 | nginx serves `<base>/app/` from disk, so PHP cannot gate it; the session payload already carries the flag and the notice keeps the rollback one click away from `main.php` |
+| 2026-11-04 | 9 | Anonymous visitors on `/` are redirected to `/app/`, not shown the legacy login form | the SPA owns login, the SSO bounce and the error states; keeping two login pages would let the two diverge again (§2.1) |
+| 2026-11-04 | 2 | Migration `0007_assets_indexes` added as a repair step | `0004` is recorded as applied on installations that migrated before its index block existed, so `idx_assets_updated`/`idx_assets_deleted`/`idx_assets_company_source` were missing there; the EXPLAIN run measured a filesort over the whole table |
+| 2026-11-04 | 2 | `idx_assets_source` and `idx_assets_status` added | `ORDER BY source` / `ORDER BY Status` cannot use `(company, source)` for an unrestricted account; 179 ms → 0.3 ms page time at 100k rows |
+| 2026-11-04 | 2 | The `byod` filter compares normalised strings (`LOWER(TRIM(BYOD)) IN ('1','true','yes','on')`) instead of binding `1`/`0` | `BYOD` is a `VARCHAR`: MariaDB cast `'true'` to `0`, so `byod=true` silently matched nothing. Both legacy (`1`/`0`, `yes`/`no`) and current (`true`/`false`) spellings now match |
+| 2026-11-04 | 2 | `files`/`custom:` sorts and free-text search stay linear and are documented as such | both sort on a computed expression (filesort over the whole scope, ~155 ms at 100k) and `q=` is a `LIKE '%…%'` over ~20 columns (~300+400 ms); the UI narrows with filters first, and keyset pagination/FULLTEXT stay in §14 |
+| 2026-11-04 | 8 | `fr-FR`/`zh-CN`/`hi-IN`/`ar-SA` floors raised 15 % → 45 % and a per-locale family gate added to `coverage.test.ts` | the panel families are what a user actually reads; a percentage floor alone let a single new `col_*` key ship untranslated |

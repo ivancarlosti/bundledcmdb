@@ -25,6 +25,9 @@ environment-only: they are needed *before* the settings table can be read.
 * Timezone — applied to the panel and CSV exports; the API always returns UTC
   ISO-8601.
 * Default theme (`system`, `light`, `dark`) and rows per page.
+* **Serve the React panel at `/app/`** (`ui.spa_enabled`) — `1` since 10.8.0, so
+  `/` redirects to the SPA. Turning it off is the phase 9 rollback: `/` goes
+  back to `main.php` and `/app/` shows a notice instead of the shell.
 * Assets group: default source for panel-created assets and whether a serial
   number is mandatory.
 
@@ -161,5 +164,8 @@ php bin/check-i18n.php
 ```
 
 Current coverage: en-US 100 %, pt-BR 96 %, es-MX 87 %, fr-FR/zh-CN/hi-IN/ar-SA
-core UI (~20 %) with English fallback for the rest — extend the catalogues as
-needed.
+47 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
+`role_*` string — plus the legacy settings basics). The `set_*` family of the
+legacy settings page still falls back to en-US in those four locales;
+`ui/src/i18n/coverage.test.ts` keeps the panel families complete so a new
+`col_*` key cannot ship untranslated.

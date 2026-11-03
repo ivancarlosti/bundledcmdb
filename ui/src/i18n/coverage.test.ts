@@ -81,4 +81,23 @@ describe('i18n catalogues', () => {
       expect(enUS.has(`role_${role}`), `role_${role} is missing`).toBe(true);
     }
   });
+
+  /**
+   * The panel families are the ones a locale cannot leave to the en-US fallback:
+   * the grid builds `col_<api_key>`, `status_<value>`, `theme_<value>` and
+   * `role_<role>` from server data, and every screen uses `ui_*`. A missing key
+   * there is visible to a user who picked that locale, so the gate is per family
+   * and per locale instead of a global percentage.
+   */
+  it.each(['pt-BR', 'es-MX', 'fr-FR', 'zh-CN', 'hi-IN', 'ar-SA'])(
+    'translates the whole panel family in %s',
+    (locale) => {
+      const catalogue = readCatalog(locale);
+      const required = [...enUS.keys()].filter((key) =>
+        ['ui_', 'col_', 'status_', 'theme_', 'role_'].some((family) => key.startsWith(family)),
+      );
+      const missing = required.filter((key) => !catalogue.has(key)).sort();
+      expect(missing, `${locale} is missing panel keys: ${missing.join(', ')}`).toEqual([]);
+    },
+  );
 });

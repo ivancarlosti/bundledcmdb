@@ -26,10 +26,13 @@ const I18N_MIN_COVERAGE = [
     'en-US' => 100,
     'pt-BR' => 90,
     'es-MX' => 75,
-    'fr-FR' => 15,
-    'zh-CN' => 15,
-    'hi-IN' => 15,
-    'ar-SA' => 15,
+    // The four community locales ship the whole React panel (every `ui_*`,
+    // `col_*`, `status_*`, `theme_*` and `role_*` key) and fall back to en-US for
+    // the legacy `set_*`/`perm_*` screens of the PHP pages.
+    'fr-FR' => 45,
+    'zh-CN' => 45,
+    'hi-IN' => 45,
+    'ar-SA' => 45,
 ];
 
 $errors = [];
