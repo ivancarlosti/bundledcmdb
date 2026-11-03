@@ -7,7 +7,7 @@
  * settings, only `superadmin` sees the user roster.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/ui';
@@ -60,10 +60,13 @@ function useTab(ids: string[]): [string, (id: string) => void] {
   const [tab, setTab] = useState<string>(read);
 
   useEffect(() => {
-    const onPopState = () => setTab(read());
+    const onPopState = () => {
+      const requested = new URLSearchParams(window.location.search).get('tab') ?? '';
+      setTab(ids.includes(requested) ? requested : fallback);
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  });
+  }, [ids, fallback]);
 
   const select = (id: string) => {
     const url = new URL(window.location.href);
@@ -78,8 +81,14 @@ function useTab(ids: string[]): [string, (id: string) => void] {
 export function SettingsPage() {
   const { t } = useTranslation();
   const session = useCurrentSession();
-  const allowed = TABS.filter((tab) => tab.admin || session.capabilities.can_superadmin);
-  const [tab, select] = useTab(allowed.map((item) => item.id));
+  // Memoised so the tab hook's `popstate` effect is not re-registered on every
+  // render (the ids array is its dependency).
+  const allowed = useMemo(
+    () => TABS.filter((tab) => tab.admin || session.capabilities.can_superadmin),
+    [session.capabilities.can_superadmin],
+  );
+  const ids = useMemo(() => allowed.map((item) => item.id), [allowed]);
+  const [tab, select] = useTab(ids);
 
   if (!session.capabilities.can_admin) {
     return <Alert title={t('ui_err_forbidden')}>{t('set_title')}</Alert>;
