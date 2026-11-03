@@ -638,6 +638,17 @@ bumps by hand.
 7. **Rate limiting** on panel mutations (`rate_limited` reserved in §4.1).
 8. **`col_*` translations** for `fr-FR`, `zh-CN`, `hi-IN`, `ar-SA` (they fall
    back to en-US labels today; see §16, 2026-11-02 phase 2).
+9. **Selection + bulk actions** in the grid (delete/restore/status for a set) and
+   the 360 px viewport audit — the last unchecked phase 5 items.
+10. **Presigned PUT upload** (`POST /devices/{id}/files/presign`) if uploads ever
+    need to bypass PHP-FPM; today the server puts the object itself (§16, phase 3).
+11. **Pointer drag-and-drop** for the column picker (buttons already cover the
+    keyboard path; `@dnd-kit` is pinned).
+12. **Prettier**: `npm --prefix ui run format` fails on ~50 files that predate
+    this work (it is not part of the gate set yet). Reformatting is a separate,
+    no-behaviour-change commit.
+13. **`ui.yml` workflow** (typecheck/lint/vitest/playwright per PR) and the
+    release ZIP step that builds `public/app` — see §8.
 
 ## 15. Context recovery protocol
 
