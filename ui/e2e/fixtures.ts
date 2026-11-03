@@ -71,7 +71,7 @@ export const MESSAGES: Record<string, string> = {
   theme_light: 'Light',
   theme_dark: 'Dark',
   status_in_use: 'In Use',
-  status_in_stock: 'In Stock',
+  status_stock: 'In Stock',
   col_sn: 'Serial number',
   col_hostname: 'Hostname',
   col_status: 'Status',
@@ -227,7 +227,7 @@ export const META = {
   ],
   statuses: [
     { value: 'In Use', label_key: 'status_in_use' },
-    { value: 'In Stock', label_key: 'status_in_stock' },
+    { value: 'In Stock', label_key: 'status_stock' },
   ],
   sources: [],
   fields: [],
@@ -580,7 +580,6 @@ export const SETTINGS_PAYLOAD = {
       settings: [
         settingStub('general.default_locale', 'locale', 'en-US'),
         settingStub('general.per_page', 'int', '25', { min: 5, max: 500 }),
-        settingStub('ui.spa_enabled', 'bool', '1'),
       ],
     },
     {
