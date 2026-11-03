@@ -339,7 +339,7 @@ function panel_devices_create(array $params = []): array
         throw $e;
     }
 
-    asset_event_record($pdo, $id, 'create', $actor, asset_event_diff([], $data), null);
+    asset_event_record($pdo, $id, 'create', $actor, asset_event_diff([], $data), null, asset_event_device_meta($data, $id));
 
     $row = asset_get($pdo, $id, $company, true);
     if ($row === null) {
@@ -447,7 +447,7 @@ function panel_devices_save(PDO $pdo, array $user, array $row, array $body, bool
     }
 
     // Only what actually moved, so an idempotent save leaves no audit noise.
-    asset_event_record($pdo, $id, 'update', $actor, asset_event_diff($row, $fresh), null);
+    asset_event_record($pdo, $id, 'update', $actor, asset_event_diff($row, $fresh), null, asset_event_device_meta($fresh, $id));
 
     return panel_device_write_payload($pdo, $fresh);
 }
@@ -499,10 +499,10 @@ function panel_devices_delete(array $params = []): array
 
     if ($hard) {
         asset_hard_delete($pdo, $id, $company);
-        asset_event_record($pdo, $id, 'purge', $user['email']);
+        asset_event_record($pdo, $id, 'purge', $user['email'], [], null, asset_event_device_meta($row, $id));
     } else {
         asset_soft_delete($pdo, $id, $user['email'], $company);
-        asset_event_record($pdo, $id, 'delete', $user['email']);
+        asset_event_record($pdo, $id, 'delete', $user['email'], [], null, asset_event_device_meta($row, $id));
     }
 
     return ['data' => ['id' => $id, 'deleted' => true, 'hard' => $hard]];
@@ -523,7 +523,7 @@ function panel_devices_restore(array $params = []): array
     if (!empty($row['deleted_at'])) {
         $restored = asset_restore($pdo, $id, $user['email'], $company);
         if ($restored) {
-            asset_event_record($pdo, $id, 'restore', $user['email']);
+            asset_event_record($pdo, $id, 'restore', $user['email'], [], null, asset_event_device_meta($row, $id));
         }
     }
 
@@ -646,8 +646,10 @@ function panel_devices_bulk(array $params = []): array
                 }
                 if ($hard) {
                     asset_hard_delete($pdo, $id, $company);
+                    asset_event_record($pdo, $id, 'purge', $user['email'], [], null, asset_event_device_meta($row, $id));
                 } else {
                     asset_soft_delete($pdo, $id, $user['email'], $company);
+                    asset_event_record($pdo, $id, 'delete', $user['email'], [], null, asset_event_device_meta($row, $id));
                 }
             } elseif ($op === 'restore') {
                 if (empty($row['deleted_at'])) {
@@ -655,6 +657,7 @@ function panel_devices_bulk(array $params = []): array
                     continue;
                 }
                 asset_restore($pdo, $id, $user['email'], $company);
+                asset_event_record($pdo, $id, 'restore', $user['email'], [], null, asset_event_device_meta($row, $id));
             } else {
                 // Reuses PATCH: same validation, same company scope, same
                 // "deleted rows are read-only" rule.
@@ -694,7 +697,7 @@ function panel_devices_files_store(array $params = []): array
 
     $id = panel_device_id($params);
     $pdo = db();
-    panel_device_for_write($pdo, $user, $id);
+    $device = panel_device_for_write($pdo, $user, $id);
 
     if (!panel_storage_configured()) {
         throw new ApiError('storage_not_configured', 'Object storage is not configured.', 503);
@@ -703,7 +706,7 @@ function panel_devices_files_store(array $params = []): array
     // A JSON body means "I already uploaded this object with the presigned URL"
     // (`POST /devices/{id}/files/presign`); multipart is the server-side path.
     if (request_content_type() === 'application/json') {
-        return panel_devices_files_register($pdo, $user, $id);
+        return panel_devices_files_register($pdo, $user, $id, $device);
     }
 
     $file = $_FILES['file'] ?? $_FILES['new_file'] ?? null;
@@ -739,7 +742,7 @@ function panel_devices_files_store(array $params = []): array
     )->execute([$id, 'assets', $stored['key'], $name, $mime === '' ? null : $mime, $size]);
 
     $fileId = (int) $pdo->lastInsertId();
-    asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]]);
+    asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]], null, asset_event_device_meta($device, $id));
     $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = ? AND device_table = 'assets'");
     $stmt->execute([$fileId]);
     $row = $stmt->fetch();
@@ -817,8 +820,11 @@ function panel_devices_files_presign(array $params = []): array
  * Two checks keep this from being an "attach anything in the bucket" endpoint:
  * the key has to live under `assets/<this device>/`, and the object has to exist.
  */
-function panel_devices_files_register(PDO $pdo, array $user, int $id): array
+function panel_devices_files_register(PDO $pdo, array $user, int $id, array $device = []): array
 {
+    if ($device === []) {
+        $device = asset_get($pdo, $id, $user['company'] !== '' ? $user['company'] : null, true) ?? [];
+    }
     $body = request_json_body();
     $key = trim((string) ($body['key'] ?? ''));
     $name = trim((string) ($body['name'] ?? ''));
@@ -856,7 +862,7 @@ function panel_devices_files_register(PDO $pdo, array $user, int $id): array
     )->execute([$id, 'assets', $key, $name, $mime === '' ? null : $mime, $size]);
 
     $fileId = (int) $pdo->lastInsertId();
-    asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]]);
+    asset_event_record($pdo, $id, 'file_add', $user['email'], ['file' => [null, $name]], null, asset_event_device_meta($device, $id));
 
     $stmt = $pdo->prepare("SELECT * FROM device_files WHERE id = ? AND device_table = 'assets'");
     $stmt->execute([$fileId]);
@@ -873,7 +879,7 @@ function panel_devices_files_delete(array $params = []): array
     $pdo = db();
 
     $id = panel_device_id($params);
-    panel_device_for_write($pdo, $user, $id);
+    $device = panel_device_for_write($pdo, $user, $id);
 
     $rawFileId = (string) ($params['fileId'] ?? '');
     if (preg_match('/^\d+$/', $rawFileId) !== 1) {
@@ -897,7 +903,7 @@ function panel_devices_files_delete(array $params = []): array
     }
 
     $pdo->prepare('DELETE FROM device_files WHERE id = ?')->execute([$fileId]);
-    asset_event_record($pdo, $id, 'file_remove', $user['email'], ['file' => [(string) $file['file_name'], null]]);
+    asset_event_record($pdo, $id, 'file_remove', $user['email'], ['file' => [(string) $file['file_name'], null]], null, asset_event_device_meta($device, $id));
 
     return ['data' => ['id' => $fileId, 'deleted' => true]];
 }

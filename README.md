@@ -89,16 +89,22 @@ the file); change them before exposing the stack. The panel is published on
 * **React panel only** — `/` redirects to `/app/`; every screen talks to
   `/panel-api/v1/*`. The classic PHP pages are gone (see the note above).
 * **Devices grid** — server-side sort/filter/paging, per-column visibility and
-  order, bulk actions (status, soft delete, restore, purge, export), CSV/JSON
-  export, attachments and *save as…* named views.
+  order, bulk actions (status, soft delete, restore, purge, export), CSV and
+  native Excel (`.xlsx`) export, attachments and *save as…* named views.
 * **Device history** — every write lands in `asset_events` (`create`, `update`,
   `delete`, `restore`, `purge`, `file_add`, `file_remove`) and is shown as a
   timeline on the detail page.
+* **Audit log** (`/app/logs`) — the same table also records settings, sources,
+  custom fields, API keys, role changes and purges (with masked secrets), and is
+  filterable by actor, action, type, company and date range. Retention defaults
+  to 180 days (`logs.retention_days`), enforced automatically at most once every
+  12 hours and on demand through `bin/purge-logs.php`; a superadmin can also
+  purge by date from the screen.
 * **Per-user preferences** — locale, theme and page size live in
   `user_preferences`, so they follow the user across browsers.
 * **Settings tabs** (`/app/settings`) — general, storage (secret encrypted with
-  `APP_ENCRYPTION_KEY`), sources, API keys, custom fields and schema
-  maintenance. Values are stored in the database with `DB → ENV → default`
+  `APP_ENCRYPTION_KEY`), sources, API keys, custom fields, log retention and
+  schema maintenance. Values are stored in the database with `DB → ENV → default`
   precedence; see [docs/settings.md](docs/settings.md).
 * **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert and bulk
   endpoints, per-key company/source scopes, IP allowlists, token rotation.

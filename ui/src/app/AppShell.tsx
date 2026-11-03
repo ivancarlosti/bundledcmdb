@@ -56,13 +56,22 @@ export function AppShell({ children }: { children: ReactNode }) {
               {t('ui_devices')}
             </Link>
             {session.capabilities.can_admin ? (
-              <Link
-                to="/settings"
-                className={NAV_LINK}
-                activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
-              >
-                {t('set_title')}
-              </Link>
+              <>
+                <Link
+                  to="/logs"
+                  className={NAV_LINK}
+                  activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
+                >
+                  {t('logs_title')}
+                </Link>
+                <Link
+                  to="/settings"
+                  className={NAV_LINK}
+                  activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
+                >
+                  {t('set_title')}
+                </Link>
+              </>
             ) : null}
           </nav>
           <div className="ms-auto flex flex-wrap items-center gap-2">

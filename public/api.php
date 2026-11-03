@@ -234,7 +234,9 @@ function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 
         $id,
         $created ? 'create' : 'update',
         $actor,
-        asset_event_diff($created ? [] : (array) $existing, $data)
+        asset_event_diff($created ? [] : (array) $existing, $data),
+        null,
+        asset_event_device_meta($row, $id, $company)
     );
     return ['device' => api_device_payload($pdo, $row), 'created' => $created];
 }
@@ -309,7 +311,7 @@ function api_patch_device(PDO $pdo, array $auth, int $id, array $payload): array
     }
 
     $row = asset_get($pdo, $id, $company, true) ?? [];
-    asset_event_record($pdo, $id, 'update', $actor, asset_event_diff((array) $before, $changes));
+    asset_event_record($pdo, $id, 'update', $actor, asset_event_diff((array) $before, $changes), null, asset_event_device_meta($row, $id, $company));
     return ['device' => api_device_payload($pdo, $row)];
 }
 
@@ -321,16 +323,17 @@ function api_patch_device(PDO $pdo, array $auth, int $id, array $payload): array
 function api_delete_device(PDO $pdo, array $auth, int $id): array
 {
     $actor = 'api:' . (string) ($auth['key']['label'] ?? 'key');
-    if (asset_get($pdo, $id, $auth['company']) === null) {
+    $row = asset_get($pdo, $id, $auth['company']);
+    if ($row === null) {
         throw new ApiError('not_found', 'Device not found.', 404);
     }
     $hard = ($_GET['hard'] ?? '') === '1';
     if ($hard) {
         asset_hard_delete($pdo, $id, $auth['company']);
-        asset_event_record($pdo, $id, 'purge', $actor);
+        asset_event_record($pdo, $id, 'purge', $actor, [], null, asset_event_device_meta($row, $id, $auth['company']));
     } else {
         asset_soft_delete($pdo, $id, $actor, $auth['company']);
-        asset_event_record($pdo, $id, 'delete', $actor);
+        asset_event_record($pdo, $id, 'delete', $actor, [], null, asset_event_device_meta($row, $id, $auth['company']));
     }
 
     return ['id' => $id, 'deleted' => true, 'hard' => $hard];

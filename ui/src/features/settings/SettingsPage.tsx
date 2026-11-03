@@ -33,6 +33,7 @@ const TABS: Tab[] = [
   { id: 'sources', label_key: 'set_tab_sources', admin: true },
   { id: 'api', label_key: 'set_tab_api', admin: true },
   { id: 'fields', label_key: 'set_tab_fields', admin: true },
+  { id: 'logs', label_key: 'set_tab_logs', admin: true },
   { id: 'maintenance', label_key: 'set_tab_maintenance', admin: true },
   { id: 'users', label_key: 'set_tab_users', admin: false },
 ];
@@ -143,6 +144,9 @@ export function SettingsPage() {
           </div>
         ) : null}
         {tab === 'fields' ? <FieldsTab labelledBy={headingId} /> : null}
+        {tab === 'logs' ? (
+          <SettingsGroupPanel groups={['logs']} intro={t('set_logs_intro')} labelledBy={headingId} />
+        ) : null}
         {tab === 'maintenance' ? <MaintenanceTab labelledBy={headingId} /> : null}
         {tab === 'users' ? <UsersTab labelledBy={headingId} /> : null}
       </div>

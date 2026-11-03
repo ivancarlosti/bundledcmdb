@@ -6,7 +6,7 @@
  * already emits snake_case keys for every asset column.
  */
 
-import { apiRequest, apiRequestEnvelope, apiUrl } from '@/api/client';
+import { apiRequest, apiRequestEnvelope, apiUrl, buildQuery } from '@/api/client';
 import { devicesFilterQuery, devicesPageQuery, type GridState } from '@/features/grid/gridSearch';
 
 export type DeviceRow = {
@@ -149,9 +149,30 @@ export function fetchDevice(id: number): Promise<DeviceDetail> {
   return apiRequest<DeviceDetail>(`/devices/${id}`);
 }
 
-/** Direct link for the CSV export — same filters and sort, no paging. */
-export function deviceExportUrl(state: GridState): string {
-  return apiUrl(`/devices/export${devicesFilterQuery(state)}`);
+/** Direct link for the CSV/XLSX export — same filters and sort, no paging. */
+export function deviceExportUrl(state: GridState, format: 'csv' | 'xlsx' = 'csv'): string {
+  const query = devicesFilterQuery(state);
+  const separator = query === '' ? '?' : '&';
+  return apiUrl(`/devices/export${query}${separator}format=${format}`);
+}
+
+/** One account of the directory the "user e-mail" dropdown offers. */
+export type CompanyUser = {
+  email: string;
+  company: string;
+  role: string;
+};
+
+/**
+ * Accounts of one company (`GET /users`).
+ *
+ * The server decides the scope: a company-bound caller always gets its own
+ * company, whatever is asked for, so passing `''` from the form is safe.
+ */
+export function fetchCompanyUsers(company: string): Promise<CompanyUser[]> {
+  return apiRequest<{ rows: CompanyUser[]; total: number }>(`/users${buildQuery({ company })}`).then(
+    (data) => data.rows,
+  );
 }
 
 /**

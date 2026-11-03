@@ -102,7 +102,7 @@ the server-side guard.
 | `POST /panel-api/v1/views` | save a view; the same name overwrites it (`201`, same id) |
 | `PATCH/DELETE /panel-api/v1/views/{id}` | rename/replace the state / delete (404 outside your own views) |
 | `GET /panel-api/v1/devices` | list with filters, server-side sort, paging |
-| `GET /panel-api/v1/devices/export` | CSV with the same filters/sort |
+| `GET /panel-api/v1/devices/export` | CSV (`?format=csv`, default) or native `.xlsx` (`?format=xlsx`) with the same filters/sort |
 | `GET /panel-api/v1/devices/{id}` | one device + custom values + attachments |
 | `POST /panel-api/v1/devices` | create (manager+), `201` + the created row |
 | `POST /panel-api/v1/devices/bulk` | one operation (`status`, `byod`, `delete`, `restore`) on up to 200 ids, per-row results |
@@ -129,6 +129,9 @@ the server-side guard.
 | `PATCH /panel-api/v1/settings/users/{email}` | change a role; changing your own is `409 self_role_change` |
 | `GET /panel-api/v1/settings/maintenance` | migration status, PHP/DB/encryption diagnostics, cron hints |
 | `POST /panel-api/v1/settings/maintenance/migrate` | runs the migration runner; `{"dry_run": true}` is the default |
+| `GET /panel-api/v1/logs` | audit rows (admin+), filters `q`/`action`/`entity`/`actor`/`company`/`from`/`to`/`page`/`per_page`; `meta` carries the filter options, retention and last purge |
+| `POST /panel-api/v1/logs/purge` | superadmin: `{"before": "YYYY-MM-DD", "dry_run": true}` deletes (or counts) everything older than that day |
+| `GET /panel-api/v1/users` | directory for the device form's company-filtered e-mail dropdown (manager+; a company-bound caller always sees its own company) |
 
 Every mutation (`POST`/`PATCH`/`PUT`/`DELETE`) is counted against
 `api.panel_rate_limit` (default 120 per user per minute, fixed window in
@@ -283,8 +286,8 @@ Vite's own errors show up in the job output.
 
 ## Conventions
 
-* **Server owns the truth.** Sorting, filtering, paging and CSV export run in
-  SQL; the grid never sorts a full dataset in the browser.
+* **Server owns the truth.** Sorting, filtering, paging and the CSV/Excel export
+  run in SQL; the grid never sorts a full dataset in the browser.
 * **All network access goes through `src/api/client.ts`** — it adds the CSRF
   header, maps error envelopes to typed errors and handles `401` by clearing the
   session query.

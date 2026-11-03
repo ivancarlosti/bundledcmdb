@@ -33,6 +33,9 @@ require_once __DIR__ . '/../lib/panel/meta.php';
 require_once __DIR__ . '/../lib/panel/devices.php';
 require_once __DIR__ . '/../lib/panel/device_writes.php';
 require_once __DIR__ . '/../lib/panel/settings.php';
+require_once __DIR__ . '/../lib/panel/logs.php';
+require_once __DIR__ . '/../lib/panel/users.php';
+require_once __DIR__ . '/../lib/xlsx.php';
 
 app_boot();
 
@@ -94,6 +97,9 @@ foreach ([
     ['PATCH', '/settings/users/a%40example.com',    'panel_settings_users_update'],
     ['GET',   '/settings/maintenance',              'panel_settings_maintenance_show'],
     ['POST',  '/settings/maintenance/migrate',      'panel_settings_maintenance_migrate'],
+    ['GET',   '/logs',                              'panel_logs_index'],
+    ['POST',  '/logs/purge',                        'panel_logs_purge'],
+    ['GET',   '/users',                             'panel_users_index'],
     // Pre-existing literals, kept here so the ordering rule has one home.
     ['GET',   '/devices/export',                    'panel_devices_export'],
     ['POST',  '/devices/bulk',                      'panel_devices_bulk'],
@@ -181,6 +187,60 @@ check(
     'events: bookkeeping columns never count as a change'
 );
 check(asset_event_diff([], ['SN' => 'A']) === ['SN' => [null, 'A']], 'events: a create reports every set column');
+
+// --- audit retention (no database needed) -----------------------------------
+$fixed = new DateTimeImmutable('2026-11-05 12:00:00', new DateTimeZone('UTC'));
+check(LOGS_RETENTION_DEFAULT === 180, 'logs: the built-in default is 180 days');
+$retention = logs_retention_days();
+check($retention >= 0 && $retention <= 3650, 'logs: retention is clamped to a sane range', (string) $retention);
+check(
+    logs_cutoff($fixed, 180)->format('Y-m-d') === '2026-05-09',
+    'logs: the cutoff is the retention window before now',
+    logs_cutoff($fixed, 180)->format('Y-m-d')
+);
+check(logs_cutoff($fixed, 0)->format('Y-m-d') === '2026-11-05', 'logs: a zero-day retention keeps everything');
+
+$purgeDate = logs_purge_date('2026-06-01');
+check($purgeDate instanceof DateTimeImmutable, 'logs: an inclusive purge date parses');
+check(
+    $purgeDate !== null && $purgeDate->getTimezone()->getName() === 'UTC',
+    'logs: the purge boundary is converted to UTC'
+);
+check(logs_purge_date('2026-02-30') === null, 'logs: impossible dates are rejected');
+check(logs_purge_date('06/01/2026') === null, 'logs: only YYYY-MM-DD is accepted');
+
+$from = panel_logs_boundary('2026-11-05', 0, 'from');
+$to = panel_logs_boundary('2026-11-05', 1, 'to');
+check($from !== null && $to !== null && $from < $to, 'logs: the `to` boundary is the next midnight', (string) $from);
+check(panel_logs_boundary('', 0, 'from') === null, 'logs: an empty date is not a filter');
+$threw = false;
+try {
+    panel_logs_boundary('2026-13-01', 0, 'from');
+} catch (ApiError $e) {
+    $threw = $e->status === 400;
+}
+check($threw, 'logs: an invalid filter date is a 400');
+
+// --- xlsx writer (no database needed) ---------------------------------------
+check(xlsx_column(1) === 'A' && xlsx_column(26) === 'Z' && xlsx_column(27) === 'AA', 'xlsx: column letters');
+check(
+    xlsx_xml_text("A & B <c> \x01") === 'A &amp; B &lt;c&gt; ',
+    'xlsx: text is escaped and control characters are dropped',
+    xlsx_xml_text("A & B <c> \x01")
+);
+
+$sheet = implode('', iterator_to_array(xlsx_sheet_chunks(['SN', 'Hostname'], [['A1', 'pc-1'], ['A2', 'pc-2']])));
+check(str_contains($sheet, 'r="A1"') && str_contains($sheet, 'r="B3"'), 'xlsx: cells are addressed by row and column');
+check(str_contains($sheet, 'ySplit="1"'), 'xlsx: the header row is frozen');
+check(substr_count($sheet, '<row ') === 3, 'xlsx: header plus every data row');
+
+$workbook = xlsx_build(['SN', 'Hostname'], [['A1', 'pc-1']], 'Acme: 2026/27');
+check(str_starts_with($workbook, "PK\x03\x04"), 'xlsx: the package is a zip archive');
+foreach (['[Content_Types].xml', 'xl/workbook.xml', 'xl/worksheets/sheet1.xml', 'xl/styles.xml'] as $part) {
+    check(str_contains($workbook, $part), 'xlsx: contains ' . $part);
+}
+check(xlsx_sheet_name('Acme: 2026/27') === 'Acme- 2026-27', 'xlsx: forbidden sheet-name characters are replaced');
+
 
 // --- release stamping + DBA schema (no database needed) --------------------
 // `manifest.json` is the file semantic-release bumps. config.php used to fall

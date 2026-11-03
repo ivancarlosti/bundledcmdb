@@ -118,6 +118,7 @@ function panel_settings_payload(): array
         'api'     => 'set_group_api',
         'storage' => 'set_group_storage',
         's3'      => 'set_group_s3',
+        'logs'    => 'set_group_logs',
     ];
 
     foreach (settings_all(true) as $key => $entry) {
@@ -196,6 +197,52 @@ function panel_settings_store(string $key, mixed $raw, string $actor): ?string
 }
 
 /**
+ * Value written to the audit trail instead of a stored secret.
+ *
+ * The Logs screen must be able to say "the S3 secret was changed" without ever
+ * exposing it (and without leaking it into a table that is purged less often
+ * than the secret is rotated).
+ */
+const PANEL_AUDIT_SECRET = '••••••';
+
+/**
+ * Append one settings/user-management event.
+ *
+ * Every settings screen writes global rows, so `company` stays null unless the
+ * row it describes belongs to a tenant (an API key can). A company-bound admin
+ * sees the null-company rows, which is exactly right: global configuration is
+ * part of what happens to their instance.
+ *
+ * @param array<string, array{0: ?string, 1: ?string}> $changes
+ */
+function panel_settings_audit(
+    PDO $pdo,
+    array $user,
+    string $action,
+    string $entity,
+    string $entityId,
+    string $label,
+    array $changes = [],
+    ?string $note = null,
+    ?string $company = null
+): void {
+    asset_event_record(
+        $pdo,
+        null,
+        $action,
+        (string) ($user['email'] ?? 'system'),
+        $changes,
+        $note,
+        [
+            'entity'       => $entity,
+            'entity_id'    => $entityId,
+            'entity_label' => $label,
+            'company'      => $company,
+        ]
+    );
+}
+
+/**
  * PATCH /settings
  *
  * Body: `{ "values": { "<key>": <value> }, "clear": ["<secret key>"] }`.
@@ -215,6 +262,7 @@ function panel_settings_update(array $params = []): array
 
     $errors = [];
     $saved = [];
+    $audit = [];
 
     foreach ($clear as $key) {
         $def = settings_definitions()[$key] ?? null;
@@ -222,6 +270,7 @@ function panel_settings_update(array $params = []): array
             $errors[$key] = 'not_a_secret';
             continue;
         }
+        $audit[] = ['key' => $key, 'old' => PANEL_AUDIT_SECRET, 'new' => null];
         settings_set($key, '', $user['email']);
         $saved[] = $key;
     }
@@ -239,20 +288,46 @@ function panel_settings_update(array $params = []): array
                 // Unchanged: the form never receives the stored value.
                 continue;
             }
+            $audit[] = ['key' => $key, 'old' => PANEL_AUDIT_SECRET, 'new' => PANEL_AUDIT_SECRET];
             settings_set($key, $secret, $user['email']);
             $saved[] = $key;
             continue;
         }
+        $before = settings_get($key);
         $error = panel_settings_store($key, $raw, $user['email']);
         if ($error !== null) {
             $errors[$key] = $error;
             continue;
         }
+        $audit[] = ['key' => $key, 'old' => $before, 'new' => settings_get($key)];
         $saved[] = $key;
     }
 
     if ($errors !== []) {
         throw new ApiError('validation_failed', 'Some settings were rejected.', 422, $errors);
+    }
+
+    $pdo = db();
+    $defs = settings_definitions();
+    foreach ($audit as $entry) {
+        $key = (string) $entry['key'];
+        $old = $entry['old'] === null ? null : (string) $entry['old'];
+        $new = $entry['new'] === null ? null : (string) $entry['new'];
+        if ($old === $new) {
+            // The form re-submits every field; only real changes are audited.
+            continue;
+        }
+        panel_settings_audit(
+            $pdo,
+            $user,
+            'update',
+            'setting',
+            $key,
+            (string) ($defs[$key]['label'] ?? $key),
+            [$key => [$old, $new]],
+            null,
+            null
+        );
     }
 
     return ['data' => panel_settings_payload(), 'meta' => ['saved' => array_values(array_unique($saved))]];
@@ -306,7 +381,7 @@ function panel_settings_sources_index(array $params = []): array
 /** POST /settings/sources */
 function panel_settings_sources_store(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $body = panel_settings_body();
 
@@ -329,6 +404,12 @@ function panel_settings_sources_store(array $params = []): array
 
     source_create($pdo, $payload);
 
+    panel_settings_audit($pdo, $user, 'create', 'source', $slug, (string) $payload['label'], [
+        'slug'  => [null, $slug],
+        'label' => [null, (string) $payload['label']],
+        'color' => [null, (string) $payload['color']],
+    ]);
+
     return [
         'data'   => panel_settings_sources_payload($pdo),
         'status' => 201,
@@ -339,7 +420,7 @@ function panel_settings_sources_store(array $params = []): array
 /** PATCH /settings/sources/{slug} */
 function panel_settings_sources_update(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $slug = (string) ($params['slug'] ?? '');
     $source = source_get($pdo, $slug);
@@ -364,15 +445,24 @@ function panel_settings_sources_update(array $params = []): array
 
     source_update($pdo, $slug, $merged);
 
+    $changes = asset_event_diff(
+        ['label' => (string) $source['label'], 'color' => (string) ($source['color'] ?? ''), 'is_default' => (string) (int) $source['is_default']],
+        ['label' => (string) $merged['label'], 'color' => (string) $merged['color'], 'is_default' => $merged['is_default'] ? '1' : '0']
+    );
+    if ($changes !== []) {
+        panel_settings_audit($pdo, $user, 'update', 'source', $slug, (string) $merged['label'], $changes);
+    }
+
     return ['data' => panel_settings_sources_payload($pdo)];
 }
 
 /** DELETE /settings/sources/{slug} */
 function panel_settings_sources_delete(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $slug = (string) ($params['slug'] ?? '');
+    $source = source_get($pdo, $slug);
     $result = source_delete($pdo, $slug);
 
     if (!$result['ok']) {
@@ -380,6 +470,16 @@ function panel_settings_sources_delete(array $params = []): array
         $status = $code === 'not_found' ? 404 : 409;
         throw new ApiError($code, 'The source "' . $slug . '" cannot be deleted.', $status, ['slug' => $code]);
     }
+
+    panel_settings_audit(
+        $pdo,
+        $user,
+        'delete',
+        'source',
+        $slug,
+        $source === null ? $slug : (string) $source['label'],
+        ['slug' => [$slug, null]]
+    );
 
     return ['data' => panel_settings_sources_payload($pdo), 'meta' => ['deleted' => $slug]];
 }
@@ -515,7 +615,7 @@ function panel_settings_fields_index(array $params = []): array
 /** POST /settings/fields */
 function panel_settings_fields_store(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $input = panel_settings_field_apply(panel_settings_field_input([]), panel_settings_body());
     $payload = field_normalize_payload($input);
@@ -527,13 +627,19 @@ function panel_settings_fields_store(array $params = []): array
 
     $id = field_create($pdo, $input, (string) session_user_email());
 
+    panel_settings_audit($pdo, $user, 'create', 'field', (string) $id, (string) $input['label'], [
+        'field_key' => [null, (string) $input['field_key']],
+        'label'     => [null, (string) $input['label']],
+        'data_type' => [null, (string) $input['data_type']],
+    ]);
+
     return ['data' => panel_settings_fields_payload($pdo), 'status' => 201, 'meta' => ['id' => $id]];
 }
 
 /** PATCH /settings/fields/{id} */
 function panel_settings_fields_update(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $id = panel_settings_id($params);
     $existing = field_def_by_id($pdo, $id);
@@ -551,20 +657,45 @@ function panel_settings_fields_update(array $params = []): array
 
     field_update($pdo, $id, $input, (string) session_user_email());
 
+    // Only scalars: `options`/`label_i18n`/`validation` are arrays and would
+    // either bloat the audit row or trip the string cast inside the diff.
+    $audited = ['field_key', 'label', 'data_type', 'default_value', 'editable_roles'];
+    $before = [];
+    $after = [];
+    foreach ($audited as $key) {
+        $before[$key] = (string) ($existing[$key] ?? '');
+        $after[$key] = (string) ($input[$key] ?? '');
+    }
+    $changes = asset_event_diff($before, $after);
+    if ($changes !== []) {
+        panel_settings_audit($pdo, $user, 'update', 'field', (string) $id, (string) $input['label'], $changes);
+    }
+
     return ['data' => panel_settings_fields_payload($pdo), 'meta' => ['id' => $id]];
 }
 
 /** DELETE /settings/fields/{id} — also drops every stored value. */
 function panel_settings_fields_delete(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $id = panel_settings_id($params);
-    if (field_def_by_id($pdo, $id) === null) {
+    $existing = field_def_by_id($pdo, $id);
+    if ($existing === null) {
         throw new ApiError('not_found', 'No custom field with id ' . $id . '.', 404);
     }
 
     field_delete($pdo, $id);
+
+    panel_settings_audit(
+        $pdo,
+        $user,
+        'delete',
+        'field',
+        (string) $id,
+        (string) ($existing['label'] ?? $id),
+        ['field_key' => [(string) ($existing['field_key'] ?? ''), null]]
+    );
 
     return ['data' => panel_settings_fields_payload($pdo), 'meta' => ['deleted' => $id]];
 }
@@ -676,6 +807,24 @@ function panel_settings_keys_store(array $params = []): array
 
     $created = api_key_create($pdo, $payload, $user['email']);
 
+    panel_settings_audit(
+        $pdo,
+        $user,
+        'create',
+        'api_key',
+        (string) $created['id'],
+        (string) $payload['label'],
+        [
+            'label'   => [null, (string) $payload['label']],
+            'company' => [null, (string) ($payload['company'] ?? '')],
+            'can_read'  => [null, (string) $payload['can_read']],
+            'can_write' => [null, (string) $payload['can_write']],
+            'can_delete' => [null, (string) $payload['can_delete']],
+        ],
+        null,
+        $payload['company'] === null ? null : (string) $payload['company']
+    );
+
     return [
         'data'   => panel_settings_keys_payload($pdo),
         'status' => 201,
@@ -686,7 +835,7 @@ function panel_settings_keys_store(array $params = []): array
 /** PATCH /settings/api-keys/{id} — scopes only, the token is untouched. */
 function panel_settings_keys_update(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $id = panel_settings_id($params);
     $existing = api_key_get($pdo, $id);
@@ -709,19 +858,54 @@ function panel_settings_keys_update(array $params = []): array
 
     api_key_update($pdo, $id, $payload);
 
+    $audited = ['label', 'company', 'source_slug', 'allowed_sources', 'ip_allowlist', 'can_read', 'can_write', 'can_delete', 'is_active'];
+    $before = [];
+    $after = [];
+    foreach ($audited as $key) {
+        $before[$key] = (string) ($existing[$key] ?? '');
+        $after[$key] = (string) ($payload[$key] ?? '');
+    }
+    $changes = asset_event_diff($before, $after);
+    if ($changes !== []) {
+        panel_settings_audit(
+            $pdo,
+            $user,
+            'update',
+            'api_key',
+            (string) $id,
+            (string) $payload['label'],
+            $changes,
+            null,
+            $payload['company'] === null ? null : (string) $payload['company']
+        );
+    }
+
     return ['data' => panel_settings_keys_payload($pdo), 'meta' => ['id' => $id]];
 }
 
 /** POST /settings/api-keys/{id}/rotate — new token, same scopes. */
 function panel_settings_keys_rotate(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $id = panel_settings_id($params);
+    $existing = api_key_get($pdo, $id);
     $token = api_key_rotate($pdo, $id);
     if ($token === null) {
         throw new ApiError('not_found', 'No API key with id ' . $id . '.', 404);
     }
+
+    panel_settings_audit(
+        $pdo,
+        $user,
+        'key_rotate',
+        'api_key',
+        (string) $id,
+        (string) ($existing['label'] ?? $id),
+        [],
+        'Token rotated',
+        $existing === null || $existing['company'] === null ? null : (string) $existing['company']
+    );
 
     return ['data' => panel_settings_keys_payload($pdo), 'meta' => ['id' => $id, 'token' => $token]];
 }
@@ -729,12 +913,25 @@ function panel_settings_keys_rotate(array $params = []): array
 /** DELETE /settings/api-keys/{id} */
 function panel_settings_keys_delete(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $id = panel_settings_id($params);
+    $existing = api_key_get($pdo, $id);
     if (!api_key_delete($pdo, $id)) {
         throw new ApiError('not_found', 'No API key with id ' . $id . '.', 404);
     }
+
+    panel_settings_audit(
+        $pdo,
+        $user,
+        'delete',
+        'api_key',
+        (string) $id,
+        (string) ($existing['label'] ?? $id),
+        ['label' => [(string) ($existing['label'] ?? ''), null]],
+        null,
+        $existing === null || $existing['company'] === null ? null : (string) $existing['company']
+    );
 
     return ['data' => panel_settings_keys_payload($pdo), 'meta' => ['deleted' => $id]];
 }
@@ -789,7 +986,7 @@ function panel_settings_users_index(array $params = []): array
 /** PATCH /settings/users/{email} — body `{"role": "manager"}`. */
 function panel_settings_users_update(array $params = []): array
 {
-    panel_settings_writer(true);
+    $user = panel_settings_writer(true);
     $pdo = db();
     $email = trim(rawurldecode((string) ($params['email'] ?? '')));
     if ($email === '') {
@@ -815,7 +1012,20 @@ function panel_settings_users_update(array $params = []): array
         throw new ApiError('self_role_change', 'You cannot change your own role.', 409, ['role' => 'self_role_change']);
     }
 
+    $previousRole = session_role_normalize((string) ($row['role'] ?? ''));
     $pdo->prepare('UPDATE users SET role = ? WHERE email = ?')->execute([$role, $email]);
+
+    panel_settings_audit(
+        $pdo,
+        $user,
+        'role_change',
+        'user',
+        $email,
+        $email,
+        $previousRole === $role ? [] : ['role' => [$previousRole, $role]],
+        null,
+        (string) ($row['company'] ?? '') === '' ? null : (string) $row['company']
+    );
 
     return ['data' => panel_settings_users_payload($pdo), 'meta' => ['email' => $email, 'role' => $role]];
 }
@@ -872,12 +1082,25 @@ function panel_settings_maintenance_show(array $params = []): array
  */
 function panel_settings_maintenance_migrate(array $params = []): array
 {
-    panel_settings_writer();
+    $user = panel_settings_writer();
     $pdo = db();
     $dryRun = !empty(panel_settings_body()['dry_run']);
 
     $run = migrate_run($pdo, $dryRun);
     $payload = panel_settings_maintenance_payload();
+
+    if (!$dryRun && $run['applied'] !== []) {
+        panel_settings_audit(
+            $pdo,
+            $user,
+            'update',
+            'migration',
+            'schema',
+            'schema',
+            [],
+            'Applied: ' . implode(', ', $run['applied'])
+        );
+    }
 
     return [
         'data' => $payload,

@@ -572,14 +572,17 @@ function panel_device_payload_keys(): array
 }
 
 /**
- * GET /devices/export — streams a CSV with the same filters, sort and visible
- * columns as `GET /devices`. Never returns: the response is written directly to
- * `php://output` (with the Excel-friendly BOM and `;` separator used by the
- * legacy export) so large result sets are not buffered in memory.
+ * Header + row generator shared by both export formats.
+ *
+ * Extracted so CSV and XLSX cannot drift: which columns are exported, the
+ * translated header and the status/boolean rendering are decided once. `rows` is
+ * a generator, so the Excel writer streams instead of holding the table.
+ *
+ * @param array{email: string, company: string, role: string} $user
+ * @return array{slug: string, sheet: string, header: list<string>, rows: Generator<int, list<string>>}
  */
-function panel_devices_export(array $params = []): never
+function panel_devices_export_dataset(array $user): array
 {
-    $user = session_require();
     $pdo = db();
 
     $filters = panel_devices_params($_GET);
@@ -601,18 +604,6 @@ function panel_devices_export(array $params = []): never
 
     $company = $user['company'] !== '' ? $user['company'] : 'all';
     $slug = preg_replace('/[^A-Za-z0-9_-]+/', '_', $company) ?: 'all';
-    $filename = 'assets-' . $slug . '-' . gmdate('Ymd-His') . '.csv';
-
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Cache-Control: no-store');
-    header('X-Content-Type-Options: nosniff');
-
-    $out = fopen('php://output', 'wb');
-    if ($out === false) {
-        throw new ApiError('server_error', 'Could not open the output stream.', 500);
-    }
-    fwrite($out, "\xEF\xBB\xBF");
 
     $header = [];
     foreach ($columns as $column) {
@@ -621,8 +612,91 @@ function panel_devices_export(array $params = []): never
     foreach ($gridFields as $def) {
         $header[] = field_label($def, $locale);
     }
-    fputcsv($out, $header, ';', '"', '');
 
+    return [
+        'slug'   => $slug,
+        // Excel sheet names are capped at 31 chars and cannot contain `[]:*?/\`;
+        // `xlsx_build()` enforces both again, this is just the readable default.
+        'sheet'  => $company === 'all' ? 'Assets' : $company,
+        'header' => $header,
+        'rows'   => panel_devices_export_rows($pdo, $user, $filters, $order, $columns, $gridFields, $defs, $locale),
+    ];
+}
+
+/**
+ * `GET /devices/export?format=csv|xlsx` — the same filters, sort and visible
+ * columns as `GET /devices`. Never returns: the response is written straight to
+ * `php://output`, so a large export is not buffered in memory.
+ *
+ * CSV keeps the legacy dialect (UTF-8 BOM, `;` separator) that spreadsheets in
+ * the default locale expect; `format=xlsx` writes a real workbook (bold header,
+ * frozen row) through `lib/xlsx.php`.
+ */
+function panel_devices_export(array $params = []): never
+{
+    $user = session_require();
+
+    $rawFormat = $_GET['format'] ?? 'csv';
+    $format = is_string($rawFormat) ? strtolower(trim($rawFormat)) : 'csv';
+    if (!in_array($format, ['csv', 'xlsx'], true)) {
+        throw new ApiError('validation_failed', 'Unknown export format.', 422, ['format' => 'invalid_option']);
+    }
+
+    $dataset = panel_devices_export_dataset($user);
+    $filename = 'assets-' . $dataset['slug'] . '-' . gmdate('Ymd-His') . '.' . $format;
+
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+
+    if ($format === 'xlsx') {
+        require_once __DIR__ . '/../xlsx.php';
+        $bytes = xlsx_build($dataset['header'], $dataset['rows'], $dataset['sheet']);
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Length: ' . strlen($bytes));
+        echo $bytes;
+        exit;
+    }
+
+    header('Content-Type: text/csv; charset=utf-8');
+
+    $out = fopen('php://output', 'wb');
+    if ($out === false) {
+        throw new ApiError('server_error', 'Could not open the output stream.', 500);
+    }
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, $dataset['header'], ';', '"', '');
+
+    foreach ($dataset['rows'] as $line) {
+        fputcsv($out, $line, ';', '"', '');
+    }
+
+    fclose($out);
+    exit;
+}
+
+/**
+ * One export line per device, paged exactly like the grid so the two cannot
+ * disagree about which rows the current filter selects.
+ *
+ * @param array{email: string, company: string, role: string} $user
+ * @param array<string, mixed> $filters
+ * @param array{sort: string, dir: string} $order
+ * @param list<array<string, mixed>> $columns
+ * @param list<array<string, mixed>> $gridFields
+ * @param list<array<string, mixed>> $defs
+ * @return Generator<int, list<string>>
+ */
+function panel_devices_export_rows(
+    PDO $pdo,
+    array $user,
+    array $filters,
+    array $order,
+    array $columns,
+    array $gridFields,
+    array $defs,
+    string $locale
+): Generator {
     $statusKeys = [];
     foreach (panel_status_payload() as $status) {
         $statusKeys[$status['value']] = $status['label_key'];
@@ -659,14 +733,12 @@ function panel_devices_export(array $params = []): never
             foreach ($gridFields as $def) {
                 $line[] = field_display_value($def, $custom[$id][(string) $def['field_key']] ?? null);
             }
-            fputcsv($out, $line, ';', '"', '');
+            yield $line;
         }
 
         $pages = max(1, (int) ceil($fetch['total'] / $perPage));
         $page++;
     } while ($page <= $pages);
-
-    fclose($out);
-    exit;
 }
+
 

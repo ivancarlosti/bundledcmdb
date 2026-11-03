@@ -76,10 +76,14 @@ test.describe('preferences', () => {
     await page.getByRole('button', { name: /Serial number/ }).click();
     await expect.poll(() => page.url()).toContain('sort=SN&dir=asc');
 
-    const link = page.getByRole('link', { name: 'Export to Excel' });
+    const link = page.getByRole('link', { name: 'Export CSV' });
     // The link is a plain GET with the grid's own query, so the download can be
     // bookmarked and matches what the table shows.
-    await expect(link).toHaveAttribute('href', /\/devices\/export\?.*sort=SN&dir=asc/);
+    await expect(link).toHaveAttribute('href', /\/devices\/export\?.*sort=SN&dir=asc.*format=csv/);
+    await expect(page.getByRole('link', { name: 'Export Excel' })).toHaveAttribute(
+      'href',
+      /\/devices\/export\?.*format=xlsx/,
+    );
 
     // `page.route` does not see a download navigation, so this one request really
     // leaves the browser. Assert on the URL instead of the body: the CSV content

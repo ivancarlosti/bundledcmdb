@@ -24,6 +24,7 @@ require_once __DIR__ . '/storage.php';
 require_once __DIR__ . '/saved_views.php';
 require_once __DIR__ . '/asset_fields.php';
 require_once __DIR__ . '/asset_events.php';
+require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/assets.php';
 require_once __DIR__ . '/api_auth.php';
 

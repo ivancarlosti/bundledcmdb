@@ -121,9 +121,15 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 
 -- Audit trail. asset_id is deliberately not a foreign key: the history has to
 -- outlive a hard delete. `changes` holds {field: [old, new]} as JSON.
+-- `entity`/`entity_id`/`entity_label` describe what was touched (a device, a
+-- setting, an API key, …) and `company` scopes the Logs screen without a join.
 CREATE TABLE IF NOT EXISTS asset_events (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     asset_id INT NULL,
+    company VARCHAR(191) NULL,
+    entity VARCHAR(32) NOT NULL DEFAULT 'device',
+    entity_id VARCHAR(64) NULL,
+    entity_label VARCHAR(191) NULL,
     action VARCHAR(32) NOT NULL,
     actor VARCHAR(191) NOT NULL,
     changes LONGTEXT NULL,
@@ -132,7 +138,10 @@ CREATE TABLE IF NOT EXISTS asset_events (
     PRIMARY KEY (id),
     KEY idx_asset_events_asset (asset_id, id),
     KEY idx_asset_events_created (created_at),
-    KEY idx_asset_events_actor (actor)
+    KEY idx_asset_events_actor (actor),
+    KEY idx_asset_events_company (company, id),
+    KEY idx_asset_events_entity (entity, id),
+    KEY idx_asset_events_action (action, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Named grid presets; (email, name) is unique so "save as …" with an existing
@@ -184,5 +193,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_04_0008_retire_spa_flag'),
     ('2026_11_04_0009_rate_limits'),
     ('2026_11_04_0010_asset_events'),
-    ('2026_11_04_0011_saved_views');
+    ('2026_11_04_0011_saved_views'),
+    ('2026_11_05_0012_audit_entities');
 

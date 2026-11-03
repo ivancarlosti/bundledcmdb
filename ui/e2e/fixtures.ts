@@ -46,6 +46,50 @@ export const MESSAGES: Record<string, string> = {
   ui_ev_purge: 'Deleted permanently',
   ui_ev_file_add: 'Attachment added',
   ui_ev_file_remove: 'Attachment removed',
+  ui_ev_key_rotate: 'Key rotated',
+  ui_ev_log_purge: 'Log purged',
+  ui_ev_role_change: 'Role changed',
+  ui_user_email_hint: 'Accounts of the selected company.',
+  ui_user_email_other: 'Other…',
+  logs_title: 'Audit log',
+  logs_intro: 'Every change made through the panel or the API.',
+  logs_total: '{{total}} event(s)',
+  logs_empty: 'No events match these filters.',
+  logs_retention: 'Keeping {{days}} days of history.',
+  logs_retention_off: 'History is kept indefinitely.',
+  logs_last_purge: 'Last purge: {{when}}.',
+  logs_never_purged: 'The log has never been trimmed.',
+  logs_col_time: 'When',
+  logs_col_actor: 'Who',
+  logs_col_action: 'Action',
+  logs_col_entity: 'What',
+  logs_col_company: 'Company',
+  logs_col_details: 'Details',
+  logs_filter_search: 'Search',
+  logs_filter_action: 'Action',
+  logs_filter_entity: 'Type',
+  logs_filter_company: 'Company',
+  logs_filter_from: 'From',
+  logs_filter_to: 'To',
+  logs_filter_clear: 'Clear filters',
+  logs_purge_title: 'Purge history',
+  logs_purge_hint: 'Deletes every event recorded before the selected day.',
+  logs_purge_btn: 'Delete older events',
+  logs_purge_preview: '{{count}} event(s) older than {{date}} will be deleted. Continue?',
+  logs_purge_done: '{{count}} event(s) deleted.',
+  logs_entity_api_key: 'API key',
+  logs_entity_device: 'Device',
+  logs_entity_field: 'Custom field',
+  logs_entity_logs: 'Audit log',
+  logs_entity_migration: 'Schema',
+  logs_entity_setting: 'Setting',
+  logs_entity_source: 'Source',
+  logs_entity_system: 'System',
+  logs_entity_user: 'User',
+  set_tab_logs: 'Logs',
+  set_group_logs: 'Audit log',
+  set_logs_intro: 'How long the audit trail is kept.',
+  setting_logs_retention_days: 'Audit log retention (days)',
   records: 'records',
   signed_in_as: 'Signed in as:',
   search_text: 'Search Text',
@@ -55,7 +99,8 @@ export const MESSAGES: Record<string, string> = {
   all: 'All',
   yes: 'Yes',
   no: 'No',
-  export_btn: 'Export to Excel',
+  export_btn: 'Export CSV',
+  export_xlsx_btn: 'Export Excel',
   no_assets: 'No assets found.',
   previous: 'Previous',
   next: 'Next',
@@ -187,6 +232,73 @@ export const EVENTS = [
   },
 ];
 
+/** Directory stub for the "user e-mail" dropdown (`GET /users`). */
+export const COMPANY_USERS = [
+  { email: 'admin@example.com', company: 'Acme', role: 'admin' },
+  { email: 'manager@example.com', company: 'Acme', role: 'manager' },
+];
+
+/** Audit-log stub (`GET /logs`): a device write plus a settings change. */
+export const LOG_ROWS = [
+  {
+    id: 12,
+    asset_id: 7,
+    company: 'Acme',
+    entity: 'device',
+    entity_id: '7',
+    entity_label: 'SN-0007',
+    action: 'update',
+    actor: 'admin@example.com',
+    changes: { Status: ['In Use', 'In Stock'] },
+    note: null,
+    created_at: '2026-11-02T12:05:00Z',
+  },
+  {
+    id: 11,
+    asset_id: null,
+    company: null,
+    entity: 'setting',
+    entity_id: 'general.default_theme',
+    entity_label: 'Default theme',
+    action: 'update',
+    actor: 'qa@example.com',
+    changes: { 'general.default_theme': ['system', 'dark'] },
+    note: null,
+    created_at: '2026-11-02T12:00:00Z',
+  },
+];
+
+export const LOGS_META = {
+  filters: {
+    q: '',
+    action: '',
+    entity: '',
+    actor: '',
+    from: null,
+    to: null,
+    company: null,
+  },
+  scope: 'all',
+  filter_options: {
+    actions: [
+      'create',
+      'update',
+      'delete',
+      'restore',
+      'purge',
+      'file_add',
+      'file_remove',
+      'role_change',
+      'key_rotate',
+      'log_purge',
+    ],
+    entities: ['device', 'setting', 'source', 'field', 'api_key', 'user', 'migration', 'logs'],
+    companies: ['Acme', 'Globex'],
+  },
+  retention_days: 180,
+  last_purge: null,
+};
+
 export const META = {
   columns: [
     {
@@ -244,6 +356,18 @@ export const META = {
       editable: false,
       virtual: true,
     },
+    {
+      // Not a grid column: it exists so the form renders the e-mail dropdown.
+      key: 'UserEmail',
+      api_key: 'user_email',
+      label_key: 'col_user_email',
+      label: 'E-mail',
+      type: 'email',
+      in_grid: false,
+      sortable: false,
+      editable: true,
+      virtual: false,
+    },
   ],
   statuses: [
     { value: 'In Use', label_key: 'status_in_use' },
@@ -258,7 +382,10 @@ export const META = {
   capabilities: SESSION.capabilities,
   defaultSort: { sort: 'updated_at', dir: 'desc' },
   virtualSorts: ['files'],
-  writeColumns: { create: ['sn', 'hostname', 'status', 'source'], update: ['sn', 'hostname', 'status'] },
+  writeColumns: {
+    create: ['sn', 'hostname', 'status', 'source', 'user_email'],
+    update: ['sn', 'hostname', 'status', 'user_email'],
+  },
   limits: { requireSn: true, maxUploadBytes: 26214400 },
   schemaReady: true,
 };
@@ -425,6 +552,26 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     });
   });
   await page.route('**/panel-api/v1/meta', (route) => json(route, META));
+
+  // Directory for the device form's "user e-mail" dropdown.
+  await page.route('**/panel-api/v1/users**', (route) =>
+    json(route, { rows: COMPANY_USERS, total: COMPANY_USERS.length }, { company: 'Acme' }),
+  );
+
+  // Audit log. `/logs/purge` is registered last so it wins over the list route.
+  await page.route('**/panel-api/v1/logs**', (route) =>
+    json(route, { rows: LOG_ROWS, total: LOG_ROWS.length, page: 1, per_page: 50, pages: 1 }, LOGS_META),
+  );
+  await page.route('**/panel-api/v1/logs/purge', (route) =>
+    json(route, {
+      deleted: 2,
+      before: '2026-01-01',
+      cutoff: '2026-01-01 00:00:00',
+      dry_run: false,
+      last_purge: null,
+      retention_days: 180,
+    }),
+  );
 
   await page.route('**/panel-api/v1/devices**', (route) => {
     const request = route.request();

@@ -108,6 +108,26 @@ destroying panel data and keeps filtering/sorting cheap.
 
 Deactivating a field keeps its values; deleting it removes them.
 
+### Audit log retention
+The Logs tab holds one setting: **`logs.retention_days`** (default 180, 7–3650).
+It is the policy behind the audit trail (`asset_events`, `lib/logs.php`):
+
+* the purge deletes rows older than the window in 5 000-row chunks, so a large
+  table never locks;
+* the panel has no scheduler, so `GET /session` triggers a check. A `log_purge`
+  row records each run, and one run per 12 hours is enforced from it — a busy
+  instance trims twice a day without any cron;
+* `php bin/purge-logs.php` runs the same purge on demand
+  (`--dry-run` counts, `--before=YYYY-MM-DD` overrides the window, `--status`
+  shows retention, row count and the last purge);
+* the Logs screen (`/app/logs`) lists the events and — for a superadmin only —
+  offers a purge by date. Deleting history is instance-wide, so a company admin
+  can read the log but not destroy it.
+
+Dates are inclusive in the configured timezone: "purge before 2026-06-01"
+removes everything older than 2026-06-01 00:00 local time. Values written by a
+settings write are recorded with secrets masked (`••••••`), never in clear.
+
 ### Maintenance
 Schema status (applied/pending migrations), secret-encryption state, a *Run
 migrations* button (with dry-run), and diagnostics (version, PHP, DB, timezone,

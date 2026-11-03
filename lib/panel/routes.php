@@ -69,6 +69,12 @@ function panel_routes(): array
         ['PATCH', '/settings/users/{email}', 'panel_settings_users_update'],
         ['GET',   '/settings/maintenance', 'panel_settings_maintenance_show'],
         ['POST',  '/settings/maintenance/migrate', 'panel_settings_maintenance_migrate'],
+        // Audit log. `/logs/purge` is a literal, so it is listed before nothing
+        // that could swallow it (there is no `{id}` on this resource).
+        ['GET',   '/logs',                'panel_logs_index'],
+        ['POST',  '/logs/purge',          'panel_logs_purge'],
+        // Directory for the device form's "user email" dropdown.
+        ['GET',   '/users',               'panel_users_index'],
     ];
 }
 

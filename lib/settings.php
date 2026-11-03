@@ -56,6 +56,15 @@ function settings_definitions(): array
             'label' => 'Enable serial number requirement',
         ],
 
+        // --- Logs ---
+        // Audit retention (`lib/logs.php`). Rows older than this are removed by
+        // the automatic purge (at most once per 12 h, triggered from
+        // `GET /session`) and by the manual purge on the Logs screen.
+        'logs.retention_days' => [
+            'group' => 'logs', 'type' => 'int', 'default' => '180', 'min' => 7, 'max' => 3650,
+            'label' => 'Audit log retention (days)',
+        ],
+
         // --- API ---
         'api.enabled' => [
             'group' => 'api', 'type' => 'bool', 'default' => '1',

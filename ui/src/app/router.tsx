@@ -5,6 +5,7 @@ import { Alert } from '@/components/ui';
 import { DeviceDetailPage } from '@/features/devices/DeviceDetailPage';
 import { DeviceFormPage } from '@/features/devices/DeviceFormPage';
 import { DeviceGridPage } from '@/features/devices/DeviceGridPage';
+import { LogsPage } from '@/features/logs/LogsPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 
 import { AppShell } from './AppShell';
@@ -92,6 +93,13 @@ const routeTree = rootRoute.addChildren([
   newDeviceRoute,
   editDeviceRoute,
   deviceRoute,
+  // The audit log is its own screen: it is not a device view and it has filters
+  // (action, entity, date range) the grid's query string cannot express.
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/logs',
+    component: LogsPage,
+  }),
   settingsRoute,
 ]);
 

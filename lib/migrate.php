@@ -131,6 +131,10 @@ function migrations(): array
             'description' => 'Create saved_views (named grid presets per user)',
             'run' => 'migration_0011_saved_views',
         ],
+        '2026_11_05_0012_audit_entities' => [
+            'description' => 'Add asset_events company/entity columns + indexes, backfill device rows',
+            'run' => 'migration_0012_audit_entities',
+        ],
     ];
 }
 
@@ -583,3 +587,55 @@ function migration_0011_saved_views(PDO $pdo): void
     );
     migrate_note('CREATE TABLE saved_views');
 }
+
+/**
+ * Turn `asset_events` into the audit log behind the Logs screen.
+ *
+ * The table started as a per-device history (`0010`), where the company was
+ * implied by the asset row. An audit screen has to filter by company without a
+ * join, and has to describe rows that are not devices at all (settings, sources,
+ * keys, roles), so the entity and company become columns.
+ *
+ * Backfill runs only on the run that adds the columns; afterwards the values are
+ * written by `asset_event_record()`.
+ */
+function migration_0012_audit_entities(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'asset_events')) {
+        // 0010 has not run: nothing to extend yet. Keeping the step a no-op here
+        // is safer than creating a half-table that 0010 would then have to fix.
+        return;
+    }
+
+    migrate_add_column($pdo, 'asset_events', 'company', 'VARCHAR(191) NULL');
+    $added = migrate_add_column($pdo, 'asset_events', 'entity', "VARCHAR(32) NOT NULL DEFAULT 'device'");
+    migrate_add_column($pdo, 'asset_events', 'entity_id', 'VARCHAR(64) NULL');
+    migrate_add_column($pdo, 'asset_events', 'entity_label', 'VARCHAR(191) NULL');
+
+    migrate_add_index($pdo, 'asset_events', 'idx_asset_events_company', '`company`, `id`');
+    migrate_add_index($pdo, 'asset_events', 'idx_asset_events_entity', '`entity`, `id`');
+    // `logs_purge_due()` looks up the newest `log_purge` row on every session
+    // bootstrap, so that lookup has to be an index seek, not a table scan.
+    migrate_add_index($pdo, 'asset_events', 'idx_asset_events_action', '`action`, `id`');
+
+    if (!$added) {
+        return;
+    }
+
+    $pdo->exec('UPDATE asset_events SET entity_id = CAST(asset_id AS CHAR) WHERE asset_id IS NOT NULL AND entity_id IS NULL');
+    migrate_note('backfill asset_events.entity_id');
+
+    // Device rows are the only historical rows: their company and label live on
+    // the asset. A hard-deleted device has no row left, and those events keep a
+    // NULL company — they were already global in everything but name.
+    if (db_table_exists($pdo, 'assets') && db_column_exists($pdo, 'assets', 'SN')
+        && db_column_exists($pdo, 'assets', 'company')) {
+        $pdo->exec(
+            'UPDATE asset_events e JOIN assets a ON a.Id = e.asset_id
+             SET e.company = a.company, e.entity_label = a.SN
+             WHERE e.asset_id IS NOT NULL'
+        );
+        migrate_note('backfill asset_events.company/entity_label from assets');
+    }
+}
+

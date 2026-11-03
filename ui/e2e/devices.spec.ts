@@ -32,6 +32,30 @@ test.describe('device writes', () => {
     await expect.poll(() => page.url()).toContain('/app/devices/99');
   });
 
+  test('offers the company directory in the e-mail dropdown', async ({ page }) => {
+    let posted: Record<string, unknown> | undefined;
+    await mockPanel(page, {
+      onCreate: (body) => {
+        posted = body;
+      },
+    });
+
+    await page.goto('/app/devices/new');
+    await page.getByRole('tab', { name: 'Assignment' }).click();
+
+    const email = page.locator('#field-user_email');
+    await expect(email).toBeVisible();
+    await expect(email.locator('option[value="manager@example.com"]')).toHaveCount(1);
+    await email.selectOption('manager@example.com');
+
+    await page.getByRole('tab', { name: 'Identity' }).click();
+    await page.locator('#field-sn').fill('SN-E2E-2');
+    await page.getByRole('button', { name: 'Create asset' }).click();
+
+    await expect.poll(() => posted).toBeDefined();
+    expect(posted).toMatchObject({ user_email: 'manager@example.com' });
+  });
+
   test('keeps the column layout in the preferences API', async ({ page }) => {
     let patched: { grid_state?: { visible?: string[]; order?: string[] } } | undefined;
     await mockPanel(page);

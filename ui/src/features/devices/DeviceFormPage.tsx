@@ -12,7 +12,7 @@ import type { DeviceDetail, MetaColumn, MetaField, MetaPayload } from './api';
 import { buildDevicePayload, formFields, formKeys, initialFormValues, type FormValue } from './deviceForm';
 import { buildDeviceSchema, formTabs, requireSn, type DeviceFormModel } from './deviceSchema';
 import { useCreateDevice, useUpdateDevice } from './useDeviceMutations';
-import { useDevice, useMeta } from './useDevices';
+import { useCompanyUsers, useDevice, useMeta } from './useDevices';
 
 /** Validation code → translation key (unknown codes are shown verbatim). */
 const ERROR_KEYS: Record<string, string> = {
@@ -38,15 +38,95 @@ type ControlProps = {
   column?: MetaColumn;
   field?: MetaField;
   meta: MetaPayload;
+  /** Company the device is being written into (scopes the e-mail dropdown). */
+  company: string;
   invalid: boolean;
   onChange: (value: FormValue) => void;
 };
 
+/**
+ * "User e-mail" as a company-filtered dropdown.
+ *
+ * The directory comes from `GET /users`, but the value stays free text: devices
+ * ingested by the Bearer API (ESET, Intune) carry addresses that are not panel
+ * accounts, and a form that silently replaced them with an empty option would
+ * erase data on the next save. So an unknown stored value is shown in an input,
+ * and "Other…" switches to typing when the address is not in the list yet.
+ */
+function UserEmailSelect({
+  id,
+  value,
+  company,
+  invalid,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  company: string;
+  invalid: boolean;
+  onChange: (value: FormValue) => void;
+}) {
+  const { t } = useTranslation();
+  const users = useCompanyUsers(company);
+  const [typing, setTyping] = useState(false);
+  const invalidClass = invalid ? 'border-[var(--color-danger)]' : undefined;
+
+  const emails = (users.data ?? []).map((user) => user.email);
+  const unknown = value !== '' && !emails.includes(value);
+
+  if (typing || unknown) {
+    return (
+      <div className="flex flex-col gap-1">
+        <Input
+          id={id}
+          className={invalidClass}
+          type="email"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          aria-invalid={invalid || undefined}
+        />
+        <p className="m-0 text-[10px] text-[var(--color-muted)]">{t('ui_user_email_hint')}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <Select
+        id={id}
+        className={invalidClass}
+        value={value}
+        onChange={(event) => {
+          if (event.target.value === '__other__') {
+            setTyping(true);
+            onChange('');
+            return;
+          }
+          onChange(event.target.value);
+        }}
+      >
+        <option value="">—</option>
+        {emails.map((email) => (
+          <option key={email} value={email}>
+            {email}
+          </option>
+        ))}
+        <option value="__other__">{t('ui_user_email_other')}</option>
+      </Select>
+      <p className="m-0 text-[10px] text-[var(--color-muted)]">{t('ui_user_email_hint')}</p>
+    </div>
+  );
+}
+
 /** One form control, chosen from the column/field type published by `/meta`. */
-function DeviceControl({ id, value, column, field, meta, invalid, onChange }: ControlProps) {
+function DeviceControl({ id, value, column, field, meta, company, invalid, onChange }: ControlProps) {
   const { t } = useTranslation();
   const type = field?.type ?? column?.type ?? 'text';
   const invalidClass = invalid ? 'border-[var(--color-danger)]' : undefined;
+
+  if (column?.key === 'UserEmail' || column?.api_key === 'user_email') {
+    return <UserEmailSelect id={id} value={String(value)} company={company} invalid={invalid} onChange={onChange} />;
+  }
 
   if (type === 'bool') {
     return (
@@ -174,8 +254,11 @@ function DeviceForm({ device, meta }: FormProps) {
     resolver: zodResolver(schema),
     mode: 'onSubmit',
   });
-  const { control, handleSubmit, setError, formState } = form;
+  const { control, handleSubmit, setError, formState, watch } = form;
   const [conflict, setConflict] = useState(false);
+  // The e-mail dropdown is scoped to the company currently selected (create) or
+  // the device's own company (edit), so it has to follow the select.
+  const company = watch('company') ?? baseCompany;
 
   const createDevice = useCreateDevice();
   const updateDevice = useUpdateDevice(device?.id ?? null);
@@ -334,6 +417,7 @@ function DeviceForm({ device, meta }: FormProps) {
                         value={field.value as FormValue}
                         column={column}
                         meta={meta}
+                        company={company}
                         invalid={message !== undefined}
                         onChange={field.onChange}
                       />
@@ -395,6 +479,7 @@ function DeviceForm({ device, meta }: FormProps) {
                         value={control_.value as FormValue}
                         field={field}
                         meta={meta}
+                        company={company}
                         invalid={message !== undefined}
                         onChange={control_.onChange}
                       />

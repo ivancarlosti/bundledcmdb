@@ -330,8 +330,11 @@ export function DeviceGridPage() {
           <Button variant="ghost" disabled={!hasActiveFilters(state)} onClick={clearFilters}>
             {t('ui_clear_filters')}
           </Button>
-          <a className={EXPORT_LINK_CLASS} href={deviceExportUrl(state)} download>
+          <a className={EXPORT_LINK_CLASS} href={deviceExportUrl(state, 'csv')} download>
             {t('export_btn')}
+          </a>
+          <a className={EXPORT_LINK_CLASS} href={deviceExportUrl(state, 'xlsx')} download>
+            {t('export_xlsx_btn')}
           </a>
           <SavedViewsMenu currentState={currentViewState} onApply={onApplyView} />
           <ColumnPicker

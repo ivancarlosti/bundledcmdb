@@ -92,7 +92,17 @@ function panel_session_payload(array $user): array
 /** GET /session */
 function panel_session_show(array $params = []): array
 {
-    return ['data' => panel_session_payload(session_require())];
+    $payload = ['data' => panel_session_payload(session_require())];
+
+    // The panel has no scheduler, so audit retention rides along with the
+    // session bootstrap: `logs_purge_due()` is a no-op unless the last purge is
+    // older than LOGS_PURGE_INTERVAL (lib/logs.php).
+    $pdo = db_try();
+    if ($pdo !== null) {
+        logs_purge_due($pdo);
+    }
+
+    return $payload;
 }
 
 /**

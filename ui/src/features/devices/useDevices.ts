@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { GridState } from '@/features/grid/gridSearch';
 import { devicesPageQuery } from '@/features/grid/gridSearch';
 
-import { fetchDevice, fetchDeviceEvents, fetchDevices, fetchMeta } from './api';
+import { fetchCompanyUsers, fetchDevice, fetchDeviceEvents, fetchDevices, fetchMeta } from './api';
 
 export const metaQueryKey = ['meta'] as const;
 
@@ -49,5 +49,20 @@ export function useDeviceEvents(id: number | null) {
     queryFn: () => fetchDeviceEvents(id as number),
     enabled: id !== null && Number.isFinite(id),
     staleTime: 15_000,
+  });
+}
+
+/**
+ * Directory behind the "user e-mail" dropdown.
+ *
+ * `company === ''` asks for the whole directory, which the server only honours
+ * for an unbound (superadmin) account — a company-bound caller gets its own
+ * company back. Five minutes of cache: a roster does not change per keystroke.
+ */
+export function useCompanyUsers(company: string) {
+  return useQuery({
+    queryKey: ['company-users', company],
+    queryFn: () => fetchCompanyUsers(company),
+    staleTime: 5 * 60_000,
   });
 }
