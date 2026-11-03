@@ -138,6 +138,30 @@ check(panel_request_path() === '/', 'routing: bare version path is /');
 // Leave the CLI server superglobal as it was found.
 $_SERVER['REQUEST_URI'] = $requestUri ?? '/';
 
+// --- saved views (no database needed) --------------------------------------
+$viewState = saved_view_state([
+    'q' => '  lenovo  ',
+    'sort' => 'SN',
+    'dir' => 'desc',
+    'trashed' => true,
+    'order' => ['SN', 'Status', 'SN'],
+    'visible' => ['SN'],
+    'per_page' => 100000,
+    'nope' => 'x',
+]);
+check($viewState['q'] === 'lenovo', 'views: strings are trimmed');
+check($viewState['dir'] === 'desc', 'views: the direction is kept next to the sort');
+check($viewState['trashed'] === true, 'views: booleans survive');
+check($viewState['order'] === ['SN', 'Status'], 'views: the column order is de-duplicated');
+check(!isset($viewState['per_page']) && !isset($viewState['nope']), 'views: unknown keys are dropped');
+check(
+    saved_view_state(['sort' => 'SN'])['dir'] === 'asc',
+    'views: a sort without a direction defaults to ascending'
+);
+check(saved_view_state(['q' => '   ']) === [], 'views: blanks are dropped');
+check(saved_view_name('  My   laptops ') === 'My laptops', 'views: names are collapsed');
+check(saved_view_name('') === null && saved_view_name(str_repeat('x', 65)) === null, 'views: names are length-checked');
+
 // --- rate limit windows (no database needed) --------------------------------
 check(rate_limit_window(1_700_000_000, 60) === 1_700_000_000 - (1_700_000_000 % 60), 'rate limit: window start is the containing minute');
 check(rate_limit_window(1_700_000_000, 3600) % 3600 === 0, 'rate limit: window start respects wider windows');
@@ -1027,6 +1051,63 @@ try {
     $dryRun = panel_settings_maintenance_migrate();
     check(($dryRun['meta']['dry_run'] ?? false) === true, 'maintenance: dry run is the default shape');
     check(is_array($dryRun['meta']['log'] ?? null), 'maintenance: the migration log is returned');
+
+    // --- saved views (CRUD, per user) --------------------------------------
+    $viewId = 0;
+    try {
+        as_role('manager', $companyA, 'views@example.com');
+        check(panel_views_index()['data']['total'] === 0, 'views: a new user starts with none');
+
+        body(['name' => 'My laptops', 'state' => ['q' => 'lenovo', 'sort' => 'SN', 'dir' => 'asc']]);
+        $view = panel_views_store();
+        $viewId = (int) ($view['data']['id'] ?? 0);
+        check($viewId > 0, 'views: create returns the row');
+        check($view['data']['state']['q'] === 'lenovo', 'views: the state round-trips');
+
+        // Same name again = overwrite, same id.
+        body(['name' => 'My laptops', 'state' => ['q' => 'dell']]);
+        $overwritten = panel_views_store();
+        check((int) $overwritten['data']['id'] === $viewId, 'views: the same name overwrites in place');
+        check($overwritten['data']['state']['q'] === 'dell', 'views: the overwrite replaces the state');
+        check(panel_views_index()['data']['total'] === 1, 'views: no duplicate row was created');
+
+        body(['name' => '  ']);
+        check_error('views: a blank name is 422', fn () => panel_views_store(), 'validation_failed', 422, [
+            'name' => 'required',
+        ]);
+
+        body(['name' => 'ESET in repair', 'state' => ['source' => 'eset', 'status' => $statusB]]);
+        $second = panel_views_store();
+        $secondId = (int) ($second['data']['id'] ?? 0);
+        check(panel_views_index()['data']['total'] === 2, 'views: both views are listed');
+
+        body(['name' => 'Renamed']);
+        $renamed = panel_views_update(['id' => (string) $secondId]);
+        check($renamed['data']['name'] === 'Renamed', 'views: rename works');
+        check($renamed['data']['state']['source'] === 'eset', 'views: a rename keeps the state');
+
+        $deleted = panel_views_delete(['id' => (string) $secondId]);
+        check(($deleted['data']['deleted'] ?? false) === true, 'views: delete works');
+        check_error('views: deleting twice is 404', fn () => panel_views_delete(['id' => (string) $secondId]), 'not_found', 404);
+
+        as_role('manager', $companyA, 'other-viewer@example.com');
+        check(panel_views_index()['data']['total'] === 0, 'views: another user does not see them');
+        check_error(
+            'views: editing somebody else’s view is 404',
+            fn () => panel_views_update(['id' => (string) $viewId]),
+            'not_found',
+            404
+        );
+    } finally {
+        // Views belong to an e-mail nobody else uses, so a leftover row is inert;
+        // still delete it so a re-run starts from zero.
+        try {
+            $pdo->prepare('DELETE FROM saved_views WHERE email IN (?, ?)')->execute(['views@example.com', 'other-viewer@example.com']);
+        } catch (Throwable $e) {
+            fwrite(STDERR, 'views cleanup failed: ' . $e->getMessage() . "\n");
+        }
+        as_role('superadmin', '');
+    }
 
     // --- rate limiting on panel writes -------------------------------------
     // `rate_limit_require_panel()` runs before every mutation, so the setting

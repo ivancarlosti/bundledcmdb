@@ -25,6 +25,11 @@ export const MESSAGES: Record<string, string> = {
   ui_dev_login: 'Development sign-in',
   ui_history: 'History',
   ui_drag_column: 'Drag {{name}} to reorder',
+  ui_views: 'Views',
+  ui_views_empty: 'No saved views yet. Filter the grid, then name it below.',
+  ui_view_name: 'View name',
+  ui_view_save: 'Save view',
+  ui_view_delete: 'Delete {{name}}',
   ui_history_empty: 'No changes recorded yet.',
   ui_ev_create: 'Created',
   ui_ev_update: 'Updated',
@@ -321,6 +326,8 @@ export type MockOptions = {
   onBulk?: (body: Record<string, unknown>) => void;
   /** Called with the JSON body of every `PATCH /session/preferences`. */
   onPreferences?: (patch: Record<string, unknown>) => void;
+  /** Called with the entry the SPA saved as a grid view (`POST /views`). */
+  onSaveView?: (view: { id: number; name: string; state: Record<string, unknown> }) => void;
   /** Merged into the stubbed session (role, capabilities, locale, …). */
   session?: Record<string, unknown>;
   pages?: number;
@@ -444,6 +451,32 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
     const ids = Array.isArray(body.ids) ? (body.ids as number[]) : [];
     options.onBulk?.(body);
     return json(route, { op: body.op, updated: ids, skipped: [] }, { changed: ids.length, skipped: 0 });
+  });
+
+  // Saved views: an in-memory list per test, so save/apply/delete are observable.
+  const savedViews: { id: number; name: string; state: Record<string, unknown> }[] = [];
+  await page.route('**/panel-api/v1/views**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'GET') {
+      return json(route, { rows: savedViews, total: savedViews.length });
+    }
+    if (request.method() === 'POST') {
+      const body = (request.postDataJSON() ?? {}) as { name?: string; state?: Record<string, unknown> };
+      const entry = { id: savedViews.length + 1, name: body.name ?? '', state: body.state ?? {} };
+      savedViews.push(entry);
+      options.onSaveView?.(entry);
+      return route.fulfill({ status: 201, json: { ok: true, data: entry } });
+    }
+    if (request.method() === 'DELETE') {
+      const id = Number(url.pathname.split('/').pop());
+      const index = savedViews.findIndex((view) => view.id === id);
+      if (index >= 0) {
+        savedViews.splice(index, 1);
+      }
+      return json(route, { id, deleted: true });
+    }
+    return json(route, { ok: true, data: {} });
   });
 
   // Registered last: Playwright gives the newest route priority, and

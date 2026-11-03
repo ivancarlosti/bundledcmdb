@@ -136,3 +136,53 @@ test.describe('column picker', () => {
     await expect.poll(async () => page.getByRole('columnheader').nth(1).innerText()).not.toBe(before);
   });
 });
+
+/**
+ * Saved views.
+ *
+ * A view is the grid state the URL already carries plus the column layout, so
+ * saving one must send exactly those keys and applying it must put the filters
+ * back into the URL (not into a hidden parallel state).
+ */
+test.describe('saved views', () => {
+  test('saves the current filters and applies them again from the menu', async ({ page }) => {
+    let saved: { name: string; state: Record<string, unknown> } | undefined;
+    await mockPanel(page, {
+      onSaveView: (view) => {
+        saved = view;
+      },
+    });
+
+    await page.goto('/app/devices?source=eset&sort=SN&dir=asc');
+    await expect(page.getByRole('columnheader', { name: /Serial number/ })).toBeVisible();
+
+    await page.getByTestId('views-menu').click();
+    await page.getByLabel('View name').fill('ESET by serial');
+    await page.getByRole('button', { name: 'Save view' }).click();
+
+    await expect.poll(() => saved?.name).toBe('ESET by serial');
+    expect(saved?.state).toMatchObject({ source: 'eset', sort: 'SN', dir: 'asc' });
+
+    // The stored view appears in the list and re-applies its filters.
+    await page.goto('/app/devices?status=In%20Use');
+    await page.getByTestId('views-menu').click();
+    await page.getByRole('button', { name: 'ESET by serial', exact: true }).click();
+    await expect.poll(() => page.url()).toContain('source=eset');
+    await expect.poll(() => page.url()).toContain('sort=SN');
+  });
+
+  test('deletes a saved view without touching the grid', async ({ page }) => {
+    await mockPanel(page);
+
+    await page.goto('/app/devices');
+    await page.getByTestId('views-menu').click();
+    await page.getByLabel('View name').fill('Temporary');
+    await page.getByRole('button', { name: 'Save view' }).click();
+
+    await expect(page.getByRole('button', { name: 'Temporary', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Delete Temporary' }).click();
+
+    await expect(page.getByRole('button', { name: 'Temporary', exact: true })).toHaveCount(0);
+    await expect(page.getByText('No saved views yet. Filter the grid, then name it below.')).toBeVisible();
+  });
+});

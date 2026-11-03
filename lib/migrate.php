@@ -57,6 +57,10 @@ function migrations(): array
             'description' => 'Create asset_events (audit trail for device writes)',
             'run' => 'migration_0010_asset_events',
         ],
+        '2026_11_04_0011_saved_views' => [
+            'description' => 'Create saved_views (named grid presets per user)',
+            'run' => 'migration_0011_saved_views',
+        ],
     ];
 }
 
@@ -484,4 +488,28 @@ function migration_0010_asset_events(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
     migrate_note('CREATE TABLE asset_events');
+}
+
+/**
+ * Named grid presets (`lib/saved_views.php`).
+ *
+ * `(email, name)` is unique: "save as …" with an existing name overwrites that
+ * view (the gesture users expect from a toolbar) instead of piling up duplicates
+ * with the same label.
+ */
+function migration_0011_saved_views(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS saved_views (
+            id INT NOT NULL AUTO_INCREMENT,
+            email VARCHAR(191) NOT NULL,
+            name VARCHAR(64) NOT NULL,
+            state LONGTEXT NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_saved_view (email, name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    migrate_note('CREATE TABLE saved_views');
 }

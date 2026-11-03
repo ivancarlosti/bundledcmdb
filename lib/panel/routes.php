@@ -27,6 +27,10 @@ function panel_routes(): array
         ['POST',  '/session/logout',      'panel_session_logout'],
         ['GET',   '/meta',                'panel_meta_show'],
         ['GET',   '/i18n',                'panel_i18n_show'],
+        ['GET',   '/views',               'panel_views_index'],
+        ['POST',  '/views',               'panel_views_store'],
+        ['PATCH', '/views/{id}',          'panel_views_update'],
+        ['DELETE', '/views/{id}',         'panel_views_delete'],
         // Literal routes before `{id}` so /devices/export is not read as an id.
         ['GET',   '/devices',             'panel_devices_index'],
         ['GET',   '/devices/export',      'panel_devices_export'],

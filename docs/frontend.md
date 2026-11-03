@@ -96,6 +96,9 @@ the server-side guard.
 | `POST /panel-api/v1/session/logout` | ends the session, returns the URL to navigate to |
 | `GET /panel-api/v1/meta` | columns (incl. `api_key`, sortable/editable), statuses, sources, custom fields, page sizes |
 | `GET /panel-api/v1/i18n` | merged catalogue for the effective (or `?locale=`) locale |
+| `GET /panel-api/v1/views` | the signed-in user's saved grid presets (filters + sort + column layout) |
+| `POST /panel-api/v1/views` | save a view; the same name overwrites it (`201`, same id) |
+| `PATCH/DELETE /panel-api/v1/views/{id}` | rename/replace the state / delete (404 outside your own views) |
 | `GET /panel-api/v1/devices` | list with filters, server-side sort, paging |
 | `GET /panel-api/v1/devices/export` | CSV with the same filters/sort |
 | `GET /panel-api/v1/devices/{id}` | one device + custom values + attachments |

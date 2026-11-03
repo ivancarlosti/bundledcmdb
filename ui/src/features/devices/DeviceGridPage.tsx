@@ -19,6 +19,8 @@ import {
 import { selectionState, toggleAllOnPage, toggleSelection } from '@/features/grid/selection';
 import { useGridState } from '@/features/grid/useGridState';
 import { usePreferences } from '@/features/preferences/usePreferences';
+import { SavedViewsMenu } from '@/features/views/SavedViewsMenu';
+import type { SavedViewState } from '@/features/views/api';
 
 import { deviceExportUrl, type BulkOp, type DeviceRow, type DeviceWriteBody } from './api';
 import { BulkActions } from './BulkActions';
@@ -120,6 +122,39 @@ export function DeviceGridPage() {
 
   const onLayoutChange = (next: { order: string[]; visible: string[] }) => {
     preferences.mutate({ grid_state: { order: next.order, visible: next.visible } });
+  };
+
+  // What a saved view captures: the filters/sort the URL carries plus the column
+  // layout, which is the only part that lives in the preferences API.
+  const currentViewState: SavedViewState = {
+    q: state.q,
+    source: state.source,
+    status: state.status,
+    company: state.company,
+    sort: state.sort,
+    dir: state.dir === '' ? undefined : state.dir,
+    trashed: state.trashed || undefined,
+    order,
+    visible,
+  };
+
+  const onApplyView = (saved: SavedViewState) => {
+    setSearch(saved.q ?? '');
+    update((current) => ({
+      ...current,
+      q: saved.q ?? '',
+      source: saved.source ?? '',
+      status: saved.status ?? '',
+      company: saved.company ?? '',
+      byod: current.byod,
+      trashed: saved.trashed === true,
+      sort: saved.sort ?? '',
+      dir: saved.dir ?? '',
+      page: 1,
+    }));
+    if (saved.order !== undefined || saved.visible !== undefined) {
+      preferences.mutate({ grid_state: { order: saved.order ?? order, visible: saved.visible ?? visible } });
+    }
   };
   const meta = metaQuery.data;
   const payload = devicesQuery.data?.payload;
@@ -298,6 +333,7 @@ export function DeviceGridPage() {
           <a className={EXPORT_LINK_CLASS} href={deviceExportUrl(state)} download>
             {t('export_btn')}
           </a>
+          <SavedViewsMenu currentState={currentViewState} onApply={onApplyView} />
           <ColumnPicker
             items={pickerItems}
             order={order}

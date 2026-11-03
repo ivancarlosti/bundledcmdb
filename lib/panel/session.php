@@ -115,6 +115,83 @@ function panel_session_update_preferences(array $params = []): array
 }
 
 /**
+ * GET /views — the signed-in user's saved grid presets.
+ *
+ * Per user, never shared: a view is "my filter", and the panel has no notion of
+ * a team library. Company scoping still applies to the rows the view selects,
+ * because the grid's own filters do that.
+ */
+function panel_views_index(array $params = []): array
+{
+    $user = session_require();
+    $views = saved_views_for(db(), $user['email']);
+    return ['data' => ['rows' => $views, 'total' => count($views)]];
+}
+
+/** POST /views — create, or overwrite the view with the same name. */
+function panel_views_store(array $params = []): array
+{
+    $user = session_require();
+    session_csrf_require();
+    $body = request_json_body();
+
+    $name = saved_view_name($body['name'] ?? null);
+    if ($name === null) {
+        throw new ApiError('validation_failed', 'A name is required.', 422, [
+            'name' => 'required',
+        ]);
+    }
+
+    $pdo = db();
+    $id = saved_view_save($pdo, $user['email'], $name, saved_view_state((array) ($body['state'] ?? [])));
+    if ($id === 0) {
+        throw new ApiError('server_error', 'The view could not be stored.', 500);
+    }
+
+    return ['data' => saved_view_find($pdo, $user['email'], $id), 'status' => 201];
+}
+
+/** PATCH /views/{id} — rename and/or replace the state. */
+function panel_views_update(array $params = []): array
+{
+    $user = session_require();
+    session_csrf_require();
+    $pdo = db();
+
+    $id = (int) ($params['id'] ?? 0);
+    $existing = saved_view_find($pdo, $user['email'], $id);
+    if ($existing === null) {
+        throw new ApiError('not_found', 'View not found.', 404);
+    }
+
+    $body = request_json_body();
+    $name = array_key_exists('name', $body) ? saved_view_name($body['name']) : $existing['name'];
+    if ($name === null) {
+        throw new ApiError('validation_failed', 'A name is required.', 422, ['name' => 'required']);
+    }
+    $state = array_key_exists('state', $body)
+        ? saved_view_state((array) $body['state'])
+        : (array) $existing['state'];
+
+    saved_view_save($pdo, $user['email'], $name, $state, $id);
+    return ['data' => saved_view_find($pdo, $user['email'], $id)];
+}
+
+/** DELETE /views/{id} */
+function panel_views_delete(array $params = []): array
+{
+    $user = session_require();
+    session_csrf_require();
+
+    $id = (int) ($params['id'] ?? 0);
+    if (!saved_view_delete(db(), $user['email'], $id)) {
+        throw new ApiError('not_found', 'View not found.', 404);
+    }
+
+    return ['data' => ['id' => $id, 'deleted' => true]];
+}
+
+/**
  * POST /session/logout
  *
  * Returns the URL the browser should navigate to. `local` skips Keycloak

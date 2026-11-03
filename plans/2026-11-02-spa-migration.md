@@ -728,7 +728,12 @@ bumps by hand.
    panel write **and** by `public/api.php` (`api:<key label>` as the actor),
    exposed as `GET /panel-api/v1/devices/{id}/events` and rendered as the
    History card on the device page (field labels come from `meta.columns`).
-5. **Saved views** (named filter+sort+column presets) — `grid_state` leaves room.
+5. ~~**Saved views** (named filter+sort+column presets)~~ — done: migration
+   `0011_saved_views`, `lib/saved_views.php` (whitelisted `saved_view_state()`,
+   `(email, name)` unique so saving twice overwrites), `GET/POST /views` +
+   `PATCH/DELETE /views/{id}`, and a `SavedViewsMenu` in the grid toolbar that
+   saves the current state and re-applies it through the URL (the filters never
+   get a second home). Covered by 23 panel-API assertions and 2 Playwright tests.
 6. **Keyset pagination** for very deep pages if `OFFSET` shows up in profiling —
    measured at 100k rows: the last page costs 176 ms against 0.3 ms for page 1
    (`bin/bench-devices.php`, "deep page" row). Not user-visible yet (nobody pages
@@ -852,3 +857,4 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 3 | Attachments go through `lib/storage.php` (`storage.driver` = `s3`/`local`) and the download is a panel route, not a public bucket URL | the plan asked for the driver; the download route fell out of it: `local` files live outside `public/` and `s3` buckets stay private, so `GET /devices/{id}/files/{fileId}/download` is the only way to read one — and it is the same session/role check as the rest of the panel |
 | 2026-11-04 | 2 | Fixed `panel_match()`: placeholder names may mix case | the helper only expanded `[a-z_]+`, so `{fileId}` never became a capture group and both attachment routes (`DELETE /devices/{id}/files/{fileId}` included) matched nothing — a file listed by the panel could not be removed over HTTP. The unit test drove the handlers directly, which is why it stayed hidden; the routing table now has explicit `{fileId}` assertions |
 | 2026-11-04 | 5 | Column reordering ships with `@dnd-kit` **and** keeps the up/down buttons | the picker is the only place where a pointer drag is the natural gesture, but a drag-only control is unusable with a keyboard and invisible to a screen reader; keeping both is one component and no extra state |
+| 2026-11-04 | 5 | A saved view stores only the grid state + column layout, keyed by e-mail, and `POST /views` upserts on the name | the URL is already the grid's source of truth, so a view is a bookmark with a label — no new state machine in the SPA, and applying one is a normal `update()`. Upsert on `(email, name)` matches the toolbar gesture ("save" on an existing label overwrites) and keeps the id stable for an open tab |
