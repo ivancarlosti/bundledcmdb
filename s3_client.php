@@ -18,6 +18,8 @@ class S3Client
 {
     private Aws\S3\S3Client $s3;
     private string $bucket;
+    private string $accessKey;
+    private string $secretKey;
     private string $prefix;
     private int $presignSeconds;
 
@@ -39,6 +41,8 @@ class S3Client
         $pathStyle = $overrides['path_style'] ?? settings_bool('s3.path_style');
 
         $this->bucket = trim((string) ($overrides['bucket'] ?? settings_get('s3.bucket', '')));
+        $this->accessKey = $accessKey;
+        $this->secretKey = $secretKey;
         $this->prefix = trim((string) ($overrides['prefix'] ?? settings_get('s3.prefix', 'uploads')), '/');
         $this->presignSeconds = max(60, (int) ($overrides['presign_seconds'] ?? settings_int('s3.presign_seconds')));
 
@@ -57,12 +61,22 @@ class S3Client
         $this->s3 = new Aws\S3\S3Client($config);
     }
 
-    /** True when bucket + credentials are present. */
+    /**
+     * True when bucket + credentials are present.
+     *
+     * Answered from the values this instance was built with, never from the
+     * SDK: `AwsClient::getCredentials()` returns whatever the credential
+     * *provider* yields, and in aws-sdk-php 3.4xx that is a `PromiseInterface`
+     * (`GuzzleHttp\Promise\FulfilledPromise`), not a `CredentialsInterface`, so
+     * calling `getAccessKeyId()` on it is a fatal error. It is also the exact
+     * condition that decides whether `credentials` go into the SDK config in
+     * the constructor, so the two can never disagree.
+     */
     public function isConfigured(): bool
     {
         return $this->bucket !== ''
-            && (string) $this->s3->getCredentials()->getAccessKeyId() !== ''
-            && (string) $this->s3->getCredentials()->getSecretKey() !== '';
+            && $this->accessKey !== ''
+            && $this->secretKey !== '';
     }
 
     public function bucket(): string
@@ -106,10 +120,13 @@ class S3Client
                 'ContentType' => $contentType,
             ]);
             return ['success' => true, 'code' => 200, 'message' => 'OK', 'url' => $result['ObjectURL']];
-        } catch (Aws\Exception\AwsException $e) {
+        } catch (Throwable $e) {
+            // `CredentialsException` extends RuntimeException (not AwsException),
+            // so a signing/credential failure has to be caught here too: the
+            // caller turns this into a 502 storage_error instead of a 500.
             return [
                 'success' => false,
-                'code' => $e->getStatusCode() ?? 0,
+                'code' => $e instanceof Aws\Exception\AwsException ? ($e->getStatusCode() ?? 0) : 0,
                 'message' => $e->getMessage(),
             ];
         }
@@ -123,7 +140,7 @@ class S3Client
                 'Key' => $this->objectKey($key),
             ]);
             return true;
-        } catch (Aws\Exception\AwsException $e) {
+        } catch (Throwable $e) {
             error_log($e->getMessage());
             return false;
         }
@@ -153,7 +170,9 @@ class S3Client
                 'headers'    => ['Content-Type' => $contentType],
                 'expires_in' => $expiresIn,
             ];
-        } catch (Aws\Exception\AwsException $e) {
+        } catch (Throwable $e) {
+            // A credentials failure is a RuntimeException, not an AwsException;
+            // returning null keeps the documented `{mode: "server"}` fallback.
             error_log($e->getMessage());
             return null;
         }
@@ -168,7 +187,7 @@ class S3Client
                 'Key' => $this->objectKey($key),
             ]);
             return true;
-        } catch (Aws\Exception\AwsException $e) {
+        } catch (Throwable $e) {
             return false;
         }
     }
@@ -183,7 +202,7 @@ class S3Client
             ]);
             $request = $this->s3->createPresignedRequest($cmd, "+{$expiresIn} seconds");
             return (string) $request->getUri();
-        } catch (Aws\Exception\AwsException $e) {
+        } catch (Throwable $e) {
             error_log($e->getMessage());
             return '';
         }

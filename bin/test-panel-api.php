@@ -678,6 +678,31 @@ try {
     as_role('user', $companyA);
     check_error('files: user cannot upload → 403', fn () => panel_devices_files_store(['id' => (string) $id]), 'forbidden', 403);
 
+    // --- S3 client configuration (no bucket, no network) -------------------
+    // `isConfigured()` used to ask the SDK, but `AwsClient::getCredentials()`
+    // returns the credential *provider's* promise (aws-sdk-php 3.4xx), so
+    // `getAccessKeyId()` on it was a fatal error that turned every S3 upload,
+    // delete and download link into a 500. Constructor overrides keep this
+    // check free of database rows and of any bucket round-trip.
+    if (class_exists(Aws\S3\S3Client::class)) {
+        require_once __DIR__ . '/../s3_client.php';
+        $s3Empty = new S3Client([
+            'region' => 'us-east-1', 'endpoint' => '', 'bucket' => '',
+            'access_key' => '', 'secret_key' => '', 'path_style' => true,
+            'prefix' => 'uploads', 'presign_seconds' => 60,
+        ]);
+        check($s3Empty->isConfigured() === false, 'storage: a bucket without a key pair is not configured');
+
+        $s3Ready = new S3Client([
+            'region' => 'us-east-1', 'endpoint' => '', 'bucket' => 'cmdb',
+            'access_key' => 'AKIAEXAMPLE', 'secret_key' => 'secret',
+            'path_style' => true, 'prefix' => 'uploads', 'presign_seconds' => 60,
+        ]);
+        check($s3Ready->isConfigured() === true, 'storage: a bucket plus an explicit key pair is configured');
+    } else {
+        fwrite(STDOUT, "  skip storage: S3 client configuration (AWS SDK is not installed)\n");
+    }
+
     // --- local storage driver (plan §14.3) --------------------------------
     // The whole upload/list/delete path with `storage.driver = local`, so the
     // driver is exercised against the real handlers and not just the helpers.
@@ -906,8 +931,8 @@ try {
     check(($settingsPayload['groups'] ?? []) !== [], 'settings: admin reads the groups');
     $settingsGroupIds = array_column($settingsPayload['groups'], 'id');
     check(
-        $settingsGroupIds === ['general', 'assets', 'api', 'storage', 's3'],
-        'settings: cards have one group each (general, assets, api, storage, s3)'
+        $settingsGroupIds === ['general', 'assets', 'logs', 'api', 'storage', 's3'],
+        'settings: cards have one group each (general, assets, logs, api, storage, s3)'
     );
     $settingsGroupLabels = array_column($settingsPayload['groups'], 'label_key', 'id');
     check(
