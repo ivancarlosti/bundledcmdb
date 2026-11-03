@@ -429,8 +429,14 @@ Estimates are focus days for one developer.
   and shows the sign-in card on `401`.
 * [x] ESLint flat config with the logical-utilities rule (bans `ml-/mr-/pl-/pr-/
   left-/right-*`), Vitest + Testing Library, Playwright config + smoke spec.
-* [ ] Router (`/devices`, `/devices/:id`, `/settings/*`), `AppShell`, toasts,
-  error boundary, keyboard-only walkthrough — next.
+* [x] Router (TanStack Router, `basepath: '/app'`) with `/`, `/devices` and
+  `/devices/$deviceId`; `SessionGate` (boot → failure → login → app), `AppShell`
+  (sticky header, nav, theme/locale switchers, sign-out), sonner toasts,
+  `SessionProvider` so screens read the cached session.
+* [x] `GET /panel-api/v1/i18n` + `src/i18n/index.ts`: the SPA loads the merged
+  catalogue at runtime (PHP catalogs stay the only source of truth) and applies
+  `lang`/`dir` on `<html>`.
+* [ ] `/settings/*` routes, error boundary, keyboard-only walkthrough — next.
 * [x] Multi-stage Dockerfile (`vendor` → `ui` on `node:24-alpine` → runtime) and
   nginx `/app/` locations (immutable assets, `no-store` shell, history fallback) —
   landed with phase 4 so the scaffold could be verified end-to-end.
@@ -440,17 +446,28 @@ Estimates are focus days for one developer.
 
 ### Phase 5 — data grid (6–8 d)
 
-* §5 in full: server-driven sort/filter/page, column picker (drag + keyboard),
-  persisted preferences, inline edit with optimistic locking, selection, bulk
-  actions, attachments column, CSV export, a11y (`aria-sort`, `aria-live`).
+* [x] Server-driven sort/filter/page through TanStack Table v8 (`manualSorting`),
+  URL as state (`?sort=&dir=&page=&per_page=&q=&source=&status=&company=&byod=&trashed=`),
+  sort cycle asc → desc → default with the page reset on every change, sortable
+  headers with `aria-sort`, attachments column, CSV export with the same query,
+  debounced search, paging + page-size control, loading skeleton, empty and error
+  states, keyboard-activatable rows.
+* [x] Tests: 16 unit tests for the state machine (`gridSearch`) + 4 component
+  tests for the table + 2 Playwright specs (sort cycle and URL persistence,
+  filters/paging) against the real bundle.
+* [ ] Column picker (drag + keyboard) with persisted `grid_state`, inline edit with
+  optimistic locking, selection + bulk actions, `aria-live` result announcements,
+  360 px viewport audit.
 * Done when: each §2.1 regression has a test (see §10) and the grid is usable on
   a 360 px viewport.
 
 ### Phase 6 — device detail, create/edit, attachments (4–5 d)
 
-* Detail drawer/page with tabs (Overview / Custom fields / Attachments /
-  History), `react-hook-form` + `zod` schemas derived from `/meta` field defs,
-  presigned upload with progress, delete/restore.
+* [x] Read-only detail page (`/app/devices/:id`): every published column, custom
+  values, attachment list (name/size/date), back to the grid.
+* [ ] Edit drawer with tabs (Overview / Custom fields / Attachments / History),
+  `react-hook-form` + `zod` schemas derived from `/meta` field defs, presigned
+  upload with progress, delete/restore.
 
 ### Phase 7 — settings, sources, fields, API keys, users (5–6 d)
 
@@ -625,4 +642,10 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-02 | 4 | Playwright config + smoke spec added with the scaffold (plan had e2e in phase 8) | the two cheapest assertions (viewport meta, single theme mechanism) guard the exact §2.1 regressions; browsers are not installed in CI yet |
 | 2026-11-02 | 4 | ESLint flat config also warns on `console.*` and bans physical inline-axis utilities | encoded so reviewers stop repeating it; scoped to `src/**` and disabled for tests |
 | 2026-11-02 | 4 | Multi-stage Dockerfile + nginx `/app/` locations landed in phase 4 (plan had them in §8) | without them the scaffold cannot be verified against the real image; the runtime stage is unchanged apart from one `COPY --from=ui` |
+| 2026-11-02 | 4 | `GET /panel-api/v1/i18n` added (session-protected) instead of generated `src/i18n/locales/*.json` | the catalogs stay in `public/lang/*.php` with one importer (`lib/locales.php`); no second generated artefact to keep in sync, and adding a language stays a server-only change. `bin/i18n-export.php` is no longer needed |
+| 2026-11-02 | 4 | Grid state lives in the URL via `history.replaceState` (`features/grid/useGridState.ts`), not TanStack Router search params | keeps a keystroke from pushing a history entry per character and keeps the pure state machine unit-testable; the router still owns `/devices/:id` deep links, and `popstate` re-reads the query |
+| 2026-11-02 | 4 | `/meta` columns publish `api_key` (`panel_device_payload_keys()`) | the wire payload is snake_case (`sn`, `primary_local_ip`, `files_count`) while the schema is legacy PascalCase; the first integration run rendered empty cells because the SPA guessed the mapping. Now the server publishes it and the CSV export uses the same table |
+| 2026-11-02 | 4 | `nextSort` returns to the server default (empty `sort`) on the third click instead of cycling to "unsorted" | there is no client-side ordering to fall back to; the default is `updated_at DESC` and is echoed in `/devices` `meta.sort` |
+| 2026-11-02 | 4 | Physical inline-axis utilities stay banned, so the ESLint rule needed a documented exception for `_`-prefixed unused args | `nextSort(state, column, defaults)` keeps the defaults parameter for symmetry with the other helpers |
+| 2026-11-02 | fix | `curl_close()` removed from `auth_keycloak.php` (PHP 8.5 deprecation) and `display_errors` forced off in `public/auth.php` | the notice was printed *before* the `Location:` header on the OIDC callback, which broke the Keycloak login with "Deprecated: Function curl_close() is deprecated…". Handles are objects freed at scope end since PHP 8.0, and a browser-facing redirect endpoint must never emit diagnostics |
 
