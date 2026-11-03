@@ -28,6 +28,7 @@ header('Cache-Control: no-store');
 require_once __DIR__ . '/../lib/panel/routes.php';
 require_once __DIR__ . '/../lib/panel/session.php';
 require_once __DIR__ . '/../lib/panel/meta.php';
+require_once __DIR__ . '/../lib/panel/i18n.php';
 require_once __DIR__ . '/../lib/panel/devices.php';
 
 panel_dispatch();

@@ -72,6 +72,27 @@ function panel_column_label_key(string $column): string
 }
 
 /**
+ * Key of the property that carries this column in `panel_device_payload()`.
+ *
+ * The wire format is snake_case (`sn`, `os`, `primary_local_ip`, …) while the
+ * schema uses the legacy PascalCase names, so the mapping is published here
+ * instead of being duplicated in the SPA. `panel_device_payload_keys()` (the
+ * same table the CSV export uses) is the single source of truth; unknown names
+ * fall back to their snake_case form.
+ */
+function panel_payload_key(string $column): string
+{
+    $map = panel_device_payload_keys();
+    if (isset($map[$column])) {
+        return $map[$column];
+    }
+    $snake = strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $column));
+    $clean = preg_replace('/[^a-z0-9_]/', '', $snake);
+
+    return ($clean === null || $clean === '') ? '' : $clean;
+}
+
+/**
  * Status values with their translation keys (order matches asset_status_values()).
  *
  * @return list<array{value: string, label_key: string}>
@@ -101,6 +122,7 @@ function panel_columns_payload(string $role): array
     foreach (asset_column_defs() as $column => $def) {
         $out[] = [
             'key'       => $column,
+            'api_key'   => panel_payload_key($column),
             'label_key' => panel_column_label_key($column),
             'label'     => (string) ($def['label'] ?? $column),
             'type'      => (string) ($def['type'] ?? 'text'),
@@ -114,6 +136,7 @@ function panel_columns_payload(string $role): array
     // Virtual column: COUNT(device_files), sortable server-side.
     $out[] = [
         'key'       => 'files',
+        'api_key'   => 'files_count',
         'label_key' => 'col_files',
         'label'     => 'Attachments',
         'type'      => 'int',
