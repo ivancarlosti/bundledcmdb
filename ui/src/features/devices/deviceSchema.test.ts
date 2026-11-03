@@ -28,12 +28,15 @@ const field = (key: string, required = false): MetaField => ({
   id: 1,
   key,
   label: key,
+  label_i18n: null,
   type: 'text',
   options: [],
   required,
-  is_active: true,
-  sort_order: 0,
+  unique: false,
+  searchable: true,
+  in_grid: false,
   editable_roles: ['manager'],
+  sort_order: 0,
 });
 
 function columnsOf(...keys: string[]): Map<string, MetaColumn> {

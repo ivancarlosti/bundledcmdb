@@ -1,4 +1,13 @@
-import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type SortingState } from '@tanstack/react-table';
+// v9 ships the v8 surface behind `/legacy` (`useLegacyTable` + the row-model
+// factories). That is what lets the grid move to the v9 engine without rewriting
+// the renderer: the feature-flag API (`useTable` with an explicit
+// `TableFeatures`) is the follow-up, not a prerequisite.
+import { flexRender, type SortingState } from '@tanstack/react-table';
+import {
+  getCoreRowModel,
+  useLegacyTable as useReactTable,
+  type LegacyColumnDef as ColumnDef,
+} from '@tanstack/react-table/legacy';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { useEffect, useRef, type InputHTMLAttributes } from 'react';
 
@@ -7,7 +16,7 @@ import { cn } from '@/lib/cn';
 import type { SortDir } from './gridSearch';
 import type { SelectionState } from './selection';
 
-export type DataGridSelection<T> = {
+export type DataGridSelection<T extends Record<string, unknown>> = {
   /** `none` / `some` / `all` for the current page's header checkbox. */
   state: SelectionState;
   isSelected: (row: T) => boolean;
@@ -19,7 +28,7 @@ export type DataGridSelection<T> = {
   allLabel: string;
 };
 
-export type DataGridProps<T> = {
+export type DataGridProps<T extends Record<string, unknown>> = {
   columns: ColumnDef<T, unknown>[];
   rows: T[];
   /** Column the server is currently sorting by (null when the default is used). */
@@ -78,7 +87,7 @@ function IndeterminateCheckbox({
  * checkbox changed, so paging and sorting stay server-side and the selection is
  * owned by the page that also owns the bulk request.
  */
-export function DataGrid<T>({
+export function DataGrid<T extends Record<string, unknown>>({
   columns,
   rows,
   sort,
@@ -96,11 +105,13 @@ export function DataGrid<T>({
 
   const table = useReactTable({
     data: rows,
-    columns,
+    // v9 widened `ColumnDef`/`RowData` to `unknown`; the grid's own `T` is the
+    // contract here, and every accessor is written against it.
+    columns: columns as never,
     state: { sorting },
     manualSorting: true,
     getCoreRowModel: getCoreRowModel(),
-    getRowId: (row) => String(rowId(row)),
+    getRowId: (row) => String(rowId(row as T)),
   });
 
   const headerGroups = table.getHeaderGroups();
@@ -200,7 +211,7 @@ export function DataGrid<T>({
                     'cursor-pointer hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]',
                 )}
                 tabIndex={onRowClick ? 0 : undefined}
-                aria-label={rowLabel?.(row.original)}
+                aria-label={rowLabel?.(row.original as T)}
                 onClick={
                   onRowClick
                     ? (event) => {
@@ -210,7 +221,7 @@ export function DataGrid<T>({
                         if ((event.target as HTMLElement).closest('input, select, button, a, label') !== null) {
                           return;
                         }
-                        onRowClick(row.original);
+                        onRowClick(row.original as T);
                       }
                     : undefined
                 }
@@ -219,7 +230,7 @@ export function DataGrid<T>({
                     ? (event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
-                          onRowClick(row.original);
+                          onRowClick(row.original as T);
                         }
                       }
                     : undefined
@@ -234,9 +245,9 @@ export function DataGrid<T>({
                     onKeyDown={(event) => event.stopPropagation()}
                   >
                     <IndeterminateCheckbox
-                      checked={selection.isSelected(row.original)}
-                      aria-label={selection.rowLabel(row.original)}
-                      onChange={(event) => selection.onToggleRow(row.original, event.target.checked)}
+                      checked={selection.isSelected(row.original as T)}
+                      aria-label={selection.rowLabel(row.original as T)}
+                      onChange={(event) => selection.onToggleRow(row.original as T, event.target.checked)}
                       data-testid="select-row"
                     />
                   </td>

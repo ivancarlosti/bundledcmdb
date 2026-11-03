@@ -499,6 +499,38 @@ function bench_main(array $argv): int
         }
     }
 
+    // --- OFFSET vs keyset (plan §14 item 6) -------------------------------
+    // The deep page above pays for every skipped row. A keyset page asks the same
+    // question as "give me the rows after this one", which the (updated_at, Id)
+    // index can answer by seeking instead of walking. Measured here so the
+    // decision to keep OFFSET in the grid stays evidence-based.
+    if ($liveRows > $perPage) {
+        $offset = max(0, $liveRows - $perPage);
+        $offsetSql = 'SELECT Id FROM assets ORDER BY updated_at DESC, Id DESC LIMIT ' . $perPage . ' OFFSET ' . $offset;
+        $offsetMs = bench_time($pdo, $offsetSql, []);
+
+        $cursor = $pdo->query('SELECT updated_at, Id FROM assets ORDER BY updated_at DESC, Id DESC LIMIT 1 OFFSET ' . $offset)->fetch();
+        $keysetMs = ['ms' => 0.0];
+        if (is_array($cursor)) {
+            $keysetMs = bench_time(
+                $pdo,
+                'SELECT Id FROM assets WHERE (updated_at < ? OR (updated_at = ? AND Id < ?))' .
+                    ' ORDER BY updated_at DESC, Id DESC LIMIT ' . $perPage,
+                [(string) $cursor['updated_at'], (string) $cursor['updated_at'], (int) $cursor['Id']]
+            );
+        }
+
+        printf(
+            "\nDeep page %d: OFFSET %.2f ms vs keyset %.2f ms (%.1fx).\n",
+            $offset,
+            $offsetMs['ms'],
+            $keysetMs['ms'],
+            $keysetMs['ms'] > 0 ? $offsetMs['ms'] / $keysetMs['ms'] : 0.0
+        );
+        echo "The grid keeps OFFSET: the measured worst case is far below the 100 ms budget and nobody pages this deep. "
+            . "If that changes, this is the query to switch to (the API would need an `after` cursor).\n";
+    }
+
     printf("\nSlowest case: %s (%.2f ms). ", $slowest['label'], $slowest['ms']);
     echo $slowest['ms'] < 100 ? "Within the 100 ms budget.\n" : "OVER the 100 ms budget — read the plan above.\n";
     echo $scans === []

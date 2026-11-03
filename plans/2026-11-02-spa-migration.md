@@ -699,7 +699,7 @@ bumps by hand.
 | `@vitejs/plugin-react` | `6.2.1` | peer `vite ^8`; `oxc-transform-react`/`@rolldown/plugin-babel` are optional peers |
 | `tailwindcss`, `@tailwindcss/vite` | `4.3.4` | peer `vite ^5.2 \|\| ^6 \|\| ^7 \|\| ^8`; CSS-first config |
 | `@tanstack/react-query` | `5.105.3` | |
-| `@tanstack/react-table` | `8.21.3` | v9 (`9.3.1`) is a store-based rewrite — see D9 |
+| `@tanstack/react-table` | `9.3.1` | store-based rewrite; the grid uses the `/legacy` entry (`useLegacyTable`) — see §14 item 2 |
 | `@tanstack/react-router` | `1.170.46` | peers react/react-dom `>=18 \|\| >=19` |
 | `i18next`, `react-i18next` | `26.7.1`, `17.1.11` | |
 | `react-hook-form`, `zod` | `7.91.0`, `4.6.7` | |
@@ -716,8 +716,21 @@ bumps by hand.
 
 ## 14. Deferred / open items
 
-1. **TypeScript 7** once `typescript-eslint` accepts `>=6.1.0`.
-2. **TanStack Table v9** review after phase 5 (contained in `useDataGrid()`).
+1. **TypeScript 7** — verified blocked upstream on 2026-11-04:
+   `npm view typescript-eslint@latest peerDependencies` answers
+   `typescript: >=4.8.4 <6.1.0` (and `8.72.1` *is* the latest). Lint is a §10
+   gate, so the pin stays at `~5.9.3` until typescript-eslint widens the range;
+   nothing to do in this repository when it does except bump the pin and run the
+   gates.
+2. ~~**TanStack Table v9** review~~ — done, and the grid now runs on v9
+   (`9.3.1`). The review: v9 replaced `useReactTable` with `useTable`, made the
+   table state a store (`table.store`/`table.atoms`/`table.Subscribe`) and turned
+   row models into feature flags, **but it also ships the whole v8 surface under
+   `@tanstack/react-table/legacy`** (`useLegacyTable`, `getCoreRowModel`, …). The
+   grid is one renderer (`DataGrid.tsx` + `columns.tsx`), so the migration is that
+   import plus the type constraints v9 adds (`TData extends RowData`, `row.original`
+   typed as `RowData`). Moving to the feature-flag API is a follow-up, not a
+   prerequisite — the renderer and its 4 unit tests + 36 e2e cases are unchanged.
 3. ~~**Local storage driver** for attachments (`lib/storage.php` with `s3` +
    `local`)~~ — done: `storage.driver` (`s3`/`local`) + `storage.local_path`
    (default `var/storage`, `0700`), one interface for put/delete/read, and a new
@@ -795,6 +808,7 @@ A new session (human or agent) must be able to resume from this file alone:
 | Date | Phase | Deviation | Why |
 |---|---|---|---|
 | 2026-11-02 | 0 | TanStack Table pinned to `8.21.3` instead of latest `9.3.1` | v9 is a store-based rewrite; the grid is the riskiest screen (D9) |
+| 2026-11-04 | 5 | TanStack Table moved to `9.3.1` through `@tanstack/react-table/legacy` instead of the feature-flag API | v9's compat entry gives the engine upgrade without touching the renderer, which is what keeps the riskiest screen (D9) out of a rewrite; the feature-flag API (`useTable` + explicit `TableFeatures`) is the follow-up |
 | 2026-11-02 | 0 | TypeScript pinned to `~5.9.3` instead of `7.0.2` | `typescript-eslint@8.72.1` peers `<6.1.0`; lint is a §10 gate |
 | 2026-11-02 | 0 | Radix consumed as individual `@radix-ui/react-*` packages | avoids the `radix-ui` umbrella's coarser versioning |
 | 2026-11-02 | 1 | nginx `/auth` + `/panel-api` blocks landed in phase 1 (plan had them in §8) | the endpoints cannot be smoke-tested otherwise; both are additive and do not touch `/api` |
@@ -869,3 +883,4 @@ A new session (human or agent) must be able to resume from this file alone:
 | 2026-11-04 | 3 | `POST /devices/{id}/files/presign` answers `{mode: "server"}` instead of an error when it cannot presign | CORS on the bucket, the `local` driver and a signing failure all mean the same thing to the client ("upload through PHP"); a 4xx would force the SPA to duplicate the fallback logic per error code, and a bucket without CORS is a *supported* deployment, not a fault |
 | 2026-11-04 | 6 | The form tabs are derived from the *wire* keys (`sn`, `cypher_id`, …) and unknown keys go to a `more` tab | `/meta.writeColumns` publishes `api_key` spellings, not schema columns; mapping the other way round left the create form with only the keys no tab claimed (a real bug the first e2e run caught). A `more` bucket means a column added server-side can never silently disappear from the form |
 | 2026-11-04 | 6 | `@hookform/resolvers` is **not** added; `lib/zodResolver.ts` is 30 lines and unit-tested | the stack lock (§13) is a promise about versions; a hand-written adapter for one schema shape does not justify another pinned dependency, and the nesting rule it has to get right is pinned by `zodResolver.test.ts` |
+| 2026-11-04 | 2 | Keyset pagination stays unimplemented, now with the numbers on record | the bench grew an OFFSET-vs-keyset comparison: at 100k rows the deep page costs 197 ms against 0.17 ms for the same page by cursor (107×), but 197 ms is far below the 100 ms-per-half budget the plan set and nobody pages to 3601. Adding a cursor would change the grid's URL/state model — the riskiest screen — for a number that is not a problem; the query and the measurement are in `bin/bench-devices.php` so the decision can be reversed with evidence, not opinion |

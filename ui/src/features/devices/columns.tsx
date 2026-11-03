@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { LegacyColumnDef as ColumnDef } from '@tanstack/react-table/legacy';
 
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format';
 
