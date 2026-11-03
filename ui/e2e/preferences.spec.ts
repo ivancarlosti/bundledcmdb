@@ -59,6 +59,9 @@ test.describe('preferences', () => {
     // bookmarked and matches what the table shows.
     await expect(link).toHaveAttribute('href', /\/devices\/export\?.*sort=SN&dir=asc/);
 
+    // `page.route` does not see a download navigation, so this one request really
+    // leaves the browser. Assert on the URL instead of the body: the CSV content
+    // is `lib/panel/devices.php`'s job, not the grid's.
     const [download] = await Promise.all([page.waitForEvent('download'), link.click()]);
     expect(download.url()).toContain('sort=SN&dir=asc');
   });

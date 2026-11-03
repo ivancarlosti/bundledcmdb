@@ -13,7 +13,9 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // `github` turns a failure into an annotation on the commit/PR, which is the
+  // only way to read it without an authenticated job log.
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',
@@ -24,5 +26,9 @@ export default defineConfig({
     url: 'http://localhost:4173/app/',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
+    // Vite's own output is discarded by default, which hides a proxy error or a
+    // port clash behind "webServer exited early".
+    stdout: 'pipe',
+    stderr: 'pipe',
   },
 });

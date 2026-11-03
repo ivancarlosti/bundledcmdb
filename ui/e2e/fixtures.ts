@@ -230,6 +230,23 @@ function json(route: Route, data: unknown, meta: Record<string, unknown> = {}) {
   return route.fulfill({ json: { ok: true, data, meta } });
 }
 
+/**
+ * Unauthenticated visitor.
+ *
+ * The shell has to render from the session probe alone, so `/session` is
+ * answered with a 401 and nothing else is allowed to reach the network: on CI
+ * there is no PHP backend behind the preview proxy, and an unstubbed call would
+ * come back as a 502 that Chromium reports as a console error.
+ */
+export async function mockAnonymous(page: Page, status = 401): Promise<void> {
+  await page.route('**/panel-api/v1/session', (route) =>
+    route.fulfill({
+      status,
+      json: { ok: false, error: { code: 'unauthorized', message: 'Authentication required.' } },
+    }),
+  );
+}
+
 export async function mockPanel(page: Page, options: MockOptions = {}): Promise<void> {
   const total = options.total ?? ROWS.length;
   const pages = options.pages ?? 1;
