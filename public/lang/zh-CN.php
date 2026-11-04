@@ -31,6 +31,8 @@ return [
     'set_error' => '部分值未能保存。',
     'set_fields_intro' => '自定义字段按资产存储（EAV），重写数据行时不会丢失。',
     'set_key_label' => '名称',
+    'set_key_users' => '用户',
+    'set_key_users_hint' => '允许此密钥通过 /api/v1/users 创建、更新和删除用户名单。不会创建 Keycloak 账户。',
     'set_key_rotate' => '重新生成',
     'set_maint_intro' => '数据库迁移与诊断。bin/migrate.php 可在命令行执行相同更改。',
     'set_saved' => '设置已保存。',

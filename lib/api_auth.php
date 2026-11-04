@@ -63,6 +63,7 @@ function api_key_normalize_payload(array $input): array
         'can_read'        => !empty($input['can_read']) ? 1 : 0,
         'can_write'       => !empty($input['can_write']) ? 1 : 0,
         'can_delete'      => !empty($input['can_delete']) ? 1 : 0,
+        'can_users'       => !empty($input['can_users']) ? 1 : 0,
         'is_active'       => array_key_exists('is_active', $input) ? (!empty($input['is_active']) ? 1 : 0) : 1,
     ];
 }
@@ -95,7 +96,7 @@ function api_key_validate(PDO $pdo, array $payload): array
     if ($payload['ip_allowlist'] !== null && !ip_allowlist_validate((string) $payload['ip_allowlist'])['ok']) {
         $errors['ip_allowlist'] = 'invalid_ip';
     }
-    if (!$payload['can_read'] && !$payload['can_write'] && !$payload['can_delete']) {
+    if (!$payload['can_read'] && !$payload['can_write'] && !$payload['can_delete'] && !$payload['can_users']) {
         $errors['can_read'] = 'no_scope';
     }
     return $errors;
@@ -111,13 +112,13 @@ function api_key_create(PDO $pdo, array $payload, ?string $actor = null): array
     $generated = api_token_generate();
     $stmt = $pdo->prepare(
         'INSERT INTO api_keys (label, prefix, key_hash, company, source_slug, allowed_sources, ip_allowlist,
-                               can_read, can_write, can_delete, is_active, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                               can_read, can_write, can_delete, can_users, is_active, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $payload['label'], $generated['prefix'], $generated['hash'], $payload['company'],
         $payload['source_slug'], $payload['allowed_sources'], $payload['ip_allowlist'],
-        $payload['can_read'], $payload['can_write'], $payload['can_delete'],
+        $payload['can_read'], $payload['can_write'], $payload['can_delete'], $payload['can_users'],
         $payload['is_active'], $actor,
     ]);
     $id = (int) $pdo->lastInsertId();
@@ -129,13 +130,13 @@ function api_key_update(PDO $pdo, int $id, array $payload): bool
 {
     $stmt = $pdo->prepare(
         'UPDATE api_keys SET label = ?, company = ?, source_slug = ?, allowed_sources = ?, ip_allowlist = ?,
-                             can_read = ?, can_write = ?, can_delete = ?, is_active = ?
+                             can_read = ?, can_write = ?, can_delete = ?, can_users = ?, is_active = ?
          WHERE id = ?'
     );
     $stmt->execute([
         $payload['label'], $payload['company'], $payload['source_slug'], $payload['allowed_sources'],
         $payload['ip_allowlist'], $payload['can_read'], $payload['can_write'], $payload['can_delete'],
-        $payload['is_active'], $id,
+        $payload['can_users'], $payload['is_active'], $id,
     ]);
     return true;
 }
@@ -246,6 +247,7 @@ function api_require_scope(array $auth, string $scope): void
         'read' => 'can_read',
         'write' => 'can_write',
         'delete' => 'can_delete',
+        'users' => 'can_users',
         default => null,
     };
     if ($column === null) {

@@ -156,7 +156,7 @@ function api_merge_errors(array $base, array $custom): array
  */
 function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 'upsert'): array
 {
-    $actor = 'api:' . (string) ($auth['key']['label'] ?? 'key');
+    $actor = api_actor($auth);
     $mapped = asset_api_map_input($payload);
     $data = $mapped['data'];
 
@@ -248,7 +248,7 @@ function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 
  */
 function api_patch_device(PDO $pdo, array $auth, int $id, array $payload): array
 {
-    $actor = 'api:' . (string) ($auth['key']['label'] ?? 'key');
+    $actor = api_actor($auth);
     $row = asset_get($pdo, $id, $auth['company']);
     if ($row === null) {
         throw new ApiError('not_found', 'Device not found.', 404);
@@ -322,7 +322,7 @@ function api_patch_device(PDO $pdo, array $auth, int $id, array $payload): array
  */
 function api_delete_device(PDO $pdo, array $auth, int $id): array
 {
-    $actor = 'api:' . (string) ($auth['key']['label'] ?? 'key');
+    $actor = api_actor($auth);
     $row = asset_get($pdo, $id, $auth['company']);
     if ($row === null) {
         throw new ApiError('not_found', 'Device not found.', 404);
@@ -542,6 +542,54 @@ try {
         json_ok(['fields' => $fields, 'types' => array_keys(field_types())]);
     }
 
+    if ($resource === 'users') {
+        // A dedicated scope: `can_write` (ESET/Intune sync) must never be able to
+        // mint accounts, so every roster route checks `can_users` first.
+        api_require_scope($auth, 'users');
+        $emailPart = $segments[2] ?? '';
+        if (isset($segments[3])) {
+            throw new ApiError('not_found', 'Unknown users endpoint.', 404);
+        }
+
+        if ($emailPart === '') {
+            if ($method === 'GET') {
+                json_ok(api_list_users($pdo, $auth), 200, ['roles' => user_roles(), 'company' => $auth['company']]);
+            }
+            if ($method === 'POST') {
+                json_ok(api_create_user($pdo, $auth, request_json_body()), 201);
+            }
+            api_method_not_allowed(['GET', 'POST']);
+        }
+
+        if ($emailPart === 'upsert') {
+            if (!in_array($method, ['POST', 'PUT'], true)) {
+                api_method_not_allowed(['POST', 'PUT']);
+            }
+            $outcome = api_upsert_user($pdo, $auth, request_json_body());
+            json_ok($outcome['user'], $outcome['created'] ? 201 : 200, ['created' => $outcome['created']]);
+        }
+
+        $email = trim(rawurldecode($emailPart));
+        if ($email === '' || !str_contains($email, '@')) {
+            throw new ApiError('not_found', 'Unknown users endpoint. Use /v1/users/{email}.', 404);
+        }
+
+        if ($method === 'GET') {
+            $row = user_find($pdo, $email, $auth['company']);
+            if ($row === null) {
+                throw new ApiError('not_found', 'No user with e-mail ' . $email . '.', 404);
+            }
+            json_ok($row);
+        }
+        if (in_array($method, ['PATCH', 'PUT'], true)) {
+            json_ok(api_patch_user($pdo, $auth, $email, request_json_body()));
+        }
+        if ($method === 'DELETE') {
+            json_ok(api_delete_user($pdo, $auth, $email));
+        }
+        api_method_not_allowed(['GET', 'PATCH', 'PUT', 'DELETE']);
+    }
+
     if ($resource !== 'devices') {
         throw new ApiError('not_found', 'Unknown API resource: ' . $resource, 404);
     }
@@ -559,7 +607,26 @@ try {
             $outcome = api_write_device($pdo, $auth, request_json_body(), 'create');
             json_ok($outcome['device'], 201);
         }
-        api_method_not_allowed(['GET', 'POST']);
+        if ($method === 'DELETE') {
+            // One request instead of list-then-delete: `DELETE /v1/devices?sn=…`.
+            api_require_scope($auth, 'delete');
+            $uuid = trim((string) ($_GET['uuid'] ?? ''));
+            $sn = trim((string) ($_GET['sn'] ?? ''));
+            if ($uuid === '' && $sn === '') {
+                throw new ApiError(
+                    'validation_failed',
+                    'Pass ?uuid= or ?sn= (and optionally &hard=1) to delete a device.',
+                    422,
+                    ['uuid' => 'required']
+                );
+            }
+            $row = asset_find_by($pdo, ['UUID' => $uuid, 'SN' => $sn], $auth['company']);
+            if ($row === null) {
+                throw new ApiError('not_found', 'Device not found.', 404);
+            }
+            json_ok(api_delete_device($pdo, $auth, (int) $row['Id']));
+        }
+        api_method_not_allowed(['GET', 'POST', 'DELETE']);
     }
 
     if ($idPart === 'upsert') {

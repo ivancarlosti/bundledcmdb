@@ -136,6 +136,11 @@ function session_user(): ?array
 /**
  * Require a signed-in user; throws `ApiError('unauthorized', …, 401)`.
  *
+ * The session is a snapshot taken at login, so it is re-checked against the
+ * roster first: a row deleted through `DELETE /api/v1/users/{email}` ends the
+ * session on the next request, and a role/company changed there is adopted
+ * without waiting for the user to sign in again.
+ *
  * @return array{email: string, company: string, role: string}
  */
 function session_require(): array
@@ -144,6 +149,66 @@ function session_require(): array
     if ($user === null) {
         throw new ApiError('unauthorized', 'Authentication required.', 401);
     }
+    return session_roster_sync($user);
+}
+
+/**
+ * Bring the session in line with its `users` row.
+ *
+ * One indexed read per (e-mail, role, company) triple: a web request keeps its
+ * snapshot for its whole lifetime, while a script that switches identity (see
+ * `bin/test-panel-api.php`) still gets the row behind the new identity.
+ *
+ * `null` is "the roster table does not exist", which keeps deployments without
+ * sql/legacy.sql working exactly as before; `false` is "the roster table could
+ * not be reached". Only `$_SESSION` is touched here — no output is emitted, so
+ * CLI callers are safe.
+ *
+ * @param array{email: string, company: string, role: string} $user
+ * @param bool $force re-read the row (used by the tests to observe a revocation
+ *                    inside one process; requests always use the cached read)
+ * @return array{email: string, company: string, role: string}
+ * @throws ApiError
+ */
+function session_roster_sync(array $user, bool $force = false): array
+{
+    static $cache = [];
+
+    $email = strtolower(trim((string) $user['email']));
+    $key = $email . "\0" . $user['role'] . "\0" . $user['company'];
+    if ($force || !array_key_exists($key, $cache)) {
+        $row = false;
+        $pdo = db_try();
+        if ($pdo !== null && db_table_exists($pdo, 'users')) {
+            $stmt = $pdo->prepare('SELECT email, company, role FROM users WHERE email = ? LIMIT 1');
+            $stmt->execute([$email]);
+            $found = $stmt->fetch();
+            $row = $found === false ? null : $found;
+        }
+        $cache[$key] = $row;
+    }
+    $row = $cache[$key];
+
+    if ($row === false) {
+        return $user;
+    }
+    if ($row === null) {
+        $_SESSION = [];
+        if (session_active()) {
+            session_destroy();
+        }
+        throw new ApiError('unauthorized', 'Your account is no longer active.', 401);
+    }
+
+    $role = session_role_normalize((string) ($row['role'] ?? ''));
+    $company = (string) ($row['company'] ?? '');
+    if ($role !== $user['role'] || $company !== $user['company']) {
+        $_SESSION[SESSION_ROLE] = $role;
+        $_SESSION[SESSION_COMPANY] = $company;
+        $user['role'] = $role;
+        $user['company'] = $company;
+    }
+
     return $user;
 }
 

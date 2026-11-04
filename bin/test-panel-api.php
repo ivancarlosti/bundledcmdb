@@ -318,8 +318,31 @@ function clear_body(): void
     unset($GLOBALS['APP_TEST_JSON_BODY']);
 }
 
+/**
+ * Fake a signed-in browser session.
+ *
+ * `session_require()` re-reads the roster row on every request (that is how an
+ * API delete revokes a session), so the fake identity needs a matching `users`
+ * row the way a real login does. Rows created here are removed in the cleanup
+ * block at the end of the run.
+ */
 function as_role(string $role, string $company, string $email = 'tester@example.com'): void
 {
+    $pdo = db_try();
+    if ($pdo !== null && db_table_exists($pdo, 'users')) {
+        $stmt = $pdo->prepare('SELECT email FROM users WHERE email = ?');
+        $stmt->execute([$email]);
+        if ($stmt->fetch() === false) {
+            $pdo->prepare('INSERT INTO users (email, company, role) VALUES (?, ?, ?)')
+                ->execute([$email, $company, session_role_normalize($role)]);
+            $GLOBALS['test_roster_emails'][] = $email;
+        } elseif (in_array($email, (array) ($GLOBALS['test_roster_emails'] ?? []), true)) {
+            // Keep the fake row in step with the role the test is impersonating.
+            $pdo->prepare('UPDATE users SET company = ?, role = ? WHERE email = ?')
+                ->execute([$company, session_role_normalize($role), $email]);
+        }
+    }
+
     $_SESSION[SESSION_EMAIL] = $email;
     $_SESSION[SESSION_COMPANY] = $company;
     $_SESSION[SESSION_ROLE] = $role;
@@ -1760,6 +1783,13 @@ try {
             $pdo->exec("DELETE FROM asset_events WHERE actor IN ('tester@example.com', 'ratelimit@example.com')");
         } catch (Throwable $e) {
             fwrite(STDERR, 'events cleanup failed: ' . $e->getMessage() . "\n");
+        }
+    }
+    foreach (array_unique((array) ($GLOBALS['test_roster_emails'] ?? [])) as $testEmail) {
+        try {
+            $pdo->prepare('DELETE FROM users WHERE email = ?')->execute([(string) $testEmail]);
+        } catch (Throwable $e) {
+            fwrite(STDERR, 'roster cleanup failed for ' . $testEmail . ': ' . $e->getMessage() . "\n");
         }
     }
 }

@@ -1,7 +1,9 @@
 # BundledCMDB REST API (v1)
 
 The API is meant for source systems (ESET scripts, Intune/Jamf syncs, CI jobs)
-that need to create, update or remove devices without touching MySQL directly.
+that need to create, update or remove devices without touching MySQL directly,
+and — since `can_users` — for the IdP/HR sync that maintains the `users` roster
+that decides who may sign in to the panel.
 
 * Base URL: `https://<host>/api/v1` (nginx `location ~ ^/api(/.*)?$` →
   `public/api.php`)
@@ -19,7 +21,11 @@ Create keys in **Settings → API → Create API key**. Each key can be limited 
 | Default source | `source` stamped on writes when the payload omits it |
 | Allowed sources | whitelist; empty = every source |
 | IP allowlist | IPs/CIDRs allowed to use this key (empty = global `api.ip_allowlist`) |
-| Scopes | `read`, `write`, `delete` |
+| Scopes | `read`, `write`, `delete`, `users` |
+
+`users` is deliberately separate from `write`: a key that syncs devices (ESET,
+Intune) must not be able to create accounts, and it is off by default. See
+[Users](#users-the-roster) for what the scope grants.
 
 The plaintext token is displayed **once**, right after creation/rotation. Only
 `sha256(token)` is stored. Rotating a key invalidates the old token immediately.
@@ -38,7 +44,8 @@ The plaintext token is displayed **once**, right after creation/rotation. Only
 | `forbidden` | 403 | scope/company/source not allowed for this key |
 | `not_found` | 404 | unknown device/resource |
 | `method_not_allowed` | 405 | wrong HTTP verb (see `Allow` header) |
-| `conflict` | 409 | duplicate `UUID`/`SN` in the same company |
+| `conflict` | 409 | duplicate `UUID`/`SN` in the same company, or an e-mail that already has a roster row |
+| `last_superadmin` | 409 | deleting/demoting the only `superadmin` row |
 | `validation_failed` | 422 | unknown field, bad type, duplicate unique custom value |
 | `invalid_json` | 400 | body is not valid JSON |
 | `schema_not_ready` | 503 | migrations not applied |
@@ -153,6 +160,11 @@ Each item is processed independently:
 Soft delete by default (`deleted_at`), hidden from lists. `?hard=1` removes the
 row plus its custom values and attachment metadata (files stay in S3).
 
+### `DELETE /v1/devices?uuid=<uuid>` or `?sn=<serial>`
+Same operation, addressed by identity: one request instead of
+`GET`-then-`DELETE /{id}`. Needs the `delete` scope and accepts the same
+`?hard=1`. A missing/blank selector is `422` (`errors.uuid = "required"`).
+
 A trashed row also carries `deleted_reason` (`duplicated` / `created_by_mistake`)
 and `duplicate_of_id` **when the web panel deleted it** — the panel asks why and
 stores the kept asset, this API does not take a reason. Both are `null` for rows
@@ -169,6 +181,95 @@ deleted here or before migration `0014`, and a restore clears them.
 > the action and the `[old, new]` value of each changed column. The panel reads it
 > through `GET /panel-api/v1/devices/{id}/events` and shows it on the device page;
 > the public API does not expose the trail.
+
+## Users (the roster)
+
+`users` is the authorisation roster: a Keycloak account can only sign in when its
+e-mail also has a row here (`role` = `user|manager|admin|superadmin`, `company` =
+tenant). These endpoints manage **that row only** — no Keycloak user is created,
+updated or deleted, so credentials and MFA stay owned by the identity provider.
+An account created here can sign in only after the Keycloak user exists; deleting
+the row revokes the session on the next request.
+
+All six routes require the `users` scope (`read`/`write` are neither enough nor
+needed). `email` is the identity — it is the path parameter and cannot be
+renamed (`422 errors.email = "immutable"`); delete and re-create instead.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| `GET` | `/v1/users` | `company`, `role`, `search`, `page`, `per_page` | `{"users":[…],"total":n,"page":1,"pages":1}`; `meta.roles` lists the catalogue |
+| `GET` | `/v1/users/{email}` | – | one row, `404` when unknown |
+| `POST` | `/v1/users` | `{"email","company","role"}` | `201` + row; `409` when the e-mail already exists |
+| `POST`/`PUT` | `/v1/users/upsert` | same as create | `201`/`200` + row, `meta.created` |
+| `PATCH`/`PUT` | `/v1/users/{email}` | `{"company","role"}` (partial) | `200` + row |
+| `DELETE` | `/v1/users/{email}` | – | `{"email","role","deleted":true}` |
+
+Rules enforced by the server:
+
+* `email` is lower-cased, must be a valid address and ≤ 191 characters.
+* `role` must be one of `user`, `manager`, `admin`, `superadmin`.
+* `company` is required on create/upsert for a **global** key: an empty company is
+  an unbound account that sees every tenant, so it has to be explicit. A
+  **company-bound** key always writes its own company (`403` when the body names
+  another one) and may never grant `superadmin` (`422 errors.role =
+  "role_not_allowed"`).
+* The last `superadmin` row cannot be demoted or deleted (`409 last_superadmin`).
+* An unknown body key is `422 errors.<key> = "unknown_field"`.
+
+Audit: every write appends to `asset_events` with `entity = user`,
+`entity_id = <email>` and `actor = api:<key label>`, so roster changes appear in
+Settings → Logs next to device changes.
+
+> A global key with `users` is effectively an instance administrator: it can
+> create a `superadmin`. Treat it like the Keycloak admin credentials.
+>
+> Deleting a row leaves the Keycloak account, the user's `user_preferences` /
+> `saved_views` rows and the free-text `assets.UserEmail` values untouched.
+
+## Recipes (n8n / curl)
+
+n8n's **HTTP Request** node maps 1:1 onto the calls below: method + URL, *Body
+Content Type: JSON*, and a header `Authorization: Bearer <token>` (an n8n
+credential of type *Header Auth* works too).
+
+### Upsert a device from a host inventory
+
+```bash
+curl -X POST https://cmdb.example.com/api/v1/devices/upsert \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"company":"Acme","sn":"SN-1234","hostname":"acme-laptop-01",
+       "user_email":"user@example.com","last_seen":"2026-11-03T10:00:00Z"}'
+```
+
+### Delete a device by serial number
+
+```bash
+curl -X DELETE "https://cmdb.example.com/api/v1/devices?sn=SN-1234" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Maintain the roster from the IdP
+
+```bash
+# create or update one row (safe to retry)
+curl -X POST https://cmdb.example.com/api/v1/users/upsert \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"email":"jane@acme.com","company":"Acme","role":"manager"}'
+
+# off-boarding: the next request of that session is rejected
+curl -X DELETE https://cmdb.example.com/api/v1/users/jane%40acme.com \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Send the e-mail percent-encoded in the path (`@` → `%40`); a literal `@` is
+accepted as well.
+
+### List the users of one tenant
+
+```bash
+curl "https://cmdb.example.com/api/v1/users?company=Acme&role=manager&per_page=100" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ## Payload fields
 

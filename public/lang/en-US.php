@@ -135,6 +135,8 @@ return [
     'set_key_source' => 'Default source',
     'set_key_token_once' => 'New token (shown only once)',
     'set_key_token_warning' => 'Copy it now: it cannot be displayed again. Clients must send Authorization: Bearer <token>.',
+    'set_key_users' => 'Users',
+    'set_key_users_hint' => 'Lets this key create, update and delete the user roster through /api/v1/users. It does not create Keycloak accounts.',
     'set_key_write' => 'Write',
     'set_maint_applied' => 'Applied migrations',
     'set_maint_db' => 'Database',

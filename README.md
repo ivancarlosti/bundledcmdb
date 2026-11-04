@@ -107,9 +107,14 @@ the file); change them before exposing the stack. The panel is published on
   `APP_ENCRYPTION_KEY`), sources, API keys, custom fields, log retention and
   schema maintenance. Values are stored in the database with `DB → ENV → default`
   precedence; see [docs/settings.md](docs/settings.md).
-* **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert and bulk
-  endpoints, per-key company/source scopes, IP allowlists, token rotation.
-  See [docs/api.md](docs/api.md).
+* **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert, bulk
+  and delete-by-`uuid`/`sn`, per-key company/source scopes, IP allowlists, token
+  rotation. See [docs/api.md](docs/api.md).
+* **REST API for the user roster** — `GET/POST/PATCH/DELETE /api/v1/users` plus
+  `POST /api/v1/users/upsert`, behind a separate `can_users` key scope (off by
+  default). It maintains the `users` rows that authorise a Keycloak login; no
+  Keycloak account is created, and a deleted row ends that session on the next
+  request.
 * **Source per asset** — `assets.source` (seeded `eset`, `api`, `manual`, plus
   any custom source), shown as badges and filterable in the grid.
 * **Dynamic custom fields** (EAV) — text, textarea, integer, decimal, date,

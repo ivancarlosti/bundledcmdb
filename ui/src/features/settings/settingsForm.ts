@@ -262,6 +262,7 @@ export function apiKeyFormFrom(row: ApiKeyRow | null): ApiKeyForm {
       can_read: true,
       can_write: true,
       can_delete: false,
+      can_users: false,
       is_active: true,
     };
   }
@@ -274,6 +275,7 @@ export function apiKeyFormFrom(row: ApiKeyRow | null): ApiKeyForm {
     can_read: row.can_read,
     can_write: row.can_write,
     can_delete: row.can_delete,
+    can_users: row.can_users,
     is_active: row.is_active,
   };
 }
@@ -289,6 +291,7 @@ export function buildApiKeyInput(form: ApiKeyForm): ApiKeyInput {
     can_read: form.can_read,
     can_write: form.can_write,
     can_delete: form.can_delete,
+    can_users: form.can_users,
     is_active: form.is_active,
   };
 }

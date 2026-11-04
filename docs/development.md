@@ -47,6 +47,7 @@ bin/
   check-i18n.php      catalogue validation, coverage and dead keys
   check-ui.sh         SPA gates (typecheck, lint, format, vitest, build, e2e)
   test-panel-api.php  panel API integration suite
+  test-api-users.php  /api/v1/users integration suite (roster + can_users scope)
   bench-devices.php   100k-row query benchmarks
   docker-entrypoint.sh  container start (owns var/storage, then php-fpm + nginx)
 docker/
@@ -108,6 +109,7 @@ php bin/migrate.php [--dry-run|--status]
 php bin/check-schema.php        # sql/schema.sql ↔ lib/migrate.php (no database)
 php bin/check-i18n.php          # missing, unknown and dead catalogue keys
 php bin/test-panel-api.php      # panel API integration suite (needs a non-production DB)
+php bin/test-api-users.php      # /api/v1/users suite (needs a non-production DB)
 ./bin/check-ui.sh               # SPA gates (add --e2e for Playwright)
 ```
 
@@ -127,9 +129,12 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
 4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
 5. `php bin/test-panel-api.php` → 0 failed (requires a non-production database;
    the suite also covers the role matrix, source move and `source_slug` alias).
-6. SPA: `./bin/check-ui.sh --e2e` (typecheck, lint, format, vitest, build, then
+6. `php bin/test-api-users.php` → 0 failed (user roster CRUD/upsert, the
+   `can_users` scope, company binding and session revocation; it creates and
+   removes its own rows and keys).
+7. SPA: `./bin/check-ui.sh --e2e` (typecheck, lint, format, vitest, build, then
    Playwright against `vite preview`; `--no-install` skips `npm ci`).
-7. API smoke (`curl`):
+8. API smoke (`curl`):
 
 ```bash
 TOKEN=... # Settings → API → Create key
@@ -138,16 +143,18 @@ curl -s -H "Authorization: Bearer $TOKEN" $B/health | jq
 curl -s -H "Authorization: Bearer $TOKEN" "$B/devices?per_page=2" | jq '.data.total'
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      -d '{"company":"Acme","sn":"SN-DEV-1","hostname":"dev-1"}' $B/devices | jq
+# needs a key with the Users scope
+curl -s -H "Authorization: Bearer $TOKEN" "$B/users?per_page=2" | jq '.data.total'
 ```
 
-8. Panel: `/app/`, `/app/devices/1`, `/app/devices/1/edit` and every
+9. Panel: `/app/`, `/app/devices/1`, `/app/devices/1/edit` and every
    `/app/settings?tab=…` render without console errors, in `en-US` and `ar-SA`
    (`dir="rtl"`).
-9. ESET compatibility: `INSERT` a row into `assets` without `source` and check
-   that it appears with the `eset` badge.
-10. Version: `curl -s $B/health | jq -r .version` matches `manifest.json` (or the
-   `APP_VERSION` the image was built with). `config.php` falls back to
-   `manifest.json`; a literal there is how the panel reported 1.1.0 on 11.0.2.
+10. ESET compatibility: `INSERT` a row into `assets` without `source` and check
+    that it appears with the `eset` badge.
+11. Version: `curl -s $B/health | jq -r .version` matches `manifest.json` (or the
+    `APP_VERSION` the image was built with). `config.php` falls back to
+    `manifest.json`; a literal there is how the panel reported 1.1.0 on 11.0.2.
 
 ## Conventions
 

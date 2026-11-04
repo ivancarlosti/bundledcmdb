@@ -195,7 +195,7 @@ describe('custom field form', () => {
 describe('api key form', () => {
   it('defaults a new key to read + write and starts blank', () => {
     const form = apiKeyFormFrom(null);
-    expect(form).toMatchObject({ label: '', can_read: true, can_write: true, can_delete: false });
+    expect(form).toMatchObject({ label: '', can_read: true, can_write: true, can_delete: false, can_users: false });
   });
 
   it('trims text fields and joins the allowed sources', () => {
@@ -210,6 +210,7 @@ describe('api key form', () => {
       can_read: true,
       can_write: false,
       can_delete: false,
+      can_users: true,
       is_active: true,
       created_at: null,
       created_by: null,
@@ -223,5 +224,6 @@ describe('api key form', () => {
     expect(input.company).toBe('');
     expect(input.ip_allowlist).toBe('10.0.0.0/8');
     expect(apiKeyFormFrom(row).allowed_sources).toBe('intune,manual');
+    expect(input.can_users).toBe(true);
   });
 });

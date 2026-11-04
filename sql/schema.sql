@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     can_read TINYINT(1) NOT NULL DEFAULT 1,
     can_write TINYINT(1) NOT NULL DEFAULT 1,
     can_delete TINYINT(1) NOT NULL DEFAULT 0,
+    can_users TINYINT(1) NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(191) NULL,
@@ -241,5 +242,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_05_0012_audit_entities'),
     ('2026_11_06_0013_retire_storage_local_path'),
     ('2026_11_07_0014_asset_deletion_reason'),
-    ('2026_11_03_0015_permissions');
+    ('2026_11_03_0015_permissions'),
+    ('2026_11_08_0016_api_key_users_scope');
 

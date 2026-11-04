@@ -123,7 +123,7 @@ the server-side guard.
 | `POST /panel-api/v1/settings/fields/reorder` | `{"ids": [3, 1, 2]}` → new display order |
 | `PATCH/DELETE /panel-api/v1/settings/fields/{id}` | edit label/flags / delete (drops the stored values) |
 | `GET/POST /panel-api/v1/settings/api-keys` | key list / create; the plaintext token is returned **once** in `meta.token` |
-| `PATCH/DELETE /panel-api/v1/settings/api-keys/{id}` | edit label/scopes/allow-list / revoke |
+| `PATCH/DELETE /panel-api/v1/settings/api-keys/{id}` | edit label/scopes (read, write, delete, users)/allow-list / revoke |
 | `POST /panel-api/v1/settings/api-keys/{id}/rotate` | new secret, same row; the old token stops working |
 | `GET /panel-api/v1/settings/users` | roster with roles and `is_self` (superadmin only) |
 | `PATCH /panel-api/v1/settings/users/{email}` | change a role; changing your own is `409 self_role_change` |

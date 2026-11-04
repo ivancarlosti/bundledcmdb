@@ -103,6 +103,8 @@ return [
     'set_key_scopes' => 'Permisos',
     'set_key_source' => 'Origen predeterminado',
     'set_key_token_once' => 'Nuevo token (se muestra una sola vez)',
+    'set_key_users' => 'Usuarios',
+    'set_key_users_hint' => 'Permite que esta clave cree, actualice y elimine el padrón de usuarios vía /api/v1/users. No se crean cuentas en Keycloak.',
     'set_key_write' => 'Escribir',
     'set_maint_applied' => 'Migraciones aplicadas',
     'set_maint_db' => 'Base de datos',

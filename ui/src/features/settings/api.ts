@@ -291,6 +291,8 @@ export type ApiKeyRow = {
   can_read: boolean;
   can_write: boolean;
   can_delete: boolean;
+  /** Manages the `users` roster through `/api/v1/users` (off by default). */
+  can_users: boolean;
   is_active: boolean;
   created_at: string | null;
   created_by: string | null;
@@ -311,6 +313,7 @@ export type ApiKeyInput = {
   can_read: boolean;
   can_write: boolean;
   can_delete: boolean;
+  can_users: boolean;
   is_active: boolean;
 };
 

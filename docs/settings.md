@@ -137,7 +137,11 @@ counter in `lib/rate_limit.php`: every panel mutation (`POST`/`PATCH`/`PUT`/
 keys:
 
 * create/edit: label, company scope, default source, allowed sources, IP
-  allowlist, read/write/delete scopes;
+  allowlist, read/write/delete scopes plus **Users** (`can_users`, off by
+  default) which is what allows the key to manage the `users` roster over
+  `POST/PATCH/DELETE /api/v1/users`. It is a separate scope on purpose: a device
+  sync key must not be able to create accounts, and a bound key can never grant
+  `superadmin`;
 * rotate (new token, old one invalid immediately), enable/disable, delete;
 * the new token is displayed exactly once, with a copy hint.
 
@@ -218,6 +222,14 @@ work on the roster the endpoint already returned (no extra request while typing)
 and a summary reports how many rows are shown. A superadmin cannot change their
 own role (`409 self_role_change`): that would lock the instance out of user
 management with no way back in from the panel.
+
+The same roster is available to integrations through `/api/v1/users`, behind the
+dedicated `can_users` key scope (see [api.md](api.md#users-the-roster)). Every
+panel request re-reads the caller's row (`session_roster_sync()`), so a delete or
+a role change made through the API applies on the next request instead of at the
+next login. `lib/users.php` owns both paths, which is why the panel guard
+(`self_role_change`) and the API guard (`last_superadmin`) share the same role
+catalogue.
 
 ## REST API (`/panel-api/v1/settings*`)
 

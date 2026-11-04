@@ -147,6 +147,10 @@ function migrations(): array
             'description' => 'Add role capability/field matrix and retire the built-in ESET source',
             'run' => 'migration_0015_permissions',
         ],
+        '2026_11_08_0016_api_key_users_scope' => [
+            'description' => 'Add api_keys.can_users (manage the user roster over the API)',
+            'run' => 'migration_0016_api_key_users_scope',
+        ],
     ];
 }
 
@@ -780,3 +784,14 @@ function migration_0015_permissions(PDO $pdo): void
     }
 }
 
+/**
+ * Scope for the user roster endpoints.
+ *
+ * Defaults to 0 on purpose: the existing keys (ESET sync, Intune, CI) must not
+ * be able to create accounts, which would be a privilege escalation out of
+ * `can_write`.
+ */
+function migration_0016_api_key_users_scope(PDO $pdo): void
+{
+    migrate_add_column($pdo, 'api_keys', 'can_users', 'TINYINT(1) NOT NULL DEFAULT 0');
+}

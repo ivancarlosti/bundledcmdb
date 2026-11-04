@@ -128,6 +128,8 @@ return [
     'set_key_source' => 'Origem padrão',
     'set_key_token_once' => 'Novo token (exibido apenas uma vez)',
     'set_key_token_warning' => 'Copie agora: não será exibido novamente. Os clientes devem enviar Authorization: Bearer <token>.',
+    'set_key_users' => 'Usuários',
+    'set_key_users_hint' => 'Permite que esta chave crie, atualize e exclua o cadastro de usuários via /api/v1/users. Contas no Keycloak não são criadas.',
     'set_key_write' => 'Escrever',
     'set_maint_applied' => 'Migrações aplicadas',
     'set_maint_db' => 'Banco de dados',

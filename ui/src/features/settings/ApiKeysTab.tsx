@@ -214,11 +214,17 @@ export function ApiKeysTab({ labelledBy }: { labelledBy: string }) {
                 onChange={(event) => setForm({ ...form, can_delete: event.target.checked })}
               />
               <Checkbox
+                label={t('set_key_users')}
+                checked={form.can_users}
+                onChange={(event) => setForm({ ...form, can_users: event.target.checked })}
+              />
+              <Checkbox
                 label={t('set_key_active')}
                 checked={form.is_active}
                 onChange={(event) => setForm({ ...form, is_active: event.target.checked })}
               />
             </div>
+            <p className="m-0 text-xs text-[var(--color-muted)]">{t('set_key_users_hint')}</p>
             {errorLine('can_read')}
           </fieldset>
 
@@ -275,6 +281,7 @@ export function ApiKeysTab({ labelledBy }: { labelledBy: string }) {
                       row.can_read ? t('set_key_read') : null,
                       row.can_write ? t('set_key_write') : null,
                       row.can_delete ? t('set_delete') : null,
+                      row.can_users ? t('set_key_users') : null,
                     ]
                       .filter((item): item is string => item !== null)
                       .join(' · ')}

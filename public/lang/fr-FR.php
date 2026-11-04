@@ -31,6 +31,8 @@ return [
     'set_error' => 'Certaines valeurs n\'ont pas pu être enregistrées.',
     'set_fields_intro' => 'Les champs personnalisés sont stockés par actif (EAV), sans perte lors des réécritures.',
     'set_key_label' => 'Libellé',
+    'set_key_users' => 'Utilisateurs',
+    'set_key_users_hint' => 'Autorise cette clé à créer, modifier et supprimer le registre des utilisateurs via /api/v1/users. Aucun compte Keycloak n’est créé.',
     'set_key_rotate' => 'Régénérer',
     'set_maint_intro' => 'Migrations et diagnostic. bin/migrate.php applique les mêmes changements en CLI.',
     'set_saved' => 'Paramètres enregistrés.',

@@ -789,6 +789,7 @@ function panel_settings_key_row(array $row): array
         'can_read'        => (int) $public['can_read'] === 1,
         'can_write'       => (int) $public['can_write'] === 1,
         'can_delete'      => (int) $public['can_delete'] === 1,
+        'can_users'       => (int) ($public['can_users'] ?? 0) === 1,
         'is_active'       => (int) $public['is_active'] === 1,
         'created_at'      => $public['created_at'] === null ? null : (string) $public['created_at'],
         'created_by'      => $public['created_by'] === null ? null : (string) $public['created_by'],
@@ -823,6 +824,7 @@ function panel_settings_key_input(array $row): array
         'can_read'        => (int) ($row['can_read'] ?? 1) === 1,
         'can_write'       => (int) ($row['can_write'] ?? 1) === 1,
         'can_delete'      => (int) ($row['can_delete'] ?? 0) === 1,
+        'can_users'       => (int) ($row['can_users'] ?? 0) === 1,
         'is_active'       => (int) ($row['is_active'] ?? 1) === 1,
     ];
 }
@@ -861,6 +863,7 @@ function panel_settings_keys_store(array $params = []): array
             'can_read'  => [null, (string) $payload['can_read']],
             'can_write' => [null, (string) $payload['can_write']],
             'can_delete' => [null, (string) $payload['can_delete']],
+            'can_users' => [null, (string) $payload['can_users']],
         ],
         null,
         $payload['company'] === null ? null : (string) $payload['company']
@@ -899,7 +902,7 @@ function panel_settings_keys_update(array $params = []): array
 
     api_key_update($pdo, $id, $payload);
 
-    $audited = ['label', 'company', 'source_slug', 'allowed_sources', 'ip_allowlist', 'can_read', 'can_write', 'can_delete', 'is_active'];
+    $audited = ['label', 'company', 'source_slug', 'allowed_sources', 'ip_allowlist', 'can_read', 'can_write', 'can_delete', 'can_users', 'is_active'];
     $before = [];
     $after = [];
     foreach ($audited as $key) {

@@ -27,6 +27,8 @@ require_once __DIR__ . '/asset_events.php';
 require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/assets.php';
 require_once __DIR__ . '/permissions.php';
+require_once __DIR__ . '/users.php';
+require_once __DIR__ . '/api_users.php';
 require_once __DIR__ . '/api_auth.php';
 
 /**
