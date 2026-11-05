@@ -89,6 +89,25 @@ function migrate_dba_sql_drift(string $root): array
             . implode(', ', $missingColumns);
     }
 
+    // Retired columns too: `sql/legacy.sql` is the pre-migration snapshot, so it
+    // still declares a column a later migration drops. `sql/schema.sql` is the
+    // final state and must drop it as well, or a DBA-managed database keeps a
+    // column the code no longer reads (and `NOT NULL` without a default would
+    // start rejecting inserts).
+    $missingDrops = [];
+    foreach (migrate_sql_dropped_columns($migrationSql) as $table => $columns) {
+        foreach (array_keys($columns) as $column) {
+            if (preg_match('/\b' . preg_quote($column, '/') . '\b/i', $schemaSql) !== 1) {
+                $missingDrops[] = $table . '.' . $column;
+            }
+        }
+    }
+    if ($missingDrops !== []) {
+        sort($missingDrops);
+        $errors[] = 'sql/schema.sql does not drop columns that lib/migrate.php retires: '
+            . implode(', ', $missingDrops);
+    }
+
     return $errors;
 }
 
@@ -101,6 +120,23 @@ function migrate_sql_added_columns(string $sql): array
 {
     $columns = [];
     $pattern = '/migrate_add_column\(\s*\$pdo\s*,\s*\'([A-Za-z0-9_]+)\'\s*,\s*\'([A-Za-z0-9_]+)\'/';
+    if (preg_match_all($pattern, $sql, $matches, PREG_SET_ORDER)) {
+        foreach ($matches as $match) {
+            $columns[$match[1]][$match[2]] = true;
+        }
+    }
+    return $columns;
+}
+
+/**
+ * Columns retired by `migrate_drop_column()` calls.
+ *
+ * @return array<string, array<string, true>> table => [column => true]
+ */
+function migrate_sql_dropped_columns(string $sql): array
+{
+    $columns = [];
+    $pattern = '/migrate_drop_column\(\s*\$pdo\s*,\s*\'([A-Za-z0-9_]+)\'\s*,\s*\'([A-Za-z0-9_]+)\'/';
     if (preg_match_all($pattern, $sql, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $match) {
             $columns[$match[1]][$match[2]] = true;
@@ -201,6 +237,10 @@ function migrations(): array
             'description' => 'Add the inventory-agent block (Agent* columns) without touching the legacy columns',
             'run' => 'migration_0018_asset_agent_inventory',
         ],
+        '2026_11_05_0019_retire_agent_only_columns' => [
+            'description' => 'Retire assets DeviceModel/GPUs/RAMGB/DisksTotalGB/DisksFreeGB/DisksUsedGB (agent block + PhysicalDisks own those facts)',
+            'run' => 'migration_0019_retire_agent_only_columns',
+        ],
     ];
 }
 
@@ -273,6 +313,17 @@ function migrate_add_index(PDO $pdo, string $table, string $index, string $defin
     }
     $pdo->exec(sprintf('ALTER TABLE `%s` ADD INDEX `%s` (%s)', $table, $index, $definition));
     migrate_note("ALTER TABLE {$table} ADD INDEX {$index}");
+    return true;
+}
+
+/** Drop a column only when it is still there; returns true when DDL was executed. */
+function migrate_drop_column(PDO $pdo, string $table, string $column): bool
+{
+    if (!db_table_exists($pdo, $table) || !db_column_exists($pdo, $table, $column)) {
+        return false;
+    }
+    $pdo->exec(sprintf('ALTER TABLE `%s` DROP COLUMN `%s`', $table, $column));
+    migrate_note("ALTER TABLE {$table} DROP COLUMN {$column}");
     return true;
 }
 
@@ -857,6 +908,10 @@ function migration_0016_api_key_users_scope(PDO $pdo): void
  *
  * GPUs and RAMGB are free text on purpose: `RAMGB VARCHAR` keeps whatever the
  * agent reports ("16", "16 GB", "32 (2x16)") instead of forcing a unit.
+ *
+ * Superseded in part by 0019: `GPUs`, `RAMGB`, `DeviceModel` and the three
+ * `Disks*GB` roll-ups are dropped again, because the `Agent*` block and
+ * `PhysicalDisks` became the only write paths for those facts.
  */
 function migration_0017_asset_hardware_disks(PDO $pdo): void
 {
@@ -905,4 +960,54 @@ function migration_0018_asset_agent_inventory(PDO $pdo): void
     foreach ($definitions as $column => $definition) {
         migrate_add_column($pdo, 'assets', $column, $definition);
     }
+}
+
+/**
+ * Retire the six columns an agent now owns.
+ *
+ * `DeviceModel`, `GPUs` and `RAMGB` duplicated what the inventory agent writes to
+ * `AgentModel`/`AgentGPU`/`AgentRAMGB`, and the three `Disks*GB` roll-ups were
+ * only a sorting shortcut over `PhysicalDisks` (the grid, the export and the API
+ * read the JSON). Keeping both copies meant two writable paths for one fact, so
+ * the legacy columns are dropped instead of deprecated.
+ *
+ * The values are *not* thrown away silently: whatever sits in the legacy column
+ * is copied into the agent block first, but only where the agent has not
+ * reported yet — a real report is fresher than a hand-typed value.
+ *
+ * This migration is destructive on purpose; take a dump before upgrading.
+ * `sql/legacy.sql` keeps the columns (it is the pre-migration snapshot a fresh
+ * bundle install starts from), so a new database creates them here and drops
+ * them one migration later.
+ */
+function migration_0019_retire_agent_only_columns(PDO $pdo): void
+{
+    $backfill = [
+        'AgentModel' => 'DeviceModel',
+        'AgentGPU'   => 'GPUs',
+        'AgentRAMGB' => 'RAMGB',
+    ];
+    foreach ($backfill as $target => $source) {
+        if (!db_column_exists($pdo, 'assets', $target) || !db_column_exists($pdo, 'assets', $source)) {
+            continue;
+        }
+        $stmt = $pdo->prepare(
+            "UPDATE assets SET `{$target}` = `{$source}`
+              WHERE (`{$target}` IS NULL OR `{$target}` = '')
+                AND `{$source}` IS NOT NULL AND `{$source}` <> ''"
+        );
+        $stmt->execute();
+        if ($stmt->rowCount() > 0) {
+            migrate_note("assets.{$source} copied to assets.{$target} ({$stmt->rowCount()} rows)");
+        }
+    }
+
+    // Written out one by one (not a loop) so `migrate_sql_dropped_columns()`
+    // finds them and bin/check-schema.php can demand them in sql/schema.sql.
+    migrate_drop_column($pdo, 'assets', 'DeviceModel');
+    migrate_drop_column($pdo, 'assets', 'GPUs');
+    migrate_drop_column($pdo, 'assets', 'RAMGB');
+    migrate_drop_column($pdo, 'assets', 'DisksTotalGB');
+    migrate_drop_column($pdo, 'assets', 'DisksFreeGB');
+    migrate_drop_column($pdo, 'assets', 'DisksUsedGB');
 }

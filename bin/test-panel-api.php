@@ -251,14 +251,8 @@ $diskSummary = disks_summary($parsedDisks['disks']);
 check($diskSummary['HDs'] === 'Seagate Expansion, WD Green M.2', 'disks: HDs lists the disk names', (string) $diskSummary['HDs']);
 check($diskSummary['HDsTypes'] === 'HDD USB, SSD NVMe', 'disks: HDsTypes lists media and bus', (string) $diskSummary['HDsTypes']);
 check($diskSummary['HDsSpacesGB'] === '1863.02, 476.94', 'disks: HDsSpacesGB lists the sizes', (string) $diskSummary['HDsSpacesGB']);
-check($diskSummary['DisksTotalGB'] === 2339.96, 'disks: the total roll-up sums the disks', (string) $diskSummary['DisksTotalGB']);
-check($diskSummary['DisksFreeGB'] === 1950.75, 'disks: the free roll-up sums the disks', (string) $diskSummary['DisksFreeGB']);
-check($diskSummary['DisksUsedGB'] === 389.22, 'disks: the used roll-up sums the disks', (string) $diskSummary['DisksUsedGB']);
 check(
-    disks_summary([]) === [
-        'HDs' => null, 'HDsTypes' => null, 'HDsSpacesGB' => null,
-        'DisksTotalGB' => null, 'DisksFreeGB' => null, 'DisksUsedGB' => null,
-    ],
+    disks_summary([]) === ['HDs' => null, 'HDsTypes' => null, 'HDsSpacesGB' => null],
     'disks: an empty list clears every derived column'
 );
 
@@ -279,47 +273,50 @@ check(disks_gb_text(476.94) === '476.94' && disks_gb_text(477.0) === '477', 'dis
 $diskWrites = [];
 $diskWritten = asset_normalize_input(['PhysicalDisks' => [['number' => 0, 'sizeGb' => 100, 'freeGb' => 40]]], $diskWrites);
 check($diskWrites === [], 'disks: writing a payload reports no error', json_encode($diskWrites));
-check(($diskWritten['DisksTotalGB'] ?? null) === 100.0, 'disks: the write also sets DisksTotalGB');
-check(($diskWritten['DisksUsedGB'] ?? null) === 60.0, 'disks: the write also sets DisksUsedGB');
 check(($diskWritten['HDs'] ?? null) === 'Disk 0', 'disks: an unnamed disk still gets a label');
+check(
+    !isset($diskWritten['DisksTotalGB']) && !isset($diskWritten['DisksUsedGB']),
+    'disks: the retired roll-up columns are never written',
+    json_encode(array_keys($diskWritten))
+);
 $diskWrites = [];
 asset_normalize_input(['PhysicalDisks' => [['sizeGb' => 'x']]], $diskWrites);
 check($diskWrites === ['PhysicalDisks' => 'invalid_number'], 'disks: a bad payload surfaces as a field error', json_encode($diskWrites));
 
 $diskMapped = asset_api_map_input([
     'physical_disks'  => [],
-    'gpus'            => 'NVIDIA RTX 4060',
-    'ram_gb'          => '32',
     'logged_username' => 'jdoe',
-    'device_model'    => 'Dell Latitude 5440',
 ]);
 check($diskMapped['unknown'] === [], 'disks: the new API keys are known', json_encode($diskMapped['unknown']));
 check(
     ($diskMapped['data']['PhysicalDisks'] ?? null) === []
-    && ($diskMapped['data']['GPUs'] ?? null) === 'NVIDIA RTX 4060'
-    && ($diskMapped['data']['RAMGB'] ?? null) === '32'
-    && ($diskMapped['data']['LoggedUsername'] ?? null) === 'jdoe'
-    && ($diskMapped['data']['DeviceModel'] ?? null) === 'Dell Latitude 5440',
+    && ($diskMapped['data']['LoggedUsername'] ?? null) === 'jdoe',
     'disks: the API keys map onto their columns',
     json_encode($diskMapped['data'])
 );
 
+$retiredMapped = asset_api_map_input([
+    'device_model' => 'Dell Latitude 5440',
+    'gpus'         => 'NVIDIA RTX 4060',
+    'ram_gb'       => '32',
+]);
+check(
+    $retiredMapped['unknown'] === ['device_model', 'gpus', 'ram_gb'],
+    'disks: the retired API keys are unknown',
+    json_encode($retiredMapped['unknown'])
+);
+
 $diskApiRow = asset_api_payload([
-    'PhysicalDisks' => '[{"number":0}]',
-    'DisksTotalGB'  => '476.94',
-    'DisksFreeGB'   => '210.50',
-    'DisksUsedGB'   => '266.44',
-    'GPUs'          => 'NVIDIA RTX 4060',
-    'RAMGB'         => '32',
+    'PhysicalDisks'  => '[{"number":0}]',
     'LoggedUsername' => 'jdoe',
-    'DeviceModel'   => 'Dell Latitude 5440',
 ]);
 check($diskApiRow['physical_disks'] === [['number' => 0]], 'disks: the API returns the decoded list');
-check($diskApiRow['disks_free_gb'] === 210.5, 'disks: the roll-ups are numbers on the wire', json_encode($diskApiRow['disks_free_gb']));
+check($diskApiRow['logged_username'] === 'jdoe', 'disks: the identity fields are still published');
 check(
-    $diskApiRow['gpus'] === 'NVIDIA RTX 4060' && $diskApiRow['ram_gb'] === '32'
-    && $diskApiRow['logged_username'] === 'jdoe' && $diskApiRow['device_model'] === 'Dell Latitude 5440',
-    'disks: the new fields are published on the API payload'
+    !array_key_exists('device_model', $diskApiRow) && !array_key_exists('gpus', $diskApiRow)
+    && !array_key_exists('ram_gb', $diskApiRow) && !array_key_exists('disks_total_gb', $diskApiRow)
+    && !array_key_exists('disks_free_gb', $diskApiRow) && !array_key_exists('disks_used_gb', $diskApiRow),
+    'disks: the retired fields are gone from the API payload'
 );
 
 // --- inventory agent (no database needed) ----------------------------------
@@ -351,8 +348,8 @@ $agentMapped = asset_api_map_input($agentPayload, asset_agent_field_map());
 check($agentMapped['unknown'] === [], 'agent: every payload key is claimed', json_encode($agentMapped['unknown']));
 check(
     !isset($agentMapped['data']['OS']) && !isset($agentMapped['data']['Hostname'])
-    && !isset($agentMapped['data']['Manufacturer']) && !isset($agentMapped['data']['DeviceModel']),
-    'agent: `os`/`hostname`/`manufacturer`/`model` never touch the legacy columns',
+    && !isset($agentMapped['data']['Manufacturer']) && !isset($agentMapped['data']['CPUs']),
+    'agent: `os`/`hostname`/`manufacturer`/`cpu` never touch the legacy columns',
     json_encode(array_keys($agentMapped['data']))
 );
 check(
@@ -373,9 +370,9 @@ check(
     (string) ($agentData['AgentAllLoggedUsers'] ?? '')
 );
 check(
-    ($agentData['DisksTotalGB'] ?? null) === 476.94 && ($agentData['HDs'] ?? null) === 'Disk 0',
-    'agent: physicalDisks still feeds the disk roll-ups',
-    json_encode([$agentData['DisksTotalGB'] ?? null, $agentData['HDs'] ?? null])
+    ($agentData['HDs'] ?? null) === 'Disk 0',
+    'agent: physicalDisks still feeds the disk summaries',
+    json_encode([$agentData['HDs'] ?? null])
 );
 check(asset_validate($agentData, true) === [], 'agent: a complete report validates', json_encode(asset_validate($agentData, true)));
 
@@ -834,28 +831,39 @@ try {
     $_GET = [];
 
     // --- hardware fields: role gate ---------------------------------------
+    // `GPUs`, `RAMGB`, `DeviceModel` and the three `Disks*GB` roll-ups were
+    // retired by migration 0019 — the `Agent*` block and `PhysicalDisks` own
+    // those facts now. Their old wire keys must fail loudly instead of being
+    // accepted by one code path and dropped by another.
     as_role('admin', $companyA);
     body([
-        'device_model'    => 'Dell Latitude 5440',
+        'cpus'            => 'Intel Core i7-1365U',
         'logged_username' => 'jdoe',
-        'gpus'            => 'NVIDIA RTX 4060',
-        'ram_gb'          => '32',
     ]);
     $hardware = panel_devices_update(['id' => (string) $id])['data'];
-    check($hardware['device_model'] === 'Dell Latitude 5440', 'hardware: admin writes device_model');
+    check($hardware['cpus'] === 'Intel Core i7-1365U', 'hardware: admin writes cpus');
     check($hardware['logged_username'] === 'jdoe', 'hardware: admin writes logged_username');
-    check($hardware['gpus'] === 'NVIDIA RTX 4060', 'hardware: admin writes gpus');
-    check($hardware['ram_gb'] === '32', 'hardware: admin writes ram_gb');
+
+    foreach (['device_model', 'gpus', 'ram_gb', 'disks_total_gb', 'disks_free_gb', 'disks_used_gb'] as $retired) {
+        body([$retired => '1']);
+        check_error(
+            'hardware: ' . $retired . ' is retired → 422',
+            fn () => panel_devices_update(['id' => (string) $id]),
+            'validation_failed',
+            422,
+            [$retired => 'unknown_field']
+        );
+    }
 
     as_role('manager', $companyA);
-    body(['device_model' => 'Lenovo ThinkPad']);
+    body(['hostname' => 'manager-renamed']);
     check(
-        panel_devices_update(['id' => (string) $id])['data']['device_model'] === 'Lenovo ThinkPad',
-        'hardware: manager may edit device_model'
+        panel_devices_update(['id' => (string) $id])['data']['hostname'] === 'manager-renamed',
+        'hardware: manager may still edit the identity fields'
     );
-    body(['gpus' => 'x']);
-    check_error('hardware: manager cannot write gpus → 422', fn () => panel_devices_update(['id' => (string) $id]), 'validation_failed', 422, [
-        'gpus' => 'unknown_field',
+    body(['cpus' => 'x']);
+    check_error('hardware: manager cannot write cpus → 422', fn () => panel_devices_update(['id' => (string) $id]), 'validation_failed', 422, [
+        'cpus' => 'unknown_field',
     ]);
     body(['physical_disks' => []]);
     check_error('hardware: the panel never writes the disk JSON', fn () => panel_devices_update(['id' => (string) $id]), 'validation_failed', 422, [
@@ -915,14 +923,14 @@ try {
     $diskRow = panel_devices_show(['id' => (string) $id])['data'];
     check(count($diskRow['physical_disks']) === 1, 'disks: the JSON is stored and decoded');
     check(($diskRow['physical_disks'][0]['used_gb'] ?? null) === 266.44, 'disks: used_gb survives the round trip');
-    check(
-        $diskRow['disks_total_gb'] === 476.94 && $diskRow['disks_free_gb'] === 210.5 && $diskRow['disks_used_gb'] === 266.44,
-        'disks: the roll-ups are recomputed on write',
-        json_encode([$diskRow['disks_total_gb'], $diskRow['disks_free_gb'], $diskRow['disks_used_gb']])
-    );
     check($diskRow['hds'] === 'WD Green M.2', 'disks: HDs follows the JSON', (string) $diskRow['hds']);
     check($diskRow['hds_types'] === 'SSD NVMe', 'disks: HDsTypes follows the JSON', (string) $diskRow['hds_types']);
     check($diskRow['hds_spaces_gb'] === '476.94', 'disks: HDsSpacesGB follows the JSON', (string) $diskRow['hds_spaces_gb']);
+    check(
+        !array_key_exists('disks_total_gb', $diskRow) && !array_key_exists('disks_free_gb', $diskRow),
+        'disks: the retired roll-ups are not published by the panel',
+        json_encode(array_keys($diskRow))
+    );
 
     $_GET = ['q' => 'WD Green'];
     check(
@@ -935,7 +943,9 @@ try {
         'disks: a miss stays a miss'
     );
     $_GET = ['sort' => 'DisksFreeGB', 'dir' => 'asc'];
-    check((panel_devices_index()['meta']['sort'] ?? '') === 'DisksFreeGB', 'disks: the free-space roll-up is sortable');
+    check_error('disks: the retired free-space roll-up is not sortable → 400', fn () => panel_devices_index(), 'invalid_sort', 400, [
+        'sort' => 'unknown_column',
+    ]);
     $_GET = [];
 
     // Clearing the inventory clears the derived columns, so the grid cannot show
@@ -943,9 +953,9 @@ try {
     asset_update($pdo, $id, asset_normalize_input(['PhysicalDisks' => null]), 'tester@example.com', $companyA === '' ? null : $companyA);
     $clearedDisks = panel_devices_show(['id' => (string) $id])['data'];
     check(
-        $clearedDisks['physical_disks'] === [] && $clearedDisks['disks_free_gb'] === null && $clearedDisks['hds'] === null,
+        $clearedDisks['physical_disks'] === [] && $clearedDisks['hds'] === null,
         'disks: clearing the JSON clears the summaries',
-        json_encode([$clearedDisks['physical_disks'], $clearedDisks['disks_free_gb'], $clearedDisks['hds']])
+        json_encode([$clearedDisks['physical_disks'], $clearedDisks['hds']])
     );
 
     // --- byod filter -------------------------------------------------------

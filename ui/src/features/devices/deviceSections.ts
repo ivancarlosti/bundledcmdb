@@ -20,7 +20,9 @@ type SectionDef = {
   /**
    * Section whose tab/card renders these keys after its own, under a heading.
    * The agent block belongs to Hardware on both screens: the agent reports the
-   * same facts the hardware group holds, and a sixth top-level tab would hide it.
+   * same facts the hardware group holds, and a sixth top-level tab would hide
+   * it. Assignment belongs to Identity for the same reason: the two cards were
+   * always read together.
    */
   parent?: string;
   /** Translation key of the sub-heading (only for nested blocks). */
@@ -40,21 +42,16 @@ export const CUSTOM_SECTION_ID = 'custom';
 const SECTIONS: readonly SectionDef[] = [
   {
     id: 'identity',
-    keys: ['sn', 'uuid', 'hostname', 'device_model', 'os', 'os_version', 'manufacturer', 'last_seen'],
+    keys: ['sn', 'uuid', 'hostname', 'os', 'os_version', 'manufacturer', 'last_seen'],
   },
   {
     id: 'hardware',
     keys: [
       'cpus',
-      'gpus',
-      'ram_gb',
       'hds',
       'hds_types',
       'hds_spaces_gb',
       'physical_disks',
-      'disks_total_gb',
-      'disks_free_gb',
-      'disks_used_gb',
       'network_adapters',
       'mac_addresses',
       'eset_components',
@@ -65,7 +62,7 @@ const SECTIONS: readonly SectionDef[] = [
   {
     // Inventory-agent block: one column per key the agent reports
     // (`asset_agent_columns()` on the server). A report never overwrites the
-    // legacy hardware columns, so both sets are shown side by side.
+    // legacy columns, so both sets are shown side by side.
     id: 'agent',
     parent: 'hardware',
     headingKey: 'ui_agent_inventory',
@@ -88,7 +85,13 @@ const SECTIONS: readonly SectionDef[] = [
     ],
   },
   {
+    // Who has the device: the identity card answers "which machine is this",
+    // this block answers "who holds it". It used to be a top-level tab, which
+    // put a five-field group next to Identity for no reason; nesting keeps the
+    // sub-heading (`ui_form_tab_assignment`) and one tab fewer to click.
     id: 'assignment',
+    parent: 'identity',
+    headingKey: 'ui_form_tab_assignment',
     keys: ['status', 'user_email', 'logged_username', 'asset', 'byod', 'mobile', 'warranty', 'purchase_date', 'source'],
   },
   { id: 'admin', keys: ['cypher_id', 'cypher_key', 'notes'] },

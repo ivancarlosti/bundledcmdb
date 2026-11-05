@@ -263,21 +263,20 @@ function disks_encode(array $disks): ?string
 }
 
 /**
- * Legacy text columns and the sortable roll-ups derived from the disk list.
+ * Legacy text columns derived from the disk list.
  *
  * Kept in sync on every write so the grid, the export and the clients that read
- * `HDs`/`HDsTypes`/`HDsSpacesGB` need no knowledge of the JSON.
+ * `HDs`/`HDsTypes`/`HDsSpacesGB` need no knowledge of the JSON. The numeric
+ * roll-ups that used to live here were retired with migration 0019: `size_gb`,
+ * `free_gb` and `used_gb` are in the JSON, so a client that wants a total adds
+ * them up itself instead of trusting a second copy.
  *
  * @param list<array<string, mixed>> $disks normalised disks
- * @return array{HDs: ?string, HDsTypes: ?string, HDsSpacesGB: ?string,
- *               DisksTotalGB: ?float, DisksFreeGB: ?float, DisksUsedGB: ?float}
+ * @return array{HDs: ?string, HDsTypes: ?string, HDsSpacesGB: ?string}
  */
 function disks_summary(array $disks): array
 {
-    $empty = [
-        'HDs' => null, 'HDsTypes' => null, 'HDsSpacesGB' => null,
-        'DisksTotalGB' => null, 'DisksFreeGB' => null, 'DisksUsedGB' => null,
-    ];
+    $empty = ['HDs' => null, 'HDsTypes' => null, 'HDsSpacesGB' => null];
     if ($disks === []) {
         return $empty;
     }
@@ -285,9 +284,6 @@ function disks_summary(array $disks): array
     $names = [];
     $types = [];
     $spaces = [];
-    $totals = [];
-    $frees = [];
-    $used = [];
     foreach ($disks as $disk) {
         $number = (int) ($disk['number'] ?? 0);
         $name = trim((string) ($disk['friendly_name'] ?? ''));
@@ -299,27 +295,16 @@ function disks_summary(array $disks): array
         }
         if (($disk['size_gb'] ?? null) !== null) {
             $spaces[] = disks_gb_text((float) $disk['size_gb']);
-            $totals[] = (float) $disk['size_gb'];
-        }
-        if (($disk['free_gb'] ?? null) !== null) {
-            $frees[] = (float) $disk['free_gb'];
-        }
-        if (($disk['used_gb'] ?? null) !== null) {
-            $used[] = (float) $disk['used_gb'];
         }
     }
 
     $join = static fn (array $parts): ?string => $parts === []
         ? null
         : mb_substr(implode(', ', array_values(array_unique($parts))), 0, 255);
-    $sum = static fn (array $parts): ?float => $parts === [] ? null : round(array_sum($parts), 2);
 
     return [
-        'HDs'          => $join($names),
-        'HDsTypes'     => $join($types),
-        'HDsSpacesGB'  => $join($spaces),
-        'DisksTotalGB' => $sum($totals),
-        'DisksFreeGB'  => $sum($frees),
-        'DisksUsedGB'  => $sum($used),
+        'HDs'         => $join($names),
+        'HDsTypes'    => $join($types),
+        'HDsSpacesGB' => $join($spaces),
     ];
 }

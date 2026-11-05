@@ -29,11 +29,22 @@ describe('formTabs', () => {
   it('groups the wire keys into the declared tab order', () => {
     const tabs = formTabs(['notes', 'sn', 'cpus', 'status', 'cypher_id']);
 
-    expect(tabs.map((tab) => tab.id)).toEqual(['identity', 'hardware', 'assignment', 'admin']);
+    expect(tabs.map((tab) => tab.id)).toEqual(['identity', 'hardware', 'admin']);
     expect(tabs[0]?.keys).toEqual(['sn']);
     expect(tabs[1]?.keys).toEqual(['cpus']);
-    expect(tabs[2]?.keys).toEqual(['status']);
-    expect(tabs[3]?.keys).toEqual(['cypher_id', 'notes']);
+    expect(tabs[2]?.keys).toEqual(['cypher_id', 'notes']);
+  });
+
+  it('nests the assignment block inside Identity', () => {
+    const tabs = formTabs(['sn', 'user_email', 'status']);
+
+    // Assignment is no longer a tab of its own; it is a heading inside Identity,
+    // so it costs no extra click and cannot end up empty next to Identity.
+    expect(tabs.map((tab) => tab.id)).toEqual(['identity']);
+    expect(tabs[0]?.keys).toEqual(['sn']);
+    expect(tabs[0]?.groups).toEqual([
+      { id: 'assignment', headingKey: 'ui_form_tab_assignment', keys: ['status', 'user_email'] },
+    ]);
   });
 
   it('drops empty tabs and puts unknown keys in the custom tab', () => {
@@ -88,5 +99,15 @@ describe('detailSections', () => {
 
     expect(sections.at(-1)?.id).toBe(CUSTOM_SECTION_ID);
     expect(sections.at(-1)?.columns.map((entry) => entry.api_key)).toEqual(['invented_later']);
+  });
+
+  it('nests the assignment columns inside the identity card', () => {
+    const sections = detailSections([column('sn'), column('user_email')]);
+
+    expect(sections.map((section) => section.id)).toEqual(['identity']);
+    expect(sections[0]?.columns.map((entry) => entry.api_key)).toEqual(['sn']);
+    expect(sections[0]?.groups.map((group) => group.id)).toEqual(['assignment']);
+    expect(sections[0]?.groups[0]?.headingKey).toBe('ui_form_tab_assignment');
+    expect(sections[0]?.groups[0]?.columns.map((entry) => entry.api_key)).toEqual(['user_email']);
   });
 });

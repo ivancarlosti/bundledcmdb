@@ -96,8 +96,13 @@ function DetailSectionCard({
  * Structured disk inventory (`assets.physical_disks`).
  *
  * The API already normalised the payload: one entry per physical disk with its
- * volumes, snake_case keys and `used_gb` filled in. Nothing here recomputes —
- * the panel is a reader, the agent owns the numbers.
+ * volumes, snake_case keys and `used_gb` filled in. The per-disk rows are read
+ * verbatim — the panel is a reader, the agent owns the numbers.
+ *
+ * The one number this component does compute is the footer total: the
+ * `disks_total_gb`/`disks_free_gb` roll-up columns were retired (migration 0019)
+ * because they were a second copy of the JSON, so a view that wants a total adds
+ * up the sizes it already renders.
  */
 function StorageSection({ device }: { device: DeviceDetail }) {
   const { t, i18n } = useTranslation();
@@ -107,6 +112,8 @@ function StorageSection({ device }: { device: DeviceDetail }) {
     value === null || value === undefined
       ? '—'
       : new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value);
+  const totalGb = disks.reduce((sum, disk) => sum + (disk.size_gb ?? 0), 0);
+  const freeGb = disks.reduce((sum, disk) => sum + (disk.free_gb ?? 0), 0);
 
   return (
     <section className="mt-3 border-t border-[var(--color-border)] pt-3" data-testid="device-storage">
@@ -179,8 +186,8 @@ function StorageSection({ device }: { device: DeviceDetail }) {
       {disks.length === 0 ? null : (
         <p className="m-0 mt-2 text-xs text-[var(--color-muted)]">
           {t('ui_storage_capacity', {
-            total: gb(device.disks_total_gb),
-            free: gb(device.disks_free_gb),
+            total: gb(totalGb),
+            free: gb(freeGb),
           })}
         </p>
       )}

@@ -168,8 +168,8 @@ update.
 `/settings?tab=columns` is the installation-wide device-grid layout
 (`app_settings["grid.columns"]`, `lib/grid_layout.php`) and needs
 `settings.manage`. It offers every column `/meta` can publish — including the
-ones the code ships hidden (`CPUs`, `GPUs`, `RAM in GB`, `Physical Disks`) and
-the grid-visible custom fields:
+ones the code ships hidden (`CPUs`, `Agent GPU`, `Agent RAM in GB`,
+`Physical Disks`) and the grid-visible custom fields:
 
 * **Order** — the list is the order the grid renders. A column the layout does
   not mention keeps its code position at the end, so a column shipped by a later

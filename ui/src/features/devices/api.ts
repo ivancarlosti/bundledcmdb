@@ -48,8 +48,6 @@ export type DeviceRow = {
   user_email: string | null;
   /** Account the agent saw logged in (not a directory user). */
   logged_username: string | null;
-  /** Model string the agent reported (`Dell Latitude 5440`). */
-  device_model: string | null;
   byod: boolean | null;
   status: string | null;
   warranty: string | null;
@@ -59,18 +57,12 @@ export type DeviceRow = {
   cypher_key: string | null;
   notes: string | null;
   cpus: string | null;
-  gpus: string | null;
-  ram_gb: string | null;
   hds: string | null;
   hds_types: string | null;
   /** Sum of the volume sizes, from `HDsSpacesGB` (one spelling everywhere since 0018). */
   hds_spaces_gb: string | null;
   /** Canonical per-disk inventory (`lib/disks.php`); `[]` when never reported. */
   physical_disks: DeviceDisk[];
-  /** Roll-ups recomputed from `physical_disks` (sums, GB). */
-  disks_total_gb: number | null;
-  disks_free_gb: number | null;
-  disks_used_gb: number | null;
   network_adapters: string | null;
   mac_addresses: string | null;
   eset_components: string | null;

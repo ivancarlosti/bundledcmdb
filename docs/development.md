@@ -122,10 +122,12 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
 
 1. `php -l` on every PHP file.
 2. `php bin/check-schema.php` → `schema check passed.` It fails when a migration
-   creates a table that `sql/schema.sql` (the DBA path) does not, or when the
-   ledger in it is not up to `migrations()`.
+   creates a table that `sql/schema.sql` (the DBA path) does not, when a column
+   it adds never reaches `sql/legacy.sql`/`sql/schema.sql`, when a column it
+   *drops* is still declared in `sql/schema.sql`, or when the ledger in it is not
+   up to `migrations()`.
 3. `php bin/migrate.php --dry-run` → 0 pending; a second real run reports
-   `Applied: 0, already present: 18`.
+   `Applied: 0, already present: 19`.
 4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
 5. `php bin/test-panel-api.php` → 0 failed (requires a non-production database;
    the suite also covers the role matrix, source move, `source_slug` alias, the
@@ -188,6 +190,20 @@ curl -s -H "Authorization: Bearer $TOKEN" "$B/users?per_page=2" | jq '.data.tota
   The grid, the sort whitelist, the "any" search, the export and the permission
   matrix then follow automatically, and Settings → Columns can switch it on for
   an existing installation.
+* Retiring a built-in device column is the mirror image, and `check-schema.php`
+  covers it: each `migrate_drop_column($pdo, 'assets', 'X')` must be answered by
+  an `ALTER TABLE assets DROP COLUMN X` in `sql/schema.sql`. `sql/legacy.sql`
+  keeps the column on purpose — it is the pre-migration snapshot a fresh bundle
+  database is created from, and MySQL 8 has no `DROP COLUMN IF EXISTS`, so the
+  drop lives in the migration. Backfill anything worth keeping *before* the drop
+  (`migration_0019_retire_agent_only_columns` copies the hardware columns into
+  the agent block), then remove the five server-side entries above, the `col_*`
+  key from **every** catalogue (the family is dynamic, so `check-i18n.php`
+  cannot see a leftover) and the matching `FIELD_LABELS`/`DeviceRow` entry in the
+  SPA. Sorting follows the live table (`panel_sortable_columns()` filters on
+  `db_column_exists()`), so `?sort=` on a retired column answers `400
+  invalid_sort` without further work. Finish with `./bin/check-ui.sh`, which
+  rebuilds the committed bundle in `public/app/`.
 * The inventory-agent block (`AgentHostname`, `AgentOS`, …) skips that checklist
   on purpose: its 15 columns are declared once in `asset_agent_columns()` and the
   five lists above are derived from it, so the only per-column work is the

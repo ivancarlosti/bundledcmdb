@@ -41,14 +41,16 @@ test.describe('device writes', () => {
     });
 
     await page.goto('/app/devices/new');
-    await page.getByRole('tab', { name: 'Assignment' }).click();
+    // Assignment is a block inside Identity now, so the e-mail dropdown is on the
+    // first tab and there is no tab to switch to any more.
+    await expect(page.getByRole('tab', { name: 'Assignment' })).toHaveCount(0);
+    await expect(page.getByTestId('device-group-assignment')).toBeVisible();
 
     const email = page.locator('#field-user_email');
     await expect(email).toBeVisible();
     await expect(email.locator('option[value="manager@example.com"]')).toHaveCount(1);
     await email.selectOption('manager@example.com');
 
-    await page.getByRole('tab', { name: 'Identity' }).click();
     await page.locator('#field-sn').fill('SN-E2E-2');
     await page.getByRole('button', { name: 'Create asset' }).click();
 
@@ -173,8 +175,14 @@ test.describe('device sections', () => {
 
     await page.goto('/app/devices/7');
 
-    await expect(page.getByTestId('device-section-identity')).toBeVisible();
-    await expect(page.getByTestId('device-section-assignment')).toBeVisible();
+    const identity = page.getByTestId('device-section-identity');
+    await expect(identity).toBeVisible();
+    // Assignment is a block inside Identity, not a card of its own.
+    const assignment = identity.getByTestId('device-group-assignment');
+    await expect(assignment).toBeVisible();
+    await expect(assignment).toContainText('Assignment');
+    await expect(assignment).toContainText('user@example.com');
+    await expect(page.getByTestId('device-section-assignment')).toHaveCount(0);
     await expect(page.getByTestId('device-section-record')).toBeVisible();
   });
 });

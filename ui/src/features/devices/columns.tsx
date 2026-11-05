@@ -91,7 +91,8 @@ export function GridCell({
   }
 
   if (type === 'decimal') {
-    // Disk roll-ups: one decimal is plenty, and the unit lives in the header.
+    // Decimal columns (custom fields today): one decimal is plenty, and the unit
+    // lives in the header.
     return (
       <span className="tabular-nums">
         {new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Number(value))}

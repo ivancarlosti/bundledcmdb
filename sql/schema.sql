@@ -247,6 +247,26 @@ ALTER TABLE assets ADD COLUMN AgentAllLoggedUsers TEXT NULL;
 ALTER TABLE assets ADD COLUMN AgentExecutionUser VARCHAR(191) NULL;
 ALTER TABLE assets ADD COLUMN AgentAntivirus VARCHAR(255) NULL;
 
+-- 0019 retires the six columns the inventory agent now owns. `GPUs`, `RAMGB` and
+-- `DeviceModel` duplicated the `Agent*` block, and the three `Disks*GB` roll-ups
+-- were only a sorting shortcut over `PhysicalDisks` (the grid, the export and the
+-- API read the JSON). Values move into the agent block first — an existing report
+-- wins — and then the columns are dropped. Destructive on purpose: take a dump
+-- before upgrading a DBA-managed database.
+UPDATE assets SET AgentModel = DeviceModel
+ WHERE (AgentModel IS NULL OR AgentModel = '') AND DeviceModel IS NOT NULL AND DeviceModel <> '';
+UPDATE assets SET AgentGPU = GPUs
+ WHERE (AgentGPU IS NULL OR AgentGPU = '') AND GPUs IS NOT NULL AND GPUs <> '';
+UPDATE assets SET AgentRAMGB = RAMGB
+ WHERE (AgentRAMGB IS NULL OR AgentRAMGB = '') AND RAMGB IS NOT NULL AND RAMGB <> '';
+
+ALTER TABLE assets DROP COLUMN DeviceModel;
+ALTER TABLE assets DROP COLUMN GPUs;
+ALTER TABLE assets DROP COLUMN RAMGB;
+ALTER TABLE assets DROP COLUMN DisksTotalGB;
+ALTER TABLE assets DROP COLUMN DisksFreeGB;
+ALTER TABLE assets DROP COLUMN DisksUsedGB;
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -265,5 +285,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_03_0015_permissions'),
     ('2026_11_08_0016_api_key_users_scope'),
     ('2026_11_04_0017_asset_hardware_disks'),
-    ('2026_11_05_0018_asset_agent_inventory');
+    ('2026_11_05_0018_asset_agent_inventory'),
+    ('2026_11_05_0019_retire_agent_only_columns');
 

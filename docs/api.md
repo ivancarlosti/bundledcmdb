@@ -316,14 +316,19 @@ Both `snake_case` API names and raw database column names are accepted
 | `mobile`, `byod` | booleans (`true/false`, `1/0`, `yes/no`) |
 | `last_seen` | ISO-8601 or `Y-m-d H:i:s` (stored UTC) |
 | `user_email`, `status`, `warranty`, `asset`, `purchase_date` | same |
-| `logged_username`, `device_model`, `gpus`, `ram_gb` | same (free text) |
+| `logged_username` | `assets.LoggedUsername` (free text) |
 | `cypher_id`, `cypher_key`, `notes`, `cpus`, `hds`, `hds_types` | same |
 | `hds_spaces_gb`, `network_adapters`, `mac_addresses`, `eset_components` | same |
 | `physical_disks`, `disks` (alias) | `assets.PhysicalDisks` (structured, see below) |
-| `disks_total_gb`, `disks_free_gb`, `disks_used_gb` | derived, read-only |
 | `primary_local_ip`, `primary_remote_ip` | same |
 | `company`, `source`, `source_ref` | same |
 | `source_slug` | alias for `source` (same slug shown on Settings → API keys) |
+
+`device_model`, `gpus`, `ram_gb`, `disks_total_gb`, `disks_free_gb` and
+`disks_used_gb` are **retired** (migration 0019) and now answer `422
+unknown_field`: the model, GPU and RAM facts belong to the inventory-agent block
+(`agent_model`, `agent_gpu`, `agent_ram_gb`) and the disk numbers to
+`physical_disks`. See [Breaking changes](#breaking-changes).
 
 `source` is resolved as: payload → key default → `assets.default_source`
 setting; it must exist and be allowed for the key. `source_slug` is accepted as
@@ -388,27 +393,28 @@ Accepted members: `number` (`index`/`slot`/`id`), `friendly_name` (`name`/
 * `null` or `[]` clears the inventory; omitting the key on `PATCH` leaves it
   untouched (`PUT` clears it, like every other omitted column).
 
-Writing it also **recomputes** the derived columns, so they are never sent:
+Writing it also **recomputes** the derived text columns, so they are never sent:
 
 | Derived | Content |
 |---|---|
 | `hds` | disk names, comma separated |
 | `hds_types` | `media_type` + `bus_type` per disk |
 | `hds_spaces_gb` | sizes in GB, comma separated |
-| `disks_total_gb`, `disks_free_gb`, `disks_used_gb` | sums in GB, two decimals |
 
 That keeps the old ESET-style text columns, the grid, the export and the audit
 trail readable without parsing JSON (the raw JSON is deliberately excluded from
-the history diff). The roll-ups are sortable and searchable through the panel;
-`physical_disks` itself only answers `GET`.
+the history diff). `physical_disks` itself only answers `GET`; a client that
+needs a total sums `size_gb`/`free_gb` over the list (the `disks_*_gb` roll-ups
+were retired in 0019 for exactly that reason — one copy of the numbers).
 
 ## Inventory agent
 
 `POST /v1/devices/inventory` (or `PUT`) stores a host report in its own column
 block. The keys are the ones the agent already sends; every one of them gets a
 dedicated `Agent*` column so a report **never** overwrites a hand-maintained
-`Hostname`/`OS`/`Manufacturer`/`DeviceModel`. The panel shows both sets side by
-side under *Hardware → Additional hardware info*.
+`Hostname`/`OS`/`Manufacturer`. The block is the *only* home of the model, GPU
+and RAM facts since 0019 retired the legacy `DeviceModel`/`GPUs`/`RAMGB`
+columns; the panel shows it under *Hardware → Additional hardware info*.
 
 | Payload key | Column | Output key |
 |---|---|---|
@@ -438,7 +444,7 @@ side under *Hardware → Additional hardware info*.
   widths below).
 * `physicalDisks` is **not** duplicated: the structured disk inventory is the
   same fact for an agent and for a manual edit, so it keeps `PhysicalDisks` and
-  the derived `hds*`/`disks_*` columns (see the previous section).
+  the derived `hds*` columns (see the previous section).
 * Identity and plumbing keys keep their usual meaning on this endpoint too:
   `uuid`, `sn`, `last_seen`, `mobile`, `byod`, `status`, `company`, `source`,
   `source_ref` and `custom`.
@@ -446,10 +452,41 @@ side under *Hardware → Additional hardware info*.
   255, `AgentOS`/`AgentBIOS`/`AgentManufacturer`/`AgentModel`/`AgentLoggedUser`/
   `AgentExecutionUser` 191, `AgentOSBuild` 64, `AgentIP` 64. Exceeding one
   answers `422` with `errors.AgentOS = "too_long"`.
-* The block is `admin`/`superadmin` writable in the panel (like `gpus`/`ram_gb`);
-  managers get `422 unknown_field` and read it in the device view.
+* The block is `admin`/`superadmin` writable in the panel; managers get
+  `422 unknown_field` and read it in the device view.
 * The columns are off by default in the grid (Settings → Columns), so they do not
   widen every view; `/v1/devices` always returns them (`agent_*` keys).
+
+## Breaking changes
+
+### 0019 — agent-only device columns
+
+Migration `2026_11_05_0019_retire_agent_only_columns` **drops** six `assets`
+columns. The values are copied into the agent block first (only where the agent
+has not reported yet), then the columns are gone:
+
+| Retired field | Read it from |
+|---|---|
+| `device_model` | `agent_model` |
+| `gpus` | `agent_gpu` |
+| `ram_gb` | `agent_ram_gb` |
+| `disks_total_gb` | sum `size_gb` over `physical_disks` |
+| `disks_free_gb` | sum `free_gb` over `physical_disks` |
+| `disks_used_gb` | sum `used_gb` over `physical_disks` |
+
+What this means for an integration:
+
+* Sending any of the six keys now answers `422 validation_failed` with
+  `errors.<column> = unknown_field` — a typo can no longer be mistaken for a
+  successful write.
+* Reading a device no longer returns them; the JSON keys are absent, not null.
+* `GET /v1/devices?sort=DisksFreeGB` answers `400 invalid_sort`; sort on
+  `AgentModel`/`AgentGPU`/`AgentRAMGB` instead.
+* A `GridView`/saved view that mentioned them simply ignores the missing
+  columns.
+* Existing values are preserved: `AgentModel`/`AgentGPU`/`AgentRAMGB` were
+  backfilled from the legacy columns during the migration, and the disk numbers
+  were always derived from `physical_disks`.
 
 ## Notes for ESET-style integrations
 
