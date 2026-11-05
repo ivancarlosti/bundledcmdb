@@ -96,7 +96,7 @@ the server-side guard.
 | `GET /panel-api/v1/session` | identity, CSRF token, locale/theme/page size, capabilities, grid state |
 | `PATCH /panel-api/v1/session/preferences` | theme, locale, page size, grid layout |
 | `POST /panel-api/v1/session/logout` | ends the session, returns the URL to navigate to |
-| `GET /panel-api/v1/meta` | columns (incl. `api_key`, sortable/editable), statuses, sources, custom fields, page sizes |
+| `GET /panel-api/v1/meta` | columns (incl. `api_key`, sortable/editable, `in_grid` from the admin layout), `gridLayout` (locked + order), statuses, sources, custom fields, page sizes |
 | `GET /panel-api/v1/i18n` | merged catalogue for the effective (or `?locale=`) locale |
 | `GET /panel-api/v1/views` | the signed-in user's saved grid presets (filters + sort + column layout) |
 | `POST /panel-api/v1/views` | save a view; the same name overwrites it (`201`, same id) |
@@ -330,6 +330,11 @@ Vite's own errors show up in the job output.
   merges it with what `/meta` publishes, so a stored layout can never hide a
   column the server stopped sending or lose a new one. Reordering is done with
   `Move up` / `Move down` buttons, which keeps the picker keyboard-only.
+  `/meta.columns` itself is already the *installation* layout (the `grid.columns`
+  setting behind Settings → Columns): `in_grid` decides what exists and the array
+  order is the default order. `effectiveLayout()` drops the per-user layout when
+  `/meta.gridLayout.locked` is true, so a locked layout wins for order and
+  visibility and the picker renders disabled.
 * **Writes are optimistic-locked.** `PATCH` carries `expected_updated_at`; a
   `409 stale_record` leaves the form untouched, shows a "reload before saving"
   alert and refreshes the cached row instead of overwriting someone else's edit.

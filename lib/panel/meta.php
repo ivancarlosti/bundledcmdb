@@ -30,6 +30,8 @@ function panel_column_label_keys(): array
         'Manufacturer'    => 'col_manufacturer',
         'LastSeen'        => 'col_last_seen',
         'UserEmail'       => 'col_user_email',
+        'LoggedUsername'  => 'col_logged_username',
+        'DeviceModel'     => 'col_device_model',
         'BYOD'            => 'col_byod',
         'Status'          => 'col_status',
         'Warranty'        => 'col_warranty',
@@ -39,9 +41,15 @@ function panel_column_label_keys(): array
         'CypherKey'       => 'col_cypher_key',
         'Notes'           => 'col_notes',
         'CPUs'            => 'col_cpus',
+        'GPUs'            => 'col_gpus',
+        'RAMGB'           => 'col_ram_gb',
         'HDs'             => 'col_hds',
         'HDsTypes'        => 'col_hds_types',
         'HDsSpacesGB'     => 'col_hds_spaces_gb',
+        'PhysicalDisks'   => 'col_physical_disks',
+        'DisksTotalGB'    => 'col_disks_total_gb',
+        'DisksFreeGB'     => 'col_disks_free_gb',
+        'DisksUsedGB'     => 'col_disks_used_gb',
         'NetworkAdapters' => 'col_network_adapters',
         'MACAddresses'    => 'col_mac_addresses',
         'ESETComponents'  => 'col_eset_components',
@@ -132,23 +140,30 @@ function panel_delete_reason_payload(): array
  * Column payload. `files` is virtual (COUNT(device_files)) and columns that are
  * not in `asset_column_defs()` (custom fields) are added by the SPA from
  * `/meta.fields`.
+ *
+ * `in_grid` comes from the installation layout (Settings → Columns), not from
+ * the `grid` code default, and the list is returned in the admin's order: the
+ * SPA then needs no extra concept — it already renders `meta.columns` filtered
+ * by `in_grid`.
  */
 function panel_columns_payload(string $role, ?PDO $pdo = null): array
 {
     $pdo ??= db_try();
     // Sortable even when hidden: the grid may sort by them without showing them.
     $alwaysSortable = ['source', 'updated_at'];
+    $layout = grid_layout_get($pdo);
     $out = [];
 
     foreach (asset_column_defs() as $column => $def) {
+        $inGrid = grid_layout_enabled((string) $column, $layout);
         $out[] = [
             'key'       => $column,
             'api_key'   => panel_payload_key($column),
             'label_key' => panel_column_label_key($column),
             'label'     => (string) ($def['label'] ?? $column),
             'type'      => (string) ($def['type'] ?? 'text'),
-            'in_grid'   => (bool) ($def['grid'] ?? false),
-            'sortable'  => (bool) ($def['grid'] ?? false) || in_array($column, $alwaysSortable, true),
+            'in_grid'   => $inGrid,
+            'sortable'  => $inGrid || in_array($column, $alwaysSortable, true),
             'editable'  => $column !== 'UUID' && permission_field_editable($role, $column, $pdo),
             'virtual'   => false,
         ];
@@ -161,13 +176,13 @@ function panel_columns_payload(string $role, ?PDO $pdo = null): array
         'label_key' => 'col_files',
         'label'     => 'Attachments',
         'type'      => 'int',
-        'in_grid'   => true,
+        'in_grid'   => grid_layout_enabled('files', $layout),
         'sortable'  => true,
         'editable'  => false,
         'virtual'   => true,
     ];
 
-    return $out;
+    return grid_layout_apply_order($out, $layout);
 }
 
 /**
@@ -207,6 +222,9 @@ function panel_fields_payload(?PDO $pdo, string $role = 'user'): array
     if ($pdo === null) {
         return [];
     }
+    // The Columns tab owns the grid presence of custom fields too; the field's
+    // own `show_in_grid` only feeds the default layout.
+    $layout = grid_layout_get($pdo);
     $out = [];
     foreach (field_defs($pdo) as $def) {
         $fieldKey = 'custom:' . (string) $def['field_key'];
@@ -220,7 +238,7 @@ function panel_fields_payload(?PDO $pdo, string $role = 'user'): array
             'required'       => (int) $def['is_required'] === 1,
             'unique'         => (int) $def['is_unique'] === 1,
             'searchable'     => (int) $def['is_searchable'] === 1,
-            'in_grid'        => (int) $def['show_in_grid'] === 1,
+            'in_grid'        => grid_layout_enabled($fieldKey, $layout),
             'editable_roles' => array_values(array_filter(
                 permission_roles(),
                 static fn (string $candidate): bool => permission_field_editable($candidate, $fieldKey, $pdo)
@@ -264,6 +282,10 @@ function panel_meta_show(array $params = []): array
         // keep the default
     }
 
+    // Locked layout: the SPA stops applying the per-user column order/visibility
+    // (order *and* visibility), because the admin decided the grid for everyone.
+    $layout = grid_layout_get($pdo);
+
     return ['data' => [
         'columns'       => panel_columns_payload($user['role'], $pdo),
         'statuses'      => panel_status_payload(),
@@ -277,6 +299,11 @@ function panel_meta_show(array $params = []): array
         'capabilities'  => panel_capabilities($user['role']),
         'defaultSort'   => ['sort' => 'updated_at', 'dir' => 'desc'],
         'virtualSorts'  => ['files'],
+        'gridLayout'    => [
+            'locked'  => (bool) $layout['locked'],
+            'enabled' => array_values((array) $layout['enabled']),
+            'order'   => array_values((array) $layout['order']),
+        ],
         'writeColumns'  => panel_write_columns_payload($user['role']),
         'limits'        => [
             'requireSn'      => $requireSn,

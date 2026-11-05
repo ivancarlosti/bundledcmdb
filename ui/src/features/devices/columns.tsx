@@ -90,6 +90,15 @@ export function GridCell({
     return <span className="tabular-nums">{formatNumber(value, locale)}</span>;
   }
 
+  if (type === 'decimal') {
+    // Disk roll-ups: one decimal is plenty, and the unit lives in the header.
+    return (
+      <span className="tabular-nums">
+        {new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Number(value))}
+      </span>
+    );
+  }
+
   if (type === 'datetime') {
     return <span className="whitespace-nowrap">{formatDateTime(value, locale)}</span>;
   }

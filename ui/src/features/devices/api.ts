@@ -9,6 +9,32 @@
 import { apiRequest, apiRequestEnvelope, apiUrl, buildQuery } from '@/api/client';
 import { devicesFilterQuery, devicesPageQuery, type GridState } from '@/features/grid/gridSearch';
 
+/**
+ * One volume of a physical disk, as normalised by `disks_normalize()`.
+ *
+ * The server always sends the snake_case shape and always fills `used_gb`
+ * (derived from `total_gb - free_gb` when the agent did not send it).
+ */
+export type DeviceVolume = {
+  drive: string | null;
+  label: string | null;
+  total_gb: number | null;
+  free_gb: number | null;
+  used_gb: number | null;
+};
+
+/** One physical disk (`assets.PhysicalDisks`). */
+export type DeviceDisk = {
+  number: number;
+  friendly_name: string | null;
+  media_type: string | null;
+  bus_type: string | null;
+  size_gb: number | null;
+  free_gb: number | null;
+  used_gb: number | null;
+  volumes: DeviceVolume[];
+};
+
 export type DeviceRow = {
   id: number;
   uuid: string | null;
@@ -20,6 +46,10 @@ export type DeviceRow = {
   manufacturer: string | null;
   last_seen: string | null;
   user_email: string | null;
+  /** Account the agent saw logged in (not a directory user). */
+  logged_username: string | null;
+  /** Model string the agent reported (`Dell Latitude 5440`). */
+  device_model: string | null;
   byod: boolean | null;
   status: string | null;
   warranty: string | null;
@@ -29,9 +59,17 @@ export type DeviceRow = {
   cypher_key: string | null;
   notes: string | null;
   cpus: string | null;
+  gpus: string | null;
+  ram_gb: string | null;
   hds: string | null;
   hds_types: string | null;
   hds_space_gb: string | null;
+  /** Canonical per-disk inventory (`lib/disks.php`); `[]` when never reported. */
+  physical_disks: DeviceDisk[];
+  /** Roll-ups recomputed from `physical_disks` (sums, GB). */
+  disks_total_gb: number | null;
+  disks_free_gb: number | null;
+  disks_used_gb: number | null;
   network_adapters: string | null;
   mac_addresses: string | null;
   eset_components: string | null;
@@ -142,6 +180,14 @@ export type MetaPayload = {
   };
   defaultSort: { sort: string; dir: 'asc' | 'desc' };
   virtualSorts: string[];
+  /**
+   * Installation-wide column order/visibility (Settings → Columns).
+   *
+   * `locked` means the admin decided for everyone: the per-user layout in
+   * `session.gridState` is ignored (both order and visibility) and the column
+   * picker is disabled.
+   */
+  gridLayout?: { locked: boolean; enabled: string[]; order: string[] };
   /** Wire keys the current role may write (server-side role matrix). */
   writeColumns: { create: string[]; update: string[] };
   limits: { requireSn: boolean; maxUploadBytes: number };

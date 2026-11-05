@@ -23,6 +23,7 @@ import {
   deleteField,
   deleteSource,
   fetchApiKeys,
+  fetchColumns,
   fetchFields,
   fetchMaintenance,
   fetchPermissions,
@@ -31,8 +32,10 @@ import {
   fetchUsers,
   moveSource,
   reorderFields,
+  resetColumns,
   rotateApiKey,
   runMigrations,
+  saveColumns,
   savePermissions,
   saveSettings,
   updateApiKey,
@@ -41,6 +44,8 @@ import {
   updateUserRole,
   type ApiKeyCreated,
   type ApiKeyInput,
+  type ColumnsInput,
+  type ColumnsPayload,
   type FieldsPayload,
   type FieldInput,
   type MaintenancePayload,
@@ -62,6 +67,7 @@ export const settingsKeysQueryKey = ['settings', 'api-keys'] as const;
 export const settingsUsersQueryKey = ['settings', 'users'] as const;
 export const settingsMaintenanceQueryKey = ['settings', 'maintenance'] as const;
 export const settingsPermissionsQueryKey = ['settings', 'permissions'] as const;
+export const settingsColumnsQueryKey = ['settings', 'columns'] as const;
 
 function messageOf(error: unknown, fallback: string): string {
   return error instanceof PanelApiError ? error.message : fallback;
@@ -94,6 +100,59 @@ export function useSettingsFields() {
     queryFn: fetchFields,
     staleTime: 30_000,
   });
+}
+
+/** Installation-wide grid layout (Settings → Columns). */
+export function useSettingsColumns() {
+  return useQuery({
+    queryKey: settingsColumnsQueryKey,
+    queryFn: fetchColumns,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Save / reset the grid layout.
+ *
+ * Both write the whole refreshed payload into the cache and invalidate `/meta`:
+ * the grid's `in_grid` flags and column order come from there, so every other
+ * screen picks the change up on its next render.
+ */
+export function useColumnMutations() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const seed = (payload: ColumnsPayload) => {
+    queryClient.setQueryData(settingsColumnsQueryKey, payload);
+    void queryClient.invalidateQueries({ queryKey: metaQueryKey });
+  };
+
+  const onError = (error: unknown) => {
+    if (isFieldLevel(error)) {
+      return;
+    }
+    toast.error(t('set_error'), { description: messageOf(error, '') });
+  };
+
+  const save = useMutation({
+    mutationFn: (input: ColumnsInput) => saveColumns(input),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_saved'));
+    },
+    onError,
+  });
+
+  const reset = useMutation({
+    mutationFn: () => resetColumns(),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_columns_reset'));
+    },
+    onError,
+  });
+
+  return { save, reset };
 }
 
 export function useApiKeys() {

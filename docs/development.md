@@ -125,10 +125,11 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
    creates a table that `sql/schema.sql` (the DBA path) does not, or when the
    ledger in it is not up to `migrations()`.
 3. `php bin/migrate.php --dry-run` → 0 pending; a second real run reports
-   `Applied: 0, already present: 11`.
+   `Applied: 0, already present: 17`.
 4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
 5. `php bin/test-panel-api.php` → 0 failed (requires a non-production database;
-   the suite also covers the role matrix, source move and `source_slug` alias).
+   the suite also covers the role matrix, source move, `source_slug` alias, the
+   `physical_disks` contract and the `grid.columns` layout round trip).
 6. `php bin/test-api-users.php` → 0 failed (user roster CRUD/upsert, the
    `can_users` scope, company binding and session revocation; it creates and
    removes its own rows and keys).
@@ -169,4 +170,21 @@ curl -s -H "Authorization: Bearer $TOKEN" "$B/users?per_page=2" | jq '.data.tota
   loader still asks for `^10`, and 10.x carries a DoS advisory (GHSA-g3hv-75wg-m249).
   Remove the override when `@eslint/config-array` widens its own range.
 * New settings must be declared in `settings_definitions()` (label + type +
-  optional env fallback) to appear in the UI and in `settings_all()`.
+  optional env fallback) to appear in the UI and in `settings_all()`. A setting
+  with its own screen sets `'hidden' => true` so the generic form skips it
+  (`grid.columns` is the first one).
+* Adding a built-in device column is a five-step change, all server-side except
+  the last:
+  1. a row in `asset_column_defs()` (`type`, `grid`, `api`, `form_roles`, `label`);
+  2. `asset_form_columns()` / `asset_create_columns()` when it is panel-editable,
+     and a length rule in `asset_validate()`;
+  3. `asset_api_field_map()` (snake_case key) and `asset_api_payload()`;
+  4. the alias in `panel_device_payload()` + `panel_device_payload_keys()` and the
+     `col_*` key in `panel_column_label_keys()`;
+  5. a migration that adds the column (mirrored in `sql/legacy.sql`, recorded in
+     the `sql/schema.sql` ledger) plus the `col_*` entry in every catalogue and,
+     when it belongs in the form, the tab in
+     `ui/src/features/devices/deviceSchema.ts`.
+  The grid, the sort whitelist, the "any" search, the export and the permission
+  matrix then follow automatically, and Settings → Columns can switch it on for
+  an existing installation.

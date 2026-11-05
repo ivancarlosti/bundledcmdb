@@ -144,6 +144,14 @@ function settings_definitions(): array
                 'source'   => 'Source',
             ],
         ],
+
+        // --- Grid layout (Settings → Columns, `lib/grid_layout.php`) ---
+        // JSON: {"order": [...], "enabled": [...], "locked": bool}. `hidden` keeps
+        // it out of the generic Settings form: it has its own tab and endpoint.
+        'grid.columns' => [
+            'group' => 'ui', 'type' => 'text', 'default' => '', 'hidden' => true,
+            'label' => 'Device grid columns',
+        ],
     ];
 }
 /**

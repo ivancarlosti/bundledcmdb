@@ -18,9 +18,11 @@ import type { MetaColumn, MetaField, MetaPayload } from './api';
  * `more`, so a column added to the server still shows up.
  */
 const TAB_COLUMNS: Record<string, readonly string[]> = {
-  identity: ['sn', 'uuid', 'hostname', 'os', 'os_version', 'manufacturer', 'last_seen'],
+  identity: ['sn', 'uuid', 'hostname', 'device_model', 'os', 'os_version', 'manufacturer', 'last_seen'],
   hardware: [
     'cpus',
+    'gpus',
+    'ram_gb',
     'hds',
     'hds_types',
     'hds_spaces_gb',
@@ -30,7 +32,17 @@ const TAB_COLUMNS: Record<string, readonly string[]> = {
     'primary_local_ip',
     'primary_remote_ip',
   ],
-  assignment: ['status', 'user_email', 'asset', 'byod', 'mobile', 'warranty', 'purchase_date', 'source'],
+  assignment: [
+    'status',
+    'user_email',
+    'logged_username',
+    'asset',
+    'byod',
+    'mobile',
+    'warranty',
+    'purchase_date',
+    'source',
+  ],
   admin: ['cypher_id', 'cypher_key', 'notes'],
 };
 

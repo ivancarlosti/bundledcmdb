@@ -36,17 +36,21 @@ function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayloa
 
   return (
     <dl className="m-0">
-      {meta.columns.map((column) => (
-        <Row key={column.key} label={t(column.label_key, { defaultValue: column.label })}>
-          <GridCell
-            value={cellValue(device, column)}
-            columnKey={column.key}
-            type={column.type}
-            truncate={false}
-            {...context}
-          />
-        </Row>
-      ))}
+      {meta.columns
+        // The disk inventory is structured: it gets its own block below instead
+        // of one flattened cell (its JSON would render as `[object Object]`).
+        .filter((column) => column.type !== 'disks')
+        .map((column) => (
+          <Row key={column.key} label={t(column.label_key, { defaultValue: column.label })}>
+            <GridCell
+              value={cellValue(device, column)}
+              columnKey={column.key}
+              type={column.type}
+              truncate={false}
+              {...context}
+            />
+          </Row>
+        ))}
       {meta.fields.map((field) => (
         <Row key={`custom:${field.key}`} label={field.label_i18n?.[locale] ?? field.label}>
           <GridCell
@@ -59,6 +63,100 @@ function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayloa
         </Row>
       ))}
     </dl>
+  );
+}
+
+/**
+ * Structured disk inventory (`assets.physical_disks`).
+ *
+ * The API already normalised the payload: one entry per physical disk with its
+ * volumes, snake_case keys and `used_gb` filled in. Nothing here recomputes —
+ * the panel is a reader, the agent owns the numbers.
+ */
+function StorageSection({ device }: { device: DeviceDetail }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? 'en-US';
+  const disks = device.physical_disks ?? [];
+  const gb = (value: number | null | undefined): string =>
+    value === null || value === undefined
+      ? '—'
+      : new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value);
+
+  return (
+    <div className="card p-4" data-testid="device-storage">
+      <h2 className="m-0 text-base font-semibold">{t('ui_storage')}</h2>
+
+      {disks.length === 0 ? (
+        <p className="m-0 mt-2 text-sm text-[var(--color-muted)]">{t('ui_storage_empty')}</p>
+      ) : (
+        <ul className="m-0 mt-2 list-none p-0">
+          {disks.map((disk) => (
+            <li key={disk.number} className="border-b border-[var(--color-border)] py-2 last:border-b-0">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">
+                  {t('ui_storage_disk', { number: disk.number })}
+                  {disk.friendly_name === null ? '' : ` · ${disk.friendly_name}`}
+                </span>
+                <span className="text-xs whitespace-nowrap text-[var(--color-muted)]">
+                  {[disk.media_type, disk.bus_type].filter((part) => part !== null && part !== '').join(' · ')}
+                </span>
+              </div>
+              <p className="m-0 text-xs text-[var(--color-muted)]">
+                {t('ui_storage_capacity', {
+                  total: gb(disk.size_gb),
+                  free: gb(disk.free_gb),
+                })}
+              </p>
+
+              {disk.volumes.length === 0 ? null : (
+                <table className="mt-1 w-full text-xs">
+                  <caption className="sr-only">{t('ui_storage')}</caption>
+                  <thead>
+                    <tr className="text-start text-[var(--color-muted)]">
+                      <th scope="col" className="py-0.5 pe-2 text-start font-medium">
+                        {t('ui_storage_drive')}
+                      </th>
+                      <th scope="col" className="py-0.5 pe-2 text-start font-medium">
+                        {t('ui_storage_label')}
+                      </th>
+                      <th scope="col" className="py-0.5 pe-2 text-end font-medium">
+                        {t('ui_storage_total_gb')}
+                      </th>
+                      <th scope="col" className="py-0.5 pe-2 text-end font-medium">
+                        {t('ui_storage_free_gb')}
+                      </th>
+                      <th scope="col" className="py-0.5 text-end font-medium">
+                        {t('ui_storage_used_gb')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {disk.volumes.map((volume, index) => (
+                      <tr key={`${disk.number}-${volume.drive ?? index}`}>
+                        <td className="py-0.5 pe-2">{volume.drive ?? '—'}</td>
+                        <td className="py-0.5 pe-2">{volume.label ?? '—'}</td>
+                        <td className="py-0.5 pe-2 text-end tabular-nums">{gb(volume.total_gb)}</td>
+                        <td className="py-0.5 pe-2 text-end tabular-nums">{gb(volume.free_gb)}</td>
+                        <td className="py-0.5 text-end tabular-nums">{gb(volume.used_gb)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {disks.length === 0 ? null : (
+        <p className="m-0 mt-2 text-xs text-[var(--color-muted)]">
+          {t('ui_storage_capacity', {
+            total: gb(device.disks_total_gb),
+            free: gb(device.disks_free_gb),
+          })}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -482,6 +580,8 @@ export function DeviceDetailPage() {
       </div>
 
       <FilesSection device={device} />
+
+      <StorageSection device={device} />
 
       <HistorySection device={device} meta={metaQuery.data} />
     </section>

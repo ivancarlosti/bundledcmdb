@@ -243,5 +243,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_06_0013_retire_storage_local_path'),
     ('2026_11_07_0014_asset_deletion_reason'),
     ('2026_11_03_0015_permissions'),
-    ('2026_11_08_0016_api_key_users_scope');
+    ('2026_11_08_0016_api_key_users_scope'),
+    ('2026_11_04_0017_asset_hardware_disks');
 

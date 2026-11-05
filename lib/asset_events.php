@@ -49,7 +49,14 @@ const ASSET_EVENT_ENTITIES = [
 ];
 
 /** Columns that never count as a "change" (bookkeeping, not content). */
-const ASSET_EVENT_IGNORED_COLUMNS = ['Id', 'updated_at', 'updated_by', 'created_at', 'created_by'];
+/**
+ * Columns never written to the audit diff.
+ *
+ * `PhysicalDisks` holds the raw JSON: the history shows the readable summaries
+ * (`HDs`, `HDsTypes`, `HDsSpacesGB`, `DisksFreeGB`) that are recomputed from it
+ * instead, so nobody has to read a one-line blob.
+ */
+const ASSET_EVENT_IGNORED_COLUMNS = ['Id', 'updated_at', 'updated_by', 'created_at', 'created_by', 'PhysicalDisks'];
 
 /**
  * Field-level difference between two device rows.

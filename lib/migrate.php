@@ -151,6 +151,10 @@ function migrations(): array
             'description' => 'Add api_keys.can_users (manage the user roster over the API)',
             'run' => 'migration_0016_api_key_users_scope',
         ],
+        '2026_11_04_0017_asset_hardware_disks' => [
+            'description' => 'Add assets GPUs/RAMGB/LoggedUsername/DeviceModel + structured PhysicalDisks and its roll-ups',
+            'run' => 'migration_0017_asset_hardware_disks',
+        ],
     ];
 }
 
@@ -794,4 +798,28 @@ function migration_0015_permissions(PDO $pdo): void
 function migration_0016_api_key_users_scope(PDO $pdo): void
 {
     migrate_add_column($pdo, 'api_keys', 'can_users', 'TINYINT(1) NOT NULL DEFAULT 0');
+}
+
+/**
+ * Hardware and identity fields the inventory agents report, plus the structured
+ * disk inventory.
+ *
+ * `PhysicalDisks` is the canonical JSON array (`lib/disks.php`); the three
+ * `Disks*GB` columns are roll-ups recomputed on every write so the grid can
+ * sort and filter on free space without parsing JSON, and `HDs`/`HDsTypes`/
+ * `HDsSpacesGB` stay in sync for the clients that already read them.
+ *
+ * GPUs and RAMGB are free text on purpose: `RAMGB VARCHAR` keeps whatever the
+ * agent reports ("16", "16 GB", "32 (2x16)") instead of forcing a unit.
+ */
+function migration_0017_asset_hardware_disks(PDO $pdo): void
+{
+    migrate_add_column($pdo, 'assets', 'GPUs', 'VARCHAR(255) NULL');
+    migrate_add_column($pdo, 'assets', 'RAMGB', 'VARCHAR(255) NULL');
+    migrate_add_column($pdo, 'assets', 'LoggedUsername', 'VARCHAR(191) NULL');
+    migrate_add_column($pdo, 'assets', 'DeviceModel', 'VARCHAR(191) NULL');
+    migrate_add_column($pdo, 'assets', 'PhysicalDisks', 'LONGTEXT NULL');
+    migrate_add_column($pdo, 'assets', 'DisksTotalGB', 'DECIMAL(12,2) NULL');
+    migrate_add_column($pdo, 'assets', 'DisksFreeGB', 'DECIMAL(12,2) NULL');
+    migrate_add_column($pdo, 'assets', 'DisksUsedGB', 'DECIMAL(12,2) NULL');
 }

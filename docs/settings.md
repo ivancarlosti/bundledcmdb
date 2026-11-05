@@ -39,6 +39,10 @@ environment-only: they are needed *before* the settings table can be read.
 > `/` always redirects to `/app/`. Migration `0008_retire_spa_flag` removes the
 > stored row and the option is no longer rendered.
 
+### Columns
+The installation-wide device-grid layout (order, visibility, lock). See
+[Columns](#columns) below for the rules; the tab is `settings.manage`.
+
 ### Attachment storage
 The Storage tab has two cards: **Attachment storage** (`storage.*`) and **S3
 connection** (`s3.*`). This card's **Driver** is `s3` (default) or `local`
@@ -160,6 +164,34 @@ with **Move references** and then delete it. The move rewrites `assets.source`,
 or `asset_sources.is_default` in one transaction, and is audited as a source
 update.
 
+### Columns
+`/settings?tab=columns` is the installation-wide device-grid layout
+(`app_settings["grid.columns"]`, `lib/grid_layout.php`) and needs
+`settings.manage`. It offers every column `/meta` can publish — including the
+ones the code ships hidden (`CPUs`, `GPUs`, `RAM in GB`, `Physical Disks`) and
+the grid-visible custom fields:
+
+* **Order** — the list is the order the grid renders. A column the layout does
+  not mention keeps its code position at the end, so a column shipped by a later
+  release still appears.
+* **Visibility** — unticked columns stay in the list (and keep their slot) but
+  have `in_grid: false`, so the grid, the column picker and the CSV/XLSX export
+  all skip them. The last visible column cannot be unticked: an empty grid looks
+  like a bug, not a preference.
+* **Lock** — with the lock on, the grid ignores the per-user layout
+  (`user_preferences.grid_state`) for order *and* visibility and disables the
+  column picker; `/meta` publishes `gridLayout.locked` so the SPA knows.
+* **Restore defaults** deletes the setting, so the layout falls back to the
+  `grid` flags in `asset_column_defs()` and every custom field's
+  `show_in_grid`.
+
+`GET/PUT/DELETE /panel-api/v1/settings/columns` backs the tab; a save is audited
+as a `grid_layout` update with the previous and the new list.
+
+Custom fields keep one switch: this tab now owns their grid presence (the
+`show_in_grid` checkbox in the Fields tab only decides the default), which is why
+`/meta.fields[].in_grid` follows the layout.
+
 ### Permissions
 `/settings?tab=permissions` is the persisted role × capability and role × field
 matrix (`role_capabilities`, `role_field_permissions`). It requires
@@ -262,6 +294,9 @@ cannot disagree about validation, defaults or protection rules.
 | `PATCH /settings/users/{email}` | `settings.users` | `{ "role": "manager" }`, URL-encoded e-mail |
 | `GET /settings/maintenance` | `settings.maintenance` | Migrations + diagnostics (no credentials) |
 | `POST /settings/maintenance/migrate` | `settings.maintenance` | `{ "dry_run": true }` is the default; `meta.log` carries the steps |
+| `GET /settings/columns` | `settings.manage` | Column catalogue (`id`, `label`, `label_key`, `group`, `enabled`, `default`) + the stored layout |
+| `PUT /settings/columns` | `settings.manage` | `{ "order": [...], "enabled": [...], "locked": bool }`; omitted keys keep their value, unknown ids are `422 unknown_column` |
+| `DELETE /settings/columns` | `settings.manage` | Drops the override (back to the `grid` code defaults) |
 
 Two rules are worth calling out because they protect working installations:
 

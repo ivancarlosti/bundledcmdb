@@ -14,6 +14,7 @@ import { Alert } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
 
 import { ApiKeysTab } from './ApiKeysTab';
+import { ColumnsTab } from './ColumnsTab';
 import { FieldsTab } from './FieldsTab';
 import { MaintenanceTab } from './MaintenanceTab';
 import { PermissionsTab } from './PermissionsTab';
@@ -30,6 +31,7 @@ type Tab = {
 
 const TABS: Tab[] = [
   { id: 'general', label_key: 'set_tab_general', capability: 'settings.manage' },
+  { id: 'columns', label_key: 'set_tab_columns', capability: 'settings.manage' },
   { id: 'storage', label_key: 'set_tab_storage', capability: 'settings.manage' },
   { id: 'sources', label_key: 'set_tab_sources', capability: 'settings.sources' },
   { id: 'api', label_key: 'set_tab_api', capability: 'settings.api_keys' },
@@ -138,6 +140,7 @@ export function SettingsPage() {
         {tab === 'storage' ? (
           <SettingsGroupPanel groups={['storage', 's3']} intro={t('set_storage_intro')} labelledBy={headingId} />
         ) : null}
+        {tab === 'columns' ? <ColumnsTab labelledBy={headingId} /> : null}
         {tab === 'sources' ? <SourcesTab labelledBy={headingId} /> : null}
         {tab === 'api' ? (
           <div className="flex flex-col gap-6">

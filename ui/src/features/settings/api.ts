@@ -367,6 +367,49 @@ export function updateUserRole(email: string, role: string): Promise<UsersPayloa
   });
 }
 
+// --- Grid columns (installation-wide layout) --------------------------------
+
+/**
+ * One column offered by Settings → Columns.
+ *
+ * `id` is the same key `/meta.columns` publishes (`SN`, `files`,
+ * `custom:<field_key>`). `default` says whether the code ships it enabled, which
+ * is what the "Reset" action restores.
+ */
+export type ColumnsEntry = {
+  id: string;
+  label: string;
+  label_key: string | null;
+  group: 'builtin' | 'custom';
+  enabled: boolean;
+  default: boolean;
+};
+
+export type ColumnsPayload = {
+  columns: ColumnsEntry[];
+  layout: { order: string[]; enabled: string[]; locked: boolean };
+};
+
+/** Body of `PUT /settings/columns`; omitted keys keep their stored value. */
+export type ColumnsInput = {
+  order?: string[];
+  enabled?: string[];
+  locked?: boolean;
+};
+
+export function fetchColumns(): Promise<ColumnsPayload> {
+  return apiRequest<ColumnsPayload>('/settings/columns');
+}
+
+export function saveColumns(input: ColumnsInput): Promise<ColumnsPayload> {
+  return apiRequest<ColumnsPayload>('/settings/columns', { method: 'PUT', body: input });
+}
+
+/** Drop the override: the grid falls back to the layout the code ships. */
+export function resetColumns(): Promise<ColumnsPayload> {
+  return apiRequest<ColumnsPayload>('/settings/columns', { method: 'DELETE' });
+}
+
 // --- Maintenance -----------------------------------------------------------
 
 export type MigrationStatus = {

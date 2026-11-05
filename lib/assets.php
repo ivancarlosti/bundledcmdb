@@ -37,6 +37,7 @@ function asset_column_defs(): array
         'Manufacturer'    => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => [], 'label' => 'Manufacturer'],
         'LastSeen'        => ['type' => 'datetime', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Last Seen'],
         'UserEmail'       => ['type' => 'email', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'User Email'],
+        'LoggedUsername'  => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Logged-in User'],
         'BYOD'            => ['type' => 'bool', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'BYOD'],
         'Status'          => ['type' => 'status', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Status'],
         'Warranty'        => ['type' => 'date', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Warranty'],
@@ -46,9 +47,19 @@ function asset_column_defs(): array
         'CypherKey'       => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => $admins, 'label' => 'Cypher Key'],
         'Notes'           => ['type' => 'textarea', 'grid' => false, 'api' => true, 'form_roles' => $managers, 'label' => 'Notes'],
         'CPUs'            => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'CPUs'],
+        'GPUs'            => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => $admins, 'label' => 'GPUs'],
+        'RAMGB'           => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => $admins, 'label' => 'RAM (GB)'],
+        'DeviceModel'     => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Device Model'],
         'HDs'             => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Disks'],
         'HDsTypes'        => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Disk Types'],
         'HDsSpacesGB'     => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Disk Space (GB)'],
+        // Canonical disk inventory (`lib/disks.php`). API-only: the panel never
+        // edits it, and writing it recomputes HDs/HDsTypes/HDsSpacesGB above and
+        // the three roll-ups below.
+        'PhysicalDisks'   => ['type' => 'disks', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Physical Disks'],
+        'DisksTotalGB'    => ['type' => 'decimal', 'grid' => true, 'api' => false, 'form_roles' => [], 'label' => 'Disk Total (GB)'],
+        'DisksFreeGB'     => ['type' => 'decimal', 'grid' => true, 'api' => false, 'form_roles' => [], 'label' => 'Disk Free (GB)'],
+        'DisksUsedGB'     => ['type' => 'decimal', 'grid' => false, 'api' => false, 'form_roles' => [], 'label' => 'Disk Used (GB)'],
         'NetworkAdapters' => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Network Adapters'],
         'MACAddresses'    => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'MAC Addresses'],
         'ESETComponents'  => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'ESET Components'],
@@ -85,11 +96,11 @@ function asset_grid_editable_columns(string $role): array
 function asset_form_columns(): array
 {
     return [
-        'SN', 'Hostname', 'Manufacturer', 'OS', 'OSVersion', 'Mobile', 'Asset',
-        'Status', 'UserEmail', 'BYOD', 'Warranty', 'PurchaseDate', 'LastSeen',
-        'UUID', 'CypherID', 'CypherKey', 'CPUs', 'HDs', 'HDsTypes', 'HDsSpacesGB',
-        'NetworkAdapters', 'MACAddresses', 'ESETComponents', 'PrimaryLocalIP',
-        'PrimaryRemoteIP', 'Notes',
+        'SN', 'Hostname', 'Manufacturer', 'DeviceModel', 'OS', 'OSVersion', 'Mobile',
+        'Asset', 'Status', 'UserEmail', 'LoggedUsername', 'BYOD', 'Warranty',
+        'PurchaseDate', 'LastSeen', 'UUID', 'CypherID', 'CypherKey', 'CPUs', 'GPUs',
+        'RAMGB', 'HDs', 'HDsTypes', 'HDsSpacesGB', 'NetworkAdapters', 'MACAddresses',
+        'ESETComponents', 'PrimaryLocalIP', 'PrimaryRemoteIP', 'Notes',
     ];
 }
 
@@ -99,8 +110,9 @@ function asset_create_columns(string $role): array
     if ($role === 'user') {
         return [];
     }
-    $manager = ['SN', 'Hostname', 'Manufacturer', 'OS', 'OSVersion', 'Mobile', 'Asset',
-        'Status', 'UserEmail', 'BYOD', 'Warranty', 'PurchaseDate', 'Notes'];
+    $manager = ['SN', 'Hostname', 'Manufacturer', 'DeviceModel', 'OS', 'OSVersion',
+        'Mobile', 'Asset', 'Status', 'UserEmail', 'LoggedUsername', 'BYOD',
+        'Warranty', 'PurchaseDate', 'Notes'];
     if (!in_array($role, ['admin', 'superadmin'], true)) {
         return $manager;
     }
@@ -185,9 +197,16 @@ function asset_date_normalize(mixed $value): ?string
  * Only columns present in $data are touched (PATCH-friendly); unknown keys are
  * ignored here and reported by the caller.
  *
- * @return array<string, string|null>
+ * `$errors` collects the failures that cannot be expressed as a normalised
+ * value (`physical_disks` payloads only). Pass an initialised array to receive
+ * them; `null` (the default) means "the caller does not want them", and the
+ * invalid column is then simply left out of the result.
+ *
+ * @param array<string, mixed> $data
+ * @param array<string, string>|null $errors field => error code
+ * @return array<string, mixed>
  */
-function asset_normalize_input(array $data): array
+function asset_normalize_input(array $data, ?array &$errors = null): array
 {
     $defs = asset_column_defs();
     $out = [];
@@ -205,6 +224,21 @@ function asset_normalize_input(array $data): array
                 break;
             case 'datetime':
                 $out[$column] = asset_datetime_normalize($value);
+                break;
+            case 'disks':
+                $parsed = disks_normalize($value);
+                if (!$parsed['ok']) {
+                    if ($errors !== null) {
+                        $errors[$column] = (string) $parsed['error'];
+                    }
+                    break;
+                }
+                $out[$column] = disks_encode($parsed['disks']);
+                // Derived values follow the JSON: the summaries, the roll-ups and
+                // `HDs`/`HDsTypes`/`HDsSpacesGB` are never written by a client.
+                foreach (disks_summary($parsed['disks']) as $derived => $derivedValue) {
+                    $out[$derived] = $derivedValue;
+                }
                 break;
             default:
                 $value = is_array($value) ? implode(', ', $value) : (string) $value;
@@ -251,7 +285,8 @@ function asset_validate(array $data, bool $partial = false): array
         && asset_datetime_normalize($data['LastSeen']) === null) {
         $errors['LastSeen'] = 'invalid_datetime';
     }
-    foreach (['Hostname' => 255, 'OS' => 191, 'Manufacturer' => 191, 'Asset' => 191] as $column => $max) {
+    foreach (['Hostname' => 255, 'OS' => 191, 'Manufacturer' => 191, 'Asset' => 191,
+                 'DeviceModel' => 191, 'LoggedUsername' => 191, 'GPUs' => 255, 'RAMGB' => 255] as $column => $max) {
         if (array_key_exists($column, $data) && $data[$column] !== null && mb_strlen((string) $data[$column]) > $max) {
             $errors[$column] = 'too_long';
         }
@@ -650,6 +685,8 @@ function asset_api_field_map(): array
         'manufacturer'      => 'Manufacturer',
         'last_seen'         => 'LastSeen',
         'user_email'        => 'UserEmail',
+        'logged_username'   => 'LoggedUsername',
+        'device_model'      => 'DeviceModel',
         'byod'              => 'BYOD',
         'status'            => 'Status',
         'warranty'          => 'Warranty',
@@ -659,9 +696,13 @@ function asset_api_field_map(): array
         'cypher_key'        => 'CypherKey',
         'notes'             => 'Notes',
         'cpus'              => 'CPUs',
+        'gpus'              => 'GPUs',
+        'ram_gb'            => 'RAMGB',
         'hds'               => 'HDs',
         'hds_types'         => 'HDsTypes',
         'hds_spaces_gb'     => 'HDsSpacesGB',
+        'physical_disks'    => 'PhysicalDisks',
+        'disks'             => 'PhysicalDisks',
         'network_adapters'  => 'NetworkAdapters',
         'mac_addresses'     => 'MACAddresses',
         'eset_components'   => 'ESETComponents',
@@ -725,6 +766,8 @@ function asset_api_payload(array $row, array $custom = []): array
         'manufacturer'      => $row['Manufacturer'] ?? null,
         'last_seen'         => asset_iso_datetime($row['LastSeen'] ?? null),
         'user_email'        => $row['UserEmail'] ?? null,
+        'logged_username'   => $row['LoggedUsername'] ?? null,
+        'device_model'      => $row['DeviceModel'] ?? null,
         'byod'              => asset_bool_parse($row['BYOD'] ?? false),
         'status'            => $row['Status'] ?? null,
         'warranty'          => !empty($row['Warranty']) ? substr((string) $row['Warranty'], 0, 10) : null,
@@ -734,9 +777,15 @@ function asset_api_payload(array $row, array $custom = []): array
         'cypher_key'        => $row['CypherKey'] ?? null,
         'notes'             => $row['Notes'] ?? null,
         'cpus'              => $row['CPUs'] ?? null,
+        'gpus'              => $row['GPUs'] ?? null,
+        'ram_gb'            => $row['RAMGB'] ?? null,
         'hds'               => $row['HDs'] ?? null,
         'hds_types'         => $row['HDsTypes'] ?? null,
         'hds_spaces_gb'     => $row['HDsSpacesGB'] ?? null,
+        'physical_disks'    => disks_decode($row['PhysicalDisks'] ?? null),
+        'disks_total_gb'    => isset($row['DisksTotalGB']) ? (float) $row['DisksTotalGB'] : null,
+        'disks_free_gb'     => isset($row['DisksFreeGB']) ? (float) $row['DisksFreeGB'] : null,
+        'disks_used_gb'     => isset($row['DisksUsedGB']) ? (float) $row['DisksUsedGB'] : null,
         'network_adapters'  => $row['NetworkAdapters'] ?? null,
         'mac_addresses'     => $row['MACAddresses'] ?? null,
         'eset_components'   => $row['ESETComponents'] ?? null,

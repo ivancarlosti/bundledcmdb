@@ -72,6 +72,9 @@ function panel_routes(): array
         ['PATCH', '/settings/users/{email}', 'panel_settings_users_update'],
         ['GET',   '/settings/maintenance', 'panel_settings_maintenance_show'],
         ['POST',  '/settings/maintenance/migrate', 'panel_settings_maintenance_migrate'],
+        ['GET',   '/settings/columns',    'panel_settings_columns_index'],
+        ['PUT',   '/settings/columns',    'panel_settings_columns_update'],
+        ['DELETE', '/settings/columns',   'panel_settings_columns_delete'],
         // Audit log. `/logs/purge` is a literal, so it is listed before nothing
         // that could swallow it (there is no `{id}` on this resource).
         ['GET',   '/logs',                'panel_logs_index'],

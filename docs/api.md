@@ -282,8 +282,11 @@ Both `snake_case` API names and raw database column names are accepted
 | `mobile`, `byod` | booleans (`true/false`, `1/0`, `yes/no`) |
 | `last_seen` | ISO-8601 or `Y-m-d H:i:s` (stored UTC) |
 | `user_email`, `status`, `warranty`, `asset`, `purchase_date` | same |
+| `logged_username`, `device_model`, `gpus`, `ram_gb` | same (free text) |
 | `cypher_id`, `cypher_key`, `notes`, `cpus`, `hds`, `hds_types` | same |
 | `hds_spaces_gb`, `network_adapters`, `mac_addresses`, `eset_components` | same |
+| `physical_disks`, `disks` (alias) | `assets.PhysicalDisks` (structured, see below) |
+| `disks_total_gb`, `disks_free_gb`, `disks_used_gb` | derived, read-only |
 | `primary_local_ip`, `primary_remote_ip` | same |
 | `company`, `source`, `source_ref` | same |
 | `source_slug` | alias for `source` (same slug shown on Settings → API keys) |
@@ -307,6 +310,63 @@ can use the same name for both.
 * `is_unique` fields reject duplicates with `errors["custom.<key>"]="duplicate"`
 * default merge behaviour keeps untouched values; `?custom_mode=replace` clears
   omitted ones
+
+## Physical disks (`physical_disks`)
+
+`physical_disks` is the canonical disk inventory: one array of objects per
+physical disk, each with its volumes. Keys are **forgiving on input** (camelCase,
+snake_case or `PascalCase` all land on the same member; `size`/`free`,
+`bus`, `type`, `mount`, `label` are accepted shortcuts) and **always snake_case
+on output**.
+
+```json
+"physical_disks": [
+  {
+    "number": 0,
+    "friendly_name": "WD Green M.2 2280 480GB",
+    "media_type": "SSD",
+    "bus_type": "NVMe",
+    "size_gb": 476.94,
+    "free_gb": 210.5,
+    "used_gb": 266.44,
+    "volumes": [
+      {"drive": "C:", "label": "Windows", "total_gb": 476.94, "free_gb": 210.5, "used_gb": 266.44}
+    ]
+  }
+]
+```
+
+Accepted members: `number` (`index`/`slot`/`id`), `friendly_name` (`name`/
+`model`), `media_type` (`type`/`kind`), `bus_type` (`bus`/`interface`),
+`size_gb` (`size`/`capacity`/`total`), `free_gb` (`free`/`available`),
+`used_gb` (`used`/`occupied`) and `volumes` (`partitions`). Volume members:
+`drive` (`letter`/`mount`/`path`), `label` (`name`), `total_gb`, `free_gb`,
+`used_gb`.
+
+* **`used_gb` is optional** — when it is omitted the server derives it as
+  `size_gb - free_gb` (and `total_gb - free_gb` for volumes), so an agent never
+  has to compute it. A supplied value is kept.
+* Limits: ≤ 32 disks, ≤ 64 volumes per disk, text ≤ 191 characters, numbers ≥ 0
+  and ≤ 10 000 000 (GB), rounded to two decimals. Breaches answer
+  `422` with `errors.PhysicalDisks` = `invalid_disks`, `invalid_number`,
+  `too_many_disks` or `too_many_volumes` (error keys are the column names, like
+  `errors.SN`).
+* `null` or `[]` clears the inventory; omitting the key on `PATCH` leaves it
+  untouched (`PUT` clears it, like every other omitted column).
+
+Writing it also **recomputes** the derived columns, so they are never sent:
+
+| Derived | Content |
+|---|---|
+| `hds` | disk names, comma separated |
+| `hds_types` | `media_type` + `bus_type` per disk |
+| `hds_spaces_gb` | sizes in GB, comma separated |
+| `disks_total_gb`, `disks_free_gb`, `disks_used_gb` | sums in GB, two decimals |
+
+That keeps the old ESET-style text columns, the grid, the export and the audit
+trail readable without parsing JSON (the raw JSON is deliberately excluded from
+the history diff). The roll-ups are sortable and searchable through the panel;
+`physical_disks` itself only answers `GET`.
 
 ## Notes for ESET-style integrations
 

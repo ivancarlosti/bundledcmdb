@@ -243,6 +243,8 @@ function panel_device_payload(array $row, array $custom = [], int $filesCount = 
         'manufacturer'      => $row['Manufacturer'] ?? null,
         'last_seen'         => asset_iso_datetime(isset($row['LastSeen']) ? (string) $row['LastSeen'] : null),
         'user_email'        => $row['UserEmail'] ?? null,
+        'logged_username'   => $row['LoggedUsername'] ?? null,
+        'device_model'      => $row['DeviceModel'] ?? null,
         'byod'              => asset_bool_parse($row['BYOD'] ?? null),
         'status'            => $row['Status'] ?? null,
         'warranty'          => $row['Warranty'] ?? null,
@@ -252,9 +254,15 @@ function panel_device_payload(array $row, array $custom = [], int $filesCount = 
         'cypher_key'        => $row['CypherKey'] ?? null,
         'notes'             => $row['Notes'] ?? null,
         'cpus'              => $row['CPUs'] ?? null,
+        'gpus'              => $row['GPUs'] ?? null,
+        'ram_gb'            => $row['RAMGB'] ?? null,
         'hds'               => $row['HDs'] ?? null,
         'hds_types'         => $row['HDsTypes'] ?? null,
         'hds_space_gb'      => $row['HDsSpacesGB'] ?? null,
+        'physical_disks'    => disks_decode($row['PhysicalDisks'] ?? null),
+        'disks_total_gb'    => isset($row['DisksTotalGB']) ? (float) $row['DisksTotalGB'] : null,
+        'disks_free_gb'     => isset($row['DisksFreeGB']) ? (float) $row['DisksFreeGB'] : null,
+        'disks_used_gb'     => isset($row['DisksUsedGB']) ? (float) $row['DisksUsedGB'] : null,
         'network_adapters'  => $row['NetworkAdapters'] ?? null,
         'mac_addresses'     => $row['MACAddresses'] ?? null,
         'eset_components'   => $row['ESETComponents'] ?? null,
@@ -573,6 +581,8 @@ function panel_device_payload_keys(): array
         'Manufacturer'    => 'manufacturer',
         'LastSeen'        => 'last_seen',
         'UserEmail'       => 'user_email',
+        'LoggedUsername'  => 'logged_username',
+        'DeviceModel'     => 'device_model',
         'BYOD'            => 'byod',
         'Status'          => 'status',
         'Warranty'        => 'warranty',
@@ -582,9 +592,15 @@ function panel_device_payload_keys(): array
         'CypherKey'       => 'cypher_key',
         'Notes'           => 'notes',
         'CPUs'            => 'cpus',
+        'GPUs'            => 'gpus',
+        'RAMGB'           => 'ram_gb',
         'HDs'             => 'hds',
         'HDsTypes'        => 'hds_types',
         'HDsSpacesGB'     => 'hds_space_gb',
+        'PhysicalDisks'   => 'physical_disks',
+        'DisksTotalGB'    => 'disks_total_gb',
+        'DisksFreeGB'     => 'disks_free_gb',
+        'DisksUsedGB'     => 'disks_used_gb',
         'NetworkAdapters' => 'network_adapters',
         'MACAddresses'    => 'mac_addresses',
         'ESETComponents'  => 'eset_components',
@@ -752,6 +768,11 @@ function panel_devices_export_rows(
             foreach ($columns as $column) {
                 $key = $payloadKeys[(string) $column['key']] ?? null;
                 $value = $key === null ? '' : ($payload[$key] ?? '');
+                if (is_array($value)) {
+                    // Structured columns (`physical_disks`) have no flat
+                    // representation; their summaries carry the same data.
+                    $value = '';
+                }
 
                 if ($column['key'] === 'Status' && is_string($value) && $value !== '') {
                     $value = locale_translate($statusKeys[$value] ?? $value, $locale);

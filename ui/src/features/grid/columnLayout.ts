@@ -51,6 +51,17 @@ export function applyColumnLayout<T extends WithId>(columns: T[], layout: Column
   return ordered.filter((column) => allowed.has(String(column.id)));
 }
 
+/**
+ * The layout the grid should apply.
+ *
+ * A layout locked by an administrator (`/meta.gridLayout.locked`) is decided for
+ * everyone: the stored per-user layout is ignored for order *and* visibility, so
+ * the grid falls back to the column order `/meta` publishes.
+ */
+export function effectiveLayout(locked: boolean, layout: ColumnLayout): ColumnLayout {
+  return locked ? null : layout;
+}
+
 /** Effective order: stored order, then any column the layout does not mention. */
 export function resolveOrder(ids: string[], layout: ColumnLayout): string[] {
   const stored = layout?.order ?? [];

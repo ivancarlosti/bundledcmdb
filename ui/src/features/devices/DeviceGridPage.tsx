@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Alert, Button, Checkbox, Field, Input, Select, Spinner } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
 import { ColumnPicker } from '@/features/grid/ColumnPicker';
-import { applyColumnLayout, resolveOrder, resolveVisible } from '@/features/grid/columnLayout';
+import { applyColumnLayout, effectiveLayout, resolveOrder, resolveVisible } from '@/features/grid/columnLayout';
 import { DataGrid } from '@/features/grid/DataGrid';
 import {
   applyFilters,
@@ -110,7 +110,10 @@ export function DeviceGridPage() {
   );
 
   const columnIds = useMemo(() => allColumns.map((column) => String(column.id)), [allColumns]);
-  const layout = session.gridState;
+  // A locked layout is the admin's decision for everyone: the stored per-user
+  // layout is ignored for order *and* visibility, and the picker is disabled.
+  const locked = metaQuery.data?.gridLayout?.locked === true;
+  const layout = effectiveLayout(locked, session.gridState);
   const order = useMemo(() => resolveOrder(columnIds, layout), [columnIds, layout]);
   const visible = useMemo(() => resolveVisible(columnIds, layout), [columnIds, layout]);
   const columns = useMemo(() => applyColumnLayout(allColumns, { order, visible }), [allColumns, order, visible]);
@@ -125,6 +128,9 @@ export function DeviceGridPage() {
   );
 
   const onLayoutChange = (next: { order: string[]; visible: string[] }) => {
+    if (locked) {
+      return;
+    }
     preferences.mutate({ grid_state: { order: next.order, visible: next.visible } });
   };
 
@@ -156,7 +162,7 @@ export function DeviceGridPage() {
       dir: saved.dir ?? '',
       page: 1,
     }));
-    if (saved.order !== undefined || saved.visible !== undefined) {
+    if (!locked && (saved.order !== undefined || saved.visible !== undefined)) {
       preferences.mutate({ grid_state: { order: saved.order ?? order, visible: saved.visible ?? visible } });
     }
   };
@@ -346,11 +352,12 @@ export function DeviceGridPage() {
             {t('export_xlsx_btn')}
           </a>
           <SavedViewsMenu currentState={currentViewState} onApply={onApplyView} />
+          {locked ? <span className="text-xs text-[var(--color-muted)]">{t('ui_columns_locked')}</span> : null}
           <ColumnPicker
             items={pickerItems}
             order={order}
             visible={visible}
-            disabled={preferences.isPending}
+            disabled={locked || preferences.isPending}
             onChange={onLayoutChange}
           />
         </div>

@@ -135,6 +135,10 @@ function panel_settings_payload(): array
     ];
 
     foreach (settings_all(true) as $key => $entry) {
+        if (!empty($entry['def']['hidden'])) {
+            // Settings with their own screen (grid layout) stay out of this form.
+            continue;
+        }
         $group = (string) ($entry['def']['group'] ?? 'general');
         if (!isset($groups[$group])) {
             $groups[$group] = [
@@ -1259,5 +1263,157 @@ function panel_settings_maintenance_migrate(array $params = []): array
             'ready'   => $payload['migrations']['ready'],
         ],
     ];
+}
+
+// --- Grid columns --------------------------------------------------------
+
+/**
+ * Every column the admin may show in the grid, in the current order.
+ *
+ * Built-in columns come from `asset_column_defs()` (labelled with their `col_*`
+ * translation key), custom fields from `asset_field_defs` (labelled with their
+ * own localized label). `enabled` is what the device grid renders; ids missing
+ * from `layout.order` are appended by `grid_layout_normalize()`.
+ */
+function panel_settings_columns_payload(?PDO $pdo = null): array
+{
+    $pdo ??= db_try();
+    $layout = grid_layout_get($pdo);
+    $defs = asset_column_defs();
+
+    $custom = [];
+    if ($pdo !== null && db_table_exists($pdo, 'asset_field_defs')) {
+        foreach (field_defs($pdo) as $def) {
+            $custom['custom:' . (string) $def['field_key']] = $def;
+        }
+    }
+
+    $columns = [];
+    foreach ((array) $layout['order'] as $id) {
+        $id = (string) $id;
+        if ($id === 'files') {
+            $columns[] = [
+                'id'        => 'files',
+                'label'     => 'Attachments',
+                'label_key' => 'col_files',
+                'group'     => 'builtin',
+                'enabled'   => grid_layout_enabled('files', $layout),
+                'default'   => true,
+            ];
+            continue;
+        }
+        if (str_starts_with($id, 'custom:')) {
+            $def = $custom[$id] ?? null;
+            if ($def === null) {
+                continue;
+            }
+            $columns[] = [
+                'id'        => $id,
+                'label'     => (string) $def['label'],
+                'label_key' => null,
+                'group'     => 'custom',
+                'enabled'   => grid_layout_enabled($id, $layout),
+                'default'   => (int) $def['show_in_grid'] === 1,
+            ];
+            continue;
+        }
+        if (!isset($defs[$id])) {
+            continue;
+        }
+        $columns[] = [
+            'id'        => $id,
+            'label'     => (string) ($defs[$id]['label'] ?? $id),
+            'label_key' => panel_column_label_key($id),
+            'group'     => 'builtin',
+            'enabled'   => grid_layout_enabled($id, $layout),
+            'default'   => !empty($defs[$id]['grid']),
+        ];
+    }
+
+    return [
+        'columns' => $columns,
+        'layout'  => [
+            'order'   => array_values((array) $layout['order']),
+            'enabled' => array_values((array) $layout['enabled']),
+            'locked'  => (bool) $layout['locked'],
+        ],
+    ];
+}
+
+/** GET /settings/columns */
+function panel_settings_columns_index(array $params = []): array
+{
+    panel_settings_user();
+    return ['data' => panel_settings_columns_payload(db())];
+}
+
+/**
+ * PUT /settings/columns — body `{"order": […], "enabled": […], "locked": bool}`.
+ *
+ * Omitted keys keep their stored value, so the tab can save the order without
+ * resending the visibility list. `order` may name columns that are disabled:
+ * the order is what the grid will use if the admin enables them later.
+ */
+function panel_settings_columns_update(array $params = []): array
+{
+    $user = panel_settings_writer();
+    $pdo = db();
+    $body = panel_settings_body();
+    $before = grid_layout_get($pdo);
+
+    $result = grid_layout_save($body, (string) $user['email'], $pdo);
+    if (!$result['ok']) {
+        throw new ApiError('validation_failed', 'The column layout could not be saved.', 422, $result['errors']);
+    }
+
+    $after = $result['layout'];
+    $changes = [];
+    if ($before['enabled'] !== $after['enabled']) {
+        $changes['enabled'] = [
+            implode(',', (array) $before['enabled']),
+            implode(',', (array) $after['enabled']),
+        ];
+    }
+    if ($before['order'] !== $after['order']) {
+        $changes['order'] = [
+            implode(',', (array) $before['order']),
+            implode(',', (array) $after['order']),
+        ];
+    }
+    if ((bool) $before['locked'] !== (bool) $after['locked']) {
+        $changes['locked'] = [$before['locked'] ? '1' : '0', $after['locked'] ? '1' : '0'];
+    }
+    if ($changes !== []) {
+        panel_settings_audit($pdo, $user, 'update', 'grid_layout', 'columns', 'Device grid columns', $changes);
+    }
+
+    return [
+        'data' => panel_settings_columns_payload($pdo),
+        'meta' => ['saved' => array_keys($changes)],
+    ];
+}
+
+/** DELETE /settings/columns — back to the layout the code ships. */
+function panel_settings_columns_delete(array $params = []): array
+{
+    $user = panel_settings_writer();
+    $pdo = db();
+    $before = grid_layout_get($pdo);
+
+    settings_forget(GRID_LAYOUT_SETTING);
+    $after = grid_layout_get($pdo);
+
+    panel_settings_audit(
+        $pdo,
+        $user,
+        'update',
+        'grid_layout',
+        'columns',
+        'Device grid columns',
+        ['layout' => [json_encode($before), json_encode($after)]],
+        'Reset to the built-in column layout'
+    );
+
+    return ['data' => panel_settings_columns_payload($pdo), 'meta' => ['reset' => true]];
 }
 

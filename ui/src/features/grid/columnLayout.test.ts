@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyColumnLayout, moveColumn, resolveOrder, resolveVisible, toggleColumn } from './columnLayout';
+import {
+  applyColumnLayout,
+  effectiveLayout,
+  moveColumn,
+  resolveOrder,
+  resolveVisible,
+  toggleColumn,
+} from './columnLayout';
 
 const columns = [{ id: 'sn' }, { id: 'hostname' }, { id: 'status' }, { id: 'files' }];
 const ids = columns.map((column) => column.id);
@@ -41,6 +48,20 @@ describe('resolveOrder / resolveVisible', () => {
 
   it('ignores unknown ids in the stored visibility', () => {
     expect(resolveVisible(ids, { visible: ['sn', 'nope'] })).toEqual(['sn']);
+  });
+});
+
+describe('effectiveLayout', () => {
+  it('applies the per-user layout while the admin layout is unlocked', () => {
+    const layout = { order: ['status'], visible: ['status'] };
+    expect(effectiveLayout(false, layout)).toBe(layout);
+  });
+
+  it('ignores order and visibility once the admin layout is locked', () => {
+    const layout = { order: ['status'], visible: ['status'] };
+    expect(effectiveLayout(true, layout)).toBeNull();
+    // The grid then keeps the order `/meta` publishes, visibility included.
+    expect(applyColumnLayout(columns, effectiveLayout(true, layout)).map((column) => column.id)).toEqual(ids);
   });
 });
 

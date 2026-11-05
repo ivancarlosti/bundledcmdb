@@ -170,7 +170,8 @@ function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 
     $sourceRef = trim((string) ($data['source_ref'] ?? '')) ?: null;
 
     unset($data['source'], $data['source_ref']);
-    $data = asset_normalize_input($data);
+    $normalizeErrors = [];
+    $data = asset_normalize_input($data, $normalizeErrors);
     $data['company'] = $company;
 
     $existing = null;
@@ -185,7 +186,7 @@ function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 
 
     $partial = $existing !== null;
     $errors = api_merge_errors(
-        array_merge($errors, asset_validate($data, $partial)),
+        array_merge($errors, $normalizeErrors, asset_validate($data, $partial)),
         api_validate_custom($pdo, $payload)
     );
     if ($errors !== []) {
@@ -272,9 +273,12 @@ function api_patch_device(PDO $pdo, array $auth, int $id, array $payload): array
         }
     }
 
-    $data = asset_normalize_input($data);
+    // Initialised before the call: `asset_normalize_input()` collects into the
+    // array it is handed, and `null` means "the caller does not want them".
+    $normalizeErrors = [];
+    $data = asset_normalize_input($data, $normalizeErrors);
     $errors = api_merge_errors(
-        array_merge($errors, asset_validate($data, true)),
+        array_merge($errors, $normalizeErrors, asset_validate($data, true)),
         api_validate_custom($pdo, $payload)
     );
     if ($errors !== []) {

@@ -198,6 +198,158 @@ check(
     'events: bookkeeping columns never count as a change'
 );
 check(asset_event_diff([], ['SN' => 'A']) === ['SN' => [null, 'A']], 'events: a create reports every set column');
+check(
+    asset_event_diff(['PhysicalDisks' => '[]'], ['PhysicalDisks' => '[{"number":0}]']) === [],
+    'events: the raw disk JSON stays out of the history',
+    json_encode(asset_event_diff(['PhysicalDisks' => '[]'], ['PhysicalDisks' => '[{"number":0}]']))
+);
+
+// --- physical disks (no database needed) -----------------------------------
+// The agent payload is forgiving on input (camelCase, `size`/`free`, no
+// `used_gb`) and canonical on output: snake_case keys, sorted by slot, with
+// `used_gb` derived as `size_gb - free_gb`.
+$parsedDisks = disks_normalize([
+    [
+        'index'        => 1,
+        'friendlyName' => 'WD Green M.2',
+        'mediaType'    => 'SSD',
+        'busType'      => 'NVMe',
+        'sizeGb'       => 476.94,
+        'freeGb'       => 210.5,
+        'volumes'      => [['drive' => 'C:', 'label' => 'Windows', 'totalGb' => 476.94, 'freeGb' => 210.5]],
+    ],
+    [
+        'number' => 0,
+        'name'   => 'Seagate Expansion',
+        'type'   => 'HDD',
+        'bus'    => 'USB',
+        'size'   => 1863.02,
+        'free'   => 1740.25,
+        'used'   => 122.78,
+    ],
+]);
+check($parsedDisks['ok'] === true && $parsedDisks['error'] === null, 'disks: a mixed payload validates');
+check(
+    array_keys($parsedDisks['disks'][0] ?? []) === ['number', 'friendly_name', 'media_type', 'bus_type', 'size_gb', 'free_gb', 'used_gb', 'volumes'],
+    'disks: the output shape is snake_case',
+    json_encode(array_keys($parsedDisks['disks'][0] ?? []))
+);
+check((int) ($parsedDisks['disks'][0]['number'] ?? -1) === 0, 'disks: the list is sorted by slot number');
+check(
+    ($parsedDisks['disks'][1]['friendly_name'] ?? null) === 'WD Green M.2',
+    'disks: camelCase members land on their canonical key'
+);
+check(
+    ($parsedDisks['disks'][1]['used_gb'] ?? null) === 266.44,
+    'disks: used_gb is derived from size_gb - free_gb',
+    json_encode($parsedDisks['disks'][1]['used_gb'] ?? null)
+);
+check(($parsedDisks['disks'][1]['volumes'][0]['used_gb'] ?? null) === 266.44, 'disks: volume used_gb is derived too');
+check(($parsedDisks['disks'][0]['used_gb'] ?? null) === 122.78, 'disks: a supplied used_gb is kept as sent');
+
+$diskSummary = disks_summary($parsedDisks['disks']);
+check($diskSummary['HDs'] === 'Seagate Expansion, WD Green M.2', 'disks: HDs lists the disk names', (string) $diskSummary['HDs']);
+check($diskSummary['HDsTypes'] === 'HDD USB, SSD NVMe', 'disks: HDsTypes lists media and bus', (string) $diskSummary['HDsTypes']);
+check($diskSummary['HDsSpacesGB'] === '1863.02, 476.94', 'disks: HDsSpacesGB lists the sizes', (string) $diskSummary['HDsSpacesGB']);
+check($diskSummary['DisksTotalGB'] === 2339.96, 'disks: the total roll-up sums the disks', (string) $diskSummary['DisksTotalGB']);
+check($diskSummary['DisksFreeGB'] === 1950.75, 'disks: the free roll-up sums the disks', (string) $diskSummary['DisksFreeGB']);
+check($diskSummary['DisksUsedGB'] === 389.22, 'disks: the used roll-up sums the disks', (string) $diskSummary['DisksUsedGB']);
+check(
+    disks_summary([]) === [
+        'HDs' => null, 'HDsTypes' => null, 'HDsSpacesGB' => null,
+        'DisksTotalGB' => null, 'DisksFreeGB' => null, 'DisksUsedGB' => null,
+    ],
+    'disks: an empty list clears every derived column'
+);
+
+check(disks_normalize(null)['disks'] === [], 'disks: null clears the inventory');
+check(disks_normalize([['sizeGb' => 'lots']])['error'] === 'invalid_number', 'disks: a non-numeric size is invalid_number');
+check(disks_normalize([['sizeGb' => -5]])['error'] === 'invalid_number', 'disks: a negative size is invalid_number');
+check(disks_normalize('{"number":0}')['error'] === 'invalid_disks', 'disks: a JSON object is not a list');
+check(disks_normalize([['volumes' => 'C:']])['error'] === 'invalid_disks', 'disks: volumes must be a list');
+check(
+    disks_normalize(array_fill(0, DISKS_MAX_DISKS + 1, ['number' => 0]))['error'] === 'too_many_disks',
+    'disks: the payload is bounded'
+);
+check(disks_decode('not json') === [], 'disks: invalid stored JSON degrades to "no data"');
+check(disks_decode('[{"number":0},"x"]') === [['number' => 0]], 'disks: non-object entries are dropped');
+check(disks_encode([]) === null, 'disks: an empty list is stored as NULL');
+check(disks_gb_text(476.94) === '476.94' && disks_gb_text(477.0) === '477', 'disks: GB text drops trailing zeros');
+
+$diskWrites = [];
+$diskWritten = asset_normalize_input(['PhysicalDisks' => [['number' => 0, 'sizeGb' => 100, 'freeGb' => 40]]], $diskWrites);
+check($diskWrites === [], 'disks: writing a payload reports no error', json_encode($diskWrites));
+check(($diskWritten['DisksTotalGB'] ?? null) === 100.0, 'disks: the write also sets DisksTotalGB');
+check(($diskWritten['DisksUsedGB'] ?? null) === 60.0, 'disks: the write also sets DisksUsedGB');
+check(($diskWritten['HDs'] ?? null) === 'Disk 0', 'disks: an unnamed disk still gets a label');
+$diskWrites = [];
+asset_normalize_input(['PhysicalDisks' => [['sizeGb' => 'x']]], $diskWrites);
+check($diskWrites === ['PhysicalDisks' => 'invalid_number'], 'disks: a bad payload surfaces as a field error', json_encode($diskWrites));
+
+$diskMapped = asset_api_map_input([
+    'physical_disks'  => [],
+    'gpus'            => 'NVIDIA RTX 4060',
+    'ram_gb'          => '32',
+    'logged_username' => 'jdoe',
+    'device_model'    => 'Dell Latitude 5440',
+]);
+check($diskMapped['unknown'] === [], 'disks: the new API keys are known', json_encode($diskMapped['unknown']));
+check(
+    ($diskMapped['data']['PhysicalDisks'] ?? null) === []
+    && ($diskMapped['data']['GPUs'] ?? null) === 'NVIDIA RTX 4060'
+    && ($diskMapped['data']['RAMGB'] ?? null) === '32'
+    && ($diskMapped['data']['LoggedUsername'] ?? null) === 'jdoe'
+    && ($diskMapped['data']['DeviceModel'] ?? null) === 'Dell Latitude 5440',
+    'disks: the API keys map onto their columns',
+    json_encode($diskMapped['data'])
+);
+
+$diskApiRow = asset_api_payload([
+    'PhysicalDisks' => '[{"number":0}]',
+    'DisksTotalGB'  => '476.94',
+    'DisksFreeGB'   => '210.50',
+    'DisksUsedGB'   => '266.44',
+    'GPUs'          => 'NVIDIA RTX 4060',
+    'RAMGB'         => '32',
+    'LoggedUsername' => 'jdoe',
+    'DeviceModel'   => 'Dell Latitude 5440',
+]);
+check($diskApiRow['physical_disks'] === [['number' => 0]], 'disks: the API returns the decoded list');
+check($diskApiRow['disks_free_gb'] === 210.5, 'disks: the roll-ups are numbers on the wire', json_encode($diskApiRow['disks_free_gb']));
+check(
+    $diskApiRow['gpus'] === 'NVIDIA RTX 4060' && $diskApiRow['ram_gb'] === '32'
+    && $diskApiRow['logged_username'] === 'jdoe' && $diskApiRow['device_model'] === 'Dell Latitude 5440',
+    'disks: the new fields are published on the API payload'
+);
+
+// --- grid layout (no database needed) --------------------------------------
+$layoutDefaults = grid_layout_defaults(null);
+check(in_array('SN', $layoutDefaults['enabled'], true), 'grid: the code default follows the `grid` flag');
+check(!in_array('CPUs', $layoutDefaults['enabled'], true), 'grid: a hidden column is off by default');
+check(in_array('files', $layoutDefaults['enabled'], true), 'grid: the virtual files column is on by default');
+check($layoutDefaults['locked'] === false, 'grid: unlocked by default');
+check(!in_array('Id', grid_layout_ids(null), true), 'grid: the internal id column is never offered');
+
+$layoutSaved = grid_layout_normalize(['order' => ['CPUs', 'SN'], 'enabled' => ['CPUs', 'SN'], 'locked' => true], null);
+check($layoutSaved['locked'] === true, 'grid: the lock flag is normalised');
+check($layoutSaved['enabled'] === ['CPUs', 'SN'], 'grid: visibility keeps the requested ids', json_encode($layoutSaved['enabled']));
+check($layoutSaved['order'][0] === 'CPUs' && $layoutSaved['order'][1] === 'SN', 'grid: the requested order wins');
+check(in_array('Status', $layoutSaved['order'], true), 'grid: ids the request omits keep their default slot');
+check(
+    grid_layout_normalize(['order' => ['Nope'], 'enabled' => ['Nope']], null)['enabled'] === [],
+    'grid: unknown ids are dropped'
+);
+
+$layoutOrdered = grid_layout_apply_order(
+    [['key' => 'SN'], ['key' => 'Status'], ['key' => 'CPUs'], ['key' => 'custom:x']],
+    ['order' => ['CPUs', 'SN']]
+);
+check(
+    array_column($layoutOrdered, 'key') === ['CPUs', 'SN', 'Status', 'custom:x'],
+    'grid: applying the order keeps the untouched columns at the end',
+    json_encode(array_column($layoutOrdered, 'key'))
+);
+
 
 // --- audit retention (no database needed) -----------------------------------
 $fixed = new DateTimeImmutable('2026-11-05 12:00:00', new DateTimeZone('UTC'));
@@ -563,6 +715,90 @@ try {
     $sorted = panel_devices_index();
     check(($sorted['meta']['sort'] ?? '') === 'SN', 'list: meta.sort echoes the column');
     $_GET = [];
+
+    // --- hardware fields: role gate ---------------------------------------
+    as_role('admin', $companyA);
+    body([
+        'device_model'    => 'Dell Latitude 5440',
+        'logged_username' => 'jdoe',
+        'gpus'            => 'NVIDIA RTX 4060',
+        'ram_gb'          => '32',
+    ]);
+    $hardware = panel_devices_update(['id' => (string) $id])['data'];
+    check($hardware['device_model'] === 'Dell Latitude 5440', 'hardware: admin writes device_model');
+    check($hardware['logged_username'] === 'jdoe', 'hardware: admin writes logged_username');
+    check($hardware['gpus'] === 'NVIDIA RTX 4060', 'hardware: admin writes gpus');
+    check($hardware['ram_gb'] === '32', 'hardware: admin writes ram_gb');
+
+    as_role('manager', $companyA);
+    body(['device_model' => 'Lenovo ThinkPad']);
+    check(
+        panel_devices_update(['id' => (string) $id])['data']['device_model'] === 'Lenovo ThinkPad',
+        'hardware: manager may edit device_model'
+    );
+    body(['gpus' => 'x']);
+    check_error('hardware: manager cannot write gpus → 422', fn () => panel_devices_update(['id' => (string) $id]), 'validation_failed', 422, [
+        'gpus' => 'unknown_field',
+    ]);
+    body(['physical_disks' => []]);
+    check_error('hardware: the panel never writes the disk JSON', fn () => panel_devices_update(['id' => (string) $id]), 'validation_failed', 422, [
+        'physical_disks' => 'unknown_field',
+    ]);
+
+    // --- disks: the API write path ----------------------------------------
+    // `physical_disks` is API-only, so it goes through the same helpers
+    // `public/api.php` uses and is then read back through the panel payload.
+    $diskErrors = [];
+    $diskData = asset_normalize_input([
+        'PhysicalDisks' => [[
+            'number'       => 0,
+            'friendlyName' => 'WD Green M.2',
+            'mediaType'    => 'SSD',
+            'busType'      => 'NVMe',
+            'sizeGb'       => 476.94,
+            'freeGb'       => 210.5,
+            'volumes'      => [['drive' => 'C:', 'label' => 'Windows', 'totalGb' => 476.94, 'freeGb' => 210.5]],
+        ]],
+    ], $diskErrors);
+    check($diskErrors === [], 'disks: the API payload validates', json_encode($diskErrors));
+    asset_update($pdo, $id, $diskData, 'tester@example.com', $companyA === '' ? null : $companyA);
+
+    as_role('manager', $companyA);
+    $diskRow = panel_devices_show(['id' => (string) $id])['data'];
+    check(count($diskRow['physical_disks']) === 1, 'disks: the JSON is stored and decoded');
+    check(($diskRow['physical_disks'][0]['used_gb'] ?? null) === 266.44, 'disks: used_gb survives the round trip');
+    check(
+        $diskRow['disks_total_gb'] === 476.94 && $diskRow['disks_free_gb'] === 210.5 && $diskRow['disks_used_gb'] === 266.44,
+        'disks: the roll-ups are recomputed on write',
+        json_encode([$diskRow['disks_total_gb'], $diskRow['disks_free_gb'], $diskRow['disks_used_gb']])
+    );
+    check($diskRow['hds'] === 'WD Green M.2', 'disks: HDs follows the JSON', (string) $diskRow['hds']);
+    check($diskRow['hds_types'] === 'SSD NVMe', 'disks: HDsTypes follows the JSON', (string) $diskRow['hds_types']);
+    check($diskRow['hds_space_gb'] === '476.94', 'disks: HDsSpacesGB follows the JSON', (string) $diskRow['hds_space_gb']);
+
+    $_GET = ['q' => 'WD Green'];
+    check(
+        in_array($id, array_column(panel_devices_index()['data']['rows'], 'id'), true),
+        'disks: the "any" search reaches the disk JSON'
+    );
+    $_GET = ['q' => 'no-such-disk-name'];
+    check(
+        !in_array($id, array_column(panel_devices_index()['data']['rows'], 'id'), true),
+        'disks: a miss stays a miss'
+    );
+    $_GET = ['sort' => 'DisksFreeGB', 'dir' => 'asc'];
+    check((panel_devices_index()['meta']['sort'] ?? '') === 'DisksFreeGB', 'disks: the free-space roll-up is sortable');
+    $_GET = [];
+
+    // Clearing the inventory clears the derived columns, so the grid cannot show
+    // a summary for disks that are no longer reported.
+    asset_update($pdo, $id, asset_normalize_input(['PhysicalDisks' => null]), 'tester@example.com', $companyA === '' ? null : $companyA);
+    $clearedDisks = panel_devices_show(['id' => (string) $id])['data'];
+    check(
+        $clearedDisks['physical_disks'] === [] && $clearedDisks['disks_free_gb'] === null && $clearedDisks['hds'] === null,
+        'disks: clearing the JSON clears the summaries',
+        json_encode([$clearedDisks['physical_disks'], $clearedDisks['disks_free_gb'], $clearedDisks['hds']])
+    );
 
     // --- byod filter -------------------------------------------------------
     // Regression: `BYOD` is a VARCHAR holding 'true'/'false'. Binding integer
@@ -1298,6 +1534,55 @@ try {
         } else {
             settings_forget('s3.prefix');
         }
+    }
+
+    // --- settings: grid columns -------------------------------------------
+    as_role('admin', $companyA);
+    $layoutBefore = (string) settings_get(GRID_LAYOUT_SETTING, '');
+    $columnsPayload = panel_settings_columns_index()['data'];
+    $columnIds = array_column($columnsPayload['columns'], 'id');
+    check($columnIds !== [], 'columns: the catalogue is published');
+    check(
+        in_array('SN', $columnIds, true) && in_array('files', $columnIds, true),
+        'columns: built-in and virtual columns are offered'
+    );
+    check(in_array('CPUs', $columnIds, true), 'columns: a column shipped "off" can be enabled');
+    check(!in_array('Id', $columnIds, true), 'columns: the internal id stays out');
+    check($columnsPayload['layout']['locked'] === false, 'columns: the default layout is unlocked');
+    check(
+        !in_array('ui', array_column(panel_settings_show()['data']['groups'], 'id'), true),
+        'columns: the hidden layout setting has no card of its own'
+    );
+
+    check_error('columns: unknown column → 422', function (): void {
+        body(['enabled' => ['SN', 'Nope']]);
+        panel_settings_columns_update();
+    }, 'validation_failed', 422, ['enabled' => 'unknown_column']);
+
+    body(['order' => ['CPUs', 'SN'], 'enabled' => ['CPUs', 'SN'], 'locked' => true]);
+    $savedColumns = panel_settings_columns_update()['data'];
+    check($savedColumns['layout']['enabled'] === ['CPUs', 'SN'], 'columns: visibility is saved', json_encode($savedColumns['layout']['enabled']));
+    check($savedColumns['layout']['order'][0] === 'CPUs', 'columns: the order is saved');
+    check($savedColumns['layout']['locked'] === true, 'columns: the lock is saved');
+
+    $lockedMeta = panel_meta_show()['data'];
+    check($lockedMeta['gridLayout']['locked'] === true, 'columns: /meta publishes the lock');
+    check(array_column($lockedMeta['columns'], 'key')[0] === 'CPUs', 'columns: /meta follows the admin order');
+    $inGrid = [];
+    foreach ($lockedMeta['columns'] as $column) {
+        $inGrid[(string) $column['key']] = (bool) $column['in_grid'];
+    }
+    check(($inGrid['SN'] ?? false) === true, 'columns: an enabled column stays in the grid');
+    check(($inGrid['Status'] ?? true) === false, 'columns: a disabled column leaves the grid');
+
+    $resetLayout = panel_settings_columns_delete()['data'];
+    $codeDefaults = grid_layout_defaults($pdo);
+    check($resetLayout['layout']['locked'] === false, 'columns: reset unlocks');
+    check($resetLayout['layout']['order'] === $codeDefaults['order'], 'columns: reset restores the code order');
+    check($resetLayout['layout']['enabled'] === $codeDefaults['enabled'], 'columns: reset restores the code visibility');
+    if ($layoutBefore !== '') {
+        // Leave the installation exactly as it was found.
+        settings_set(GRID_LAYOUT_SETTING, $layoutBefore, 'tester@example.com');
     }
 
     // --- settings: sources ------------------------------------------------
