@@ -315,10 +315,26 @@ is `github`, which turns a failure into an annotation on the commit (readable
 without an authenticated job log) and `webServer.stdout/stderr` are piped so
 Vite's own errors show up in the job output.
 
+### Screenshots
+
+`node ui/scripts/screenshots.mjs [baseUrl]` re-captures every image in
+`docs/screenshots/` (default `http://localhost:5600`). It is *not* part of the
+gates: it drives a real stack — the bundle compose file with
+`APP_ENV=development`, `APP_DEV_LOGIN=1`, `APP_DEFAULT_LOCALE=en-US` (the script's
+waits match English labels) and `sql/dev-seed.sql` loaded — signs in through the
+development login and writes the twelve PNGs `README.md` references, so a UI
+change is refreshed with one command instead of hand-cropped pictures. Run
+`npx playwright install chromium` once if the browser is missing.
+
 ## Conventions
 
 * **Server owns the truth.** Sorting, filtering, paging and the CSV/Excel export
   run in SQL; the grid never sorts a full dataset in the browser.
+* **The grid is page-flow.** `DataGrid` contains only the horizontal axis
+  (`overflow-x-auto`), so a wide table never scrolls the page sideways while a
+  long one is read by scrolling the page itself — no scroll box inside a scroll
+  page. Only paging brings the grid back into view (`scroll-mt-24` clears the
+  sticky header), because a new page otherwise starts where the old one ended.
 * **All network access goes through `src/api/client.ts`** — it adds the CSRF
   header, maps error envelopes to typed errors and handles `401` by clearing the
   session query.

@@ -133,6 +133,54 @@ test.describe('device detail layout', () => {
 });
 
 /**
+ * Grid layout: the table is part of the page.
+ *
+ * The grid used to be a `max-h-[calc(100dvh-18rem)] overflow-auto` box, so the
+ * page had a scrollbar *and* the table had one. The table now flows with the
+ * page — only the horizontal axis is contained — and paging scrolls the toolbar
+ * back into view so a new page of rows is not read from the bottom up.
+ */
+test.describe('grid layout', () => {
+  test('flows with the page instead of scrolling in its own box', async ({ page }) => {
+    await mockPanel(page);
+    await page.goto('/app/devices');
+    await expect(page.getByTestId('data-row')).toHaveCount(2);
+
+    const metrics = await page.getByTestId('data-grid-scroll').evaluate((node) => ({
+      overflowX: getComputedStyle(node).overflowX,
+      maxHeight: getComputedStyle(node).maxHeight,
+      verticalScroll: node.scrollHeight > node.clientHeight + 1,
+    }));
+
+    // Wide tables still scroll sideways inside the card (see responsive.spec.ts)…
+    expect(metrics.overflowX).toBe('auto');
+    // …but no height cap, so the rows are read by scrolling the page itself.
+    expect(metrics.maxHeight).toBe('none');
+    expect(metrics.verticalScroll).toBe(false);
+  });
+
+  test('brings the grid back into view when the page changes', async ({ page }) => {
+    await mockPanel(page, { total: 60, pages: 3 });
+    await page.setViewportSize({ width: 1280, height: 400 });
+    await page.goto('/app/devices');
+    await expect(page.getByTestId('data-row')).toHaveCount(2);
+
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect.poll(() => page.url()).toContain('page=2');
+
+    // `scroll-mt-24` keeps the heading clear of the sticky app header.
+    const top = await page
+      .getByRole('heading', { name: 'Devices' })
+      .evaluate((node) => node.getBoundingClientRect().top);
+    expect(top).toBeGreaterThan(0);
+    expect(top).toBeLessThan(200);
+  });
+});
+
+/**
  * Section layout: one list, two screens.
  *
  * The disk-space field used to land in the catch-all *More* tab because the panel

@@ -75,7 +75,8 @@ docker compose -f docker/docker-compose-bundle.yml exec app php bin/migrate.php
 * API: <http://localhost:5600/api/v1/health>
 * MariaDB: `127.0.0.1:33061` (`cmdb`/`cmdb`, database `bundledcmdb`)
 * schema: the database is created from `sql/legacy.sql` (tables only)
-* sample data: `sql/dev-seed.sql` (3 assets, 4 users, 2 tenants), loaded by hand:
+* sample data: `sql/dev-seed.sql` (3 assets, 4 users, 2 tenants and 7 audit
+  rows), loaded by hand:
 
 ```bash
 docker compose -f docker/docker-compose-bundle.yml exec -T db \

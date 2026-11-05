@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, Button, Checkbox, Field, Input, Select, Spinner } from '@/components/ui';
@@ -70,6 +70,20 @@ export function DeviceGridPage() {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [search, state.q, update]);
+
+  // The table is in the page flow (the page scrolls, not the table), so a new
+  // page of rows would otherwise start wherever the previous one ended. Bring
+  // the toolbar back into view when the page number changes — but never on the
+  // first render, where the browser has already restored the scroll position.
+  const sectionRef = useRef<HTMLElement>(null);
+  const lastPage = useRef(state.page);
+  useEffect(() => {
+    if (lastPage.current === state.page) {
+      return;
+    }
+    lastPage.current = state.page;
+    sectionRef.current?.scrollIntoView?.({ block: 'start' });
+  }, [state.page]);
 
   const inlineUpdate = useInlineDeviceUpdate();
   const preferences = usePreferences();
@@ -228,7 +242,7 @@ export function DeviceGridPage() {
   };
 
   return (
-    <section className="flex flex-col gap-3">
+    <section ref={sectionRef} className="flex scroll-mt-24 flex-col gap-3">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h1 className="m-0 text-xl font-semibold">{t('ui_devices')}</h1>

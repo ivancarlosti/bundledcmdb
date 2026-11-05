@@ -118,156 +118,159 @@ export function DataGrid<T extends Record<string, unknown>>({
   const columnCount = table.getAllLeafColumns().length;
 
   return (
-    <div className="card overflow-hidden">
-      <div className="max-h-[calc(100dvh-18rem)] overflow-auto" data-testid="data-grid-scroll" aria-busy={isLoading}>
-        <table aria-label={ariaLabel} className="w-full border-collapse text-sm">
-          <thead className="sticky top-0 z-10">
-            {headerGroups.map((headerGroup) => (
-              <tr key={headerGroup.id} className="bg-[var(--color-surface-2)]">
-                {selection !== undefined ? (
-                  <th scope="col" className="border-b border-[var(--color-border)] px-3 py-2 text-start">
-                    <IndeterminateCheckbox
-                      checked={selection.state === 'all'}
-                      indeterminate={selection.state === 'some'}
-                      aria-label={selection.allLabel}
-                      onChange={(event) => selection.onToggleAll(event.target.checked)}
-                      data-testid="select-all"
-                    />
+    // The grid sits in the page flow: only the horizontal axis is contained
+    // (`overflow-x`), so a wide table never scrolls the page sideways while a long
+    // one is read by scrolling the page itself — no scroll box inside a scroll
+    // page. `p-0` keeps the card's padding off the table (the cells bring their
+    // own), matching the other tables in the panel.
+    <div className="card overflow-x-auto p-0" data-testid="data-grid-scroll" aria-busy={isLoading}>
+      <table aria-label={ariaLabel} className="w-full border-collapse text-sm">
+        <thead>
+          {headerGroups.map((headerGroup) => (
+            <tr key={headerGroup.id} className="bg-[var(--color-surface-2)]">
+              {selection !== undefined ? (
+                <th scope="col" className="border-b border-[var(--color-border)] px-3 py-2 text-start">
+                  <IndeterminateCheckbox
+                    checked={selection.state === 'all'}
+                    indeterminate={selection.state === 'some'}
+                    aria-label={selection.allLabel}
+                    onChange={(event) => selection.onToggleAll(event.target.checked)}
+                    data-testid="select-all"
+                  />
+                </th>
+              ) : null}
+              {headerGroup.headers.map((header) => {
+                const align = (header.column.columnDef.meta as { align?: 'start' | 'end' } | undefined)?.align;
+                const canSort = header.column.getCanSort();
+                const dir = sort.column === header.column.id ? sort.dir : null;
+                const ariaSort = dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none';
+
+                return (
+                  <th
+                    key={header.id}
+                    scope="col"
+                    aria-sort={ariaSort}
+                    className={cn(
+                      'border-b border-[var(--color-border)] px-3 py-2 font-medium whitespace-nowrap text-[var(--color-muted)]',
+                      align === 'end' ? 'text-end' : 'text-start',
+                    )}
+                  >
+                    {header.isPlaceholder ? null : canSort ? (
+                      <button
+                        type="button"
+                        onClick={() => onSort(header.column.id)}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 hover:text-[var(--color-text)]',
+                          dir !== null && 'text-[var(--color-text)]',
+                        )}
+                        data-sort-column={header.column.id}
+                      >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        <SortIcon dir={dir} />
+                      </button>
+                    ) : (
+                      flexRender(header.column.columnDef.header, header.getContext())
+                    )}
                   </th>
-                ) : null}
-                {headerGroup.headers.map((header) => {
-                  const align = (header.column.columnDef.meta as { align?: 'start' | 'end' } | undefined)?.align;
-                  const canSort = header.column.getCanSort();
-                  const dir = sort.column === header.column.id ? sort.dir : null;
-                  const ariaSort = dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none';
+                );
+              })}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {isLoading && rows.length === 0
+            ? Array.from({ length: 8 }, (_, index) => (
+                <tr key={`skeleton-${index}`} className="border-b border-[var(--color-border)]">
+                  {selection !== undefined ? (
+                    <td className="px-3 py-3">
+                      <span className="block size-4 animate-pulse rounded-[var(--radius-sm)] bg-[var(--color-surface-3)]" />
+                    </td>
+                  ) : null}
+                  {headerGroups[0]?.headers.map((header) => (
+                    <td key={header.id} className="px-3 py-3">
+                      <span className="block h-4 w-full animate-pulse rounded-[var(--radius-sm)] bg-[var(--color-surface-3)]" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            : null}
 
-                  return (
-                    <th
-                      key={header.id}
-                      scope="col"
-                      aria-sort={ariaSort}
-                      className={cn(
-                        'border-b border-[var(--color-border)] px-3 py-2 font-medium whitespace-nowrap text-[var(--color-muted)]',
-                        align === 'end' ? 'text-end' : 'text-start',
-                      )}
-                    >
-                      {header.isPlaceholder ? null : canSort ? (
-                        <button
-                          type="button"
-                          onClick={() => onSort(header.column.id)}
-                          className={cn(
-                            'inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 hover:text-[var(--color-text)]',
-                            dir !== null && 'text-[var(--color-text)]',
-                          )}
-                          data-sort-column={header.column.id}
-                        >
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          <SortIcon dir={dir} />
-                        </button>
-                      ) : (
-                        flexRender(header.column.columnDef.header, header.getContext())
-                      )}
-                    </th>
-                  );
-                })}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {isLoading && rows.length === 0
-              ? Array.from({ length: 8 }, (_, index) => (
-                  <tr key={`skeleton-${index}`} className="border-b border-[var(--color-border)]">
-                    {selection !== undefined ? (
-                      <td className="px-3 py-3">
-                        <span className="block size-4 animate-pulse rounded-[var(--radius-sm)] bg-[var(--color-surface-3)]" />
-                      </td>
-                    ) : null}
-                    {headerGroups[0]?.headers.map((header) => (
-                      <td key={header.id} className="px-3 py-3">
-                        <span className="block h-4 w-full animate-pulse rounded-[var(--radius-sm)] bg-[var(--color-surface-3)]" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              : null}
+          {!isLoading && rows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={columnCount + (selection !== undefined ? 1 : 0)}
+                className="px-3 py-12 text-center text-sm text-[var(--color-muted)]"
+              >
+                {emptyLabel}
+              </td>
+            </tr>
+          ) : null}
 
-            {!isLoading && rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={columnCount + (selection !== undefined ? 1 : 0)}
-                  className="px-3 py-12 text-center text-sm text-[var(--color-muted)]"
-                >
-                  {emptyLabel}
-                </td>
-              </tr>
-            ) : null}
-
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                className={cn(
-                  'border-b border-[var(--color-border)] last:border-b-0',
-                  onRowClick &&
-                    'cursor-pointer hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]',
-                )}
-                tabIndex={onRowClick ? 0 : undefined}
-                aria-label={rowLabel?.(row.original as T)}
-                onClick={
-                  onRowClick
-                    ? (event) => {
-                        // Inline edit (status select, BYOD checkbox) and the
-                        // selection checkbox live inside the row: a click on them
-                        // must never navigate away from the grid.
-                        if ((event.target as HTMLElement).closest('input, select, button, a, label') !== null) {
-                          return;
-                        }
+          {table.getRowModel().rows.map((row) => (
+            <tr
+              key={row.id}
+              className={cn(
+                'border-b border-[var(--color-border)] last:border-b-0',
+                onRowClick &&
+                  'cursor-pointer hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)]',
+              )}
+              tabIndex={onRowClick ? 0 : undefined}
+              aria-label={rowLabel?.(row.original as T)}
+              onClick={
+                onRowClick
+                  ? (event) => {
+                      // Inline edit (status select, BYOD checkbox) and the
+                      // selection checkbox live inside the row: a click on them
+                      // must never navigate away from the grid.
+                      if ((event.target as HTMLElement).closest('input, select, button, a, label') !== null) {
+                        return;
+                      }
+                      onRowClick(row.original as T);
+                    }
+                  : undefined
+              }
+              onKeyDown={
+                onRowClick
+                  ? (event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
                         onRowClick(row.original as T);
                       }
-                    : undefined
-                }
-                onKeyDown={
-                  onRowClick
-                    ? (event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          onRowClick(row.original as T);
-                        }
-                      }
-                    : undefined
-                }
-                data-testid="data-row"
-              >
-                {selection !== undefined ? (
+                    }
+                  : undefined
+              }
+              data-testid="data-row"
+            >
+              {selection !== undefined ? (
+                <td
+                  className="px-3 py-2 align-middle"
+                  // The checkbox must not open the row's detail page.
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <IndeterminateCheckbox
+                    checked={selection.isSelected(row.original as T)}
+                    aria-label={selection.rowLabel(row.original as T)}
+                    onChange={(event) => selection.onToggleRow(row.original as T, event.target.checked)}
+                    data-testid="select-row"
+                  />
+                </td>
+              ) : null}
+              {row.getVisibleCells().map((cell) => {
+                const align = (cell.column.columnDef.meta as { align?: 'start' | 'end' } | undefined)?.align;
+                return (
                   <td
-                    className="px-3 py-2 align-middle"
-                    // The checkbox must not open the row's detail page.
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
+                    key={cell.id}
+                    className={cn('px-3 py-2 align-middle', align === 'end' ? 'text-end' : 'text-start')}
                   >
-                    <IndeterminateCheckbox
-                      checked={selection.isSelected(row.original as T)}
-                      aria-label={selection.rowLabel(row.original as T)}
-                      onChange={(event) => selection.onToggleRow(row.original as T, event.target.checked)}
-                      data-testid="select-row"
-                    />
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
-                ) : null}
-                {row.getVisibleCells().map((cell) => {
-                  const align = (cell.column.columnDef.meta as { align?: 'start' | 'end' } | undefined)?.align;
-                  return (
-                    <td
-                      key={cell.id}
-                      className={cn('px-3 py-2 align-middle', align === 'end' ? 'text-end' : 'text-start')}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

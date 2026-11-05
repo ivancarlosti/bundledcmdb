@@ -171,7 +171,8 @@ coverage.
 ## 📸 Screenshots
 
 Captured from the Docker image with demo data (`node ui/scripts/screenshots.mjs`,
-no production or customer data).
+no production or customer data). The script writes all twelve files below, so a
+UI change is one command away from fresh pictures.
 
 | Asset dashboard — light theme | Asset dashboard — dark theme |
 |---|---|
@@ -185,11 +186,30 @@ no production or customer data).
 ### Asset detail and file attachments
 ![Asset detail page with editable fields and attached files](docs/screenshots/05-asset-detail.png)
 
+### Create device
+![Create device form with role-scoped tabs for identity, hardware and admin fields](docs/screenshots/08-device-form.png)
+
+### Audit log
+![Audit log listing device, setting, role and API key changes with their diffs](docs/screenshots/07-audit-log.png)
+
+### Grid columns and role capabilities (SuperAdmin)
+| Device grid columns | Role capability matrix |
+|---|---|
+| ![Settings tab that chooses the device grid columns and their order](docs/screenshots/09-settings-columns.png) | ![Permission matrix assigning capabilities to each role](docs/screenshots/10-settings-permissions.png) |
+
 ### Users and roles (SuperAdmin)
 ![Settings screen listing users and their roles](docs/screenshots/06-settings-users.png)
 
 ### Language switcher (es-MX)
 ![Asset dashboard displayed in Spanish](docs/screenshots/04-dashboard-es-MX.png)
+
+### Right-to-left layout (ar-SA)
+![Asset dashboard displayed in Arabic, mirrored right to left](docs/screenshots/11-dashboard-ar-SA.png)
+
+### Phone layout
+<img src="docs/screenshots/12-dashboard-mobile.png" width="340" alt="Asset dashboard on a 360 pixel wide phone screen">
+
+<sub>The grid flows with the page: on a phone the columns scroll sideways and the page itself scrolls down, with no nested scroll box.</sub>
 
 <!-- footer -->
 ---
