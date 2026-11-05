@@ -95,7 +95,6 @@ function asset_column_defs(): array
         'Manufacturer'    => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => [], 'label' => 'Manufacturer'],
         'LastSeen'        => ['type' => 'datetime', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Last Seen'],
         'UserEmail'       => ['type' => 'email', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'User Email'],
-        'LoggedUsername'  => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Logged-in User'],
         'BYOD'            => ['type' => 'bool', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'BYOD'],
         'Status'          => ['type' => 'status', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Status'],
         'Warranty'        => ['type' => 'date', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Warranty'],
@@ -164,7 +163,7 @@ function asset_form_columns(): array
 {
     return array_merge([
         'SN', 'Hostname', 'Manufacturer', 'OS', 'OSVersion', 'Mobile',
-        'Asset', 'Status', 'UserEmail', 'LoggedUsername', 'BYOD', 'Warranty',
+        'Asset', 'Status', 'UserEmail', 'BYOD', 'Warranty',
         'PurchaseDate', 'LastSeen', 'UUID', 'CypherID', 'CypherKey', 'CPUs',
         'HDs', 'HDsTypes', 'HDsSpacesGB', 'NetworkAdapters', 'MACAddresses',
         'ESETComponents', 'PrimaryLocalIP', 'PrimaryRemoteIP', 'Notes',
@@ -178,7 +177,7 @@ function asset_create_columns(string $role): array
         return [];
     }
     $manager = ['SN', 'Hostname', 'Manufacturer', 'OS', 'OSVersion',
-        'Mobile', 'Asset', 'Status', 'UserEmail', 'LoggedUsername', 'BYOD',
+        'Mobile', 'Asset', 'Status', 'UserEmail', 'BYOD',
         'Warranty', 'PurchaseDate', 'Notes'];
     if (!in_array($role, ['admin', 'superadmin'], true)) {
         return $manager;
@@ -351,8 +350,8 @@ function asset_validate(array $data, bool $partial = false): array
         && asset_datetime_normalize($data['LastSeen']) === null) {
         $errors['LastSeen'] = 'invalid_datetime';
     }
-    foreach (['Hostname' => 255, 'OS' => 191, 'Manufacturer' => 191, 'Asset' => 191,
-                 'LoggedUsername' => 191] as $column => $max) {
+    foreach (['Hostname' => 255, 'OS' => 191, 'Manufacturer' => 191,
+                 'Asset' => 191] as $column => $max) {
         if (array_key_exists($column, $data) && $data[$column] !== null && mb_strlen((string) $data[$column]) > $max) {
             $errors[$column] = 'too_long';
         }
@@ -761,7 +760,6 @@ function asset_api_field_map(): array
         'manufacturer'      => 'Manufacturer',
         'last_seen'         => 'LastSeen',
         'user_email'        => 'UserEmail',
-        'logged_username'   => 'LoggedUsername',
         'byod'              => 'BYOD',
         'status'            => 'Status',
         'warranty'          => 'Warranty',
@@ -891,7 +889,6 @@ function asset_api_payload(array $row, array $custom = []): array
         'manufacturer'      => $row['Manufacturer'] ?? null,
         'last_seen'         => asset_iso_datetime($row['LastSeen'] ?? null),
         'user_email'        => $row['UserEmail'] ?? null,
-        'logged_username'   => $row['LoggedUsername'] ?? null,
         'byod'              => asset_bool_parse($row['BYOD'] ?? false),
         'status'            => $row['Status'] ?? null,
         'warranty'          => !empty($row['Warranty']) ? substr((string) $row['Warranty'], 0, 10) : null,

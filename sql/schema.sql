@@ -267,6 +267,13 @@ ALTER TABLE assets DROP COLUMN DisksTotalGB;
 ALTER TABLE assets DROP COLUMN DisksFreeGB;
 ALTER TABLE assets DROP COLUMN DisksUsedGB;
 
+-- 0020 retires `LoggedUsername`. The inventory agent reports the logged-in user
+-- in `AgentLoggedUser`, so the hand-typed copy was a second writable path for the
+-- same fact. There is no backfill on purpose: the agent refreshes its column on
+-- the next report, and `user_email` stays the manager-editable "who holds it"
+-- field. Destructive: take a dump before upgrading a DBA-managed database.
+ALTER TABLE assets DROP COLUMN LoggedUsername;
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -286,5 +293,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_08_0016_api_key_users_scope'),
     ('2026_11_04_0017_asset_hardware_disks'),
     ('2026_11_05_0018_asset_agent_inventory'),
-    ('2026_11_05_0019_retire_agent_only_columns');
+    ('2026_11_05_0019_retire_agent_only_columns'),
+    ('2026_11_05_0020_retire_logged_username');
 

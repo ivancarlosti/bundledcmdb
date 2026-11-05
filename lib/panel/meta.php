@@ -30,7 +30,6 @@ function panel_column_label_keys(): array
         'Manufacturer'    => 'col_manufacturer',
         'LastSeen'        => 'col_last_seen',
         'UserEmail'       => 'col_user_email',
-        'LoggedUsername'  => 'col_logged_username',
         'BYOD'            => 'col_byod',
         'Status'          => 'col_status',
         'Warranty'        => 'col_warranty',

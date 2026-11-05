@@ -241,6 +241,10 @@ function migrations(): array
             'description' => 'Retire assets DeviceModel/GPUs/RAMGB/DisksTotalGB/DisksFreeGB/DisksUsedGB (agent block + PhysicalDisks own those facts)',
             'run' => 'migration_0019_retire_agent_only_columns',
         ],
+        '2026_11_05_0020_retire_logged_username' => [
+            'description' => 'Retire assets LoggedUsername (the inventory agent reports it as AgentLoggedUser)',
+            'run' => 'migration_0020_retire_logged_username',
+        ],
     ];
 }
 
@@ -914,7 +918,9 @@ function migration_0016_api_key_users_scope(PDO $pdo): void
  *
  * Superseded in part by 0019: `GPUs`, `RAMGB`, `DeviceModel` and the three
  * `Disks*GB` roll-ups are dropped again, because the `Agent*` block and
- * `PhysicalDisks` became the only write paths for those facts.
+ * `PhysicalDisks` became the only write paths for those facts. `LoggedUsername`
+ * is dropped by 0020 for the same reason: the agent reports it as
+ * `AgentLoggedUser`.
  */
 function migration_0017_asset_hardware_disks(PDO $pdo): void
 {
@@ -1013,4 +1019,26 @@ function migration_0019_retire_agent_only_columns(PDO $pdo): void
     migrate_drop_column($pdo, 'assets', 'DisksTotalGB');
     migrate_drop_column($pdo, 'assets', 'DisksFreeGB');
     migrate_drop_column($pdo, 'assets', 'DisksUsedGB');
+}
+
+/**
+ * Retire the hand-typed `assets.LoggedUsername`.
+ *
+ * `0017` added it as a manual "logged-in user"; `0018` then gave the inventory
+ * agent `AgentLoggedUser`, so the panel carried two fields for one fact and two
+ * writable paths for it (managers typed the legacy column, admins edit the agent
+ * one) that could disagree with each other.
+ *
+ * No backfill on purpose: a hand-typed value is stale by definition, and the next
+ * report overwrites `AgentLoggedUser` anyway, so copying it would only show a
+ * value the agent is about to replace. This migration is destructive on purpose;
+ * take a dump before upgrading.
+ *
+ * `sql/legacy.sql` keeps the column (it is the pre-migration snapshot a fresh
+ * bundle install starts from), so a new database creates it in 0017 and drops it
+ * here.
+ */
+function migration_0020_retire_logged_username(PDO $pdo): void
+{
+    migrate_drop_column($pdo, 'assets', 'LoggedUsername');
 }

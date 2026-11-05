@@ -97,7 +97,7 @@ const SECTIONS: readonly SectionDef[] = [
     id: 'assignment',
     parent: 'identity',
     headingKey: 'ui_form_tab_assignment',
-    keys: ['status', 'user_email', 'logged_username', 'asset', 'byod', 'mobile', 'warranty', 'purchase_date', 'source'],
+    keys: ['status', 'user_email', 'asset', 'byod', 'mobile', 'warranty', 'purchase_date', 'source'],
   },
   { id: 'admin', keys: ['cypher_id', 'cypher_key', 'notes'] },
   {

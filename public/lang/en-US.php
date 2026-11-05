@@ -269,7 +269,6 @@ return [
     'col_cypher_key' => 'Cypher key',
     'col_notes' => 'Notes',
     'col_cpus' => 'CPUs',
-    'col_logged_username' => 'Logged-in user',
     'col_hds' => 'Disks',
     'col_hds_types' => 'Disk types',
     'col_hds_spaces_gb' => 'Disk space (GB)',

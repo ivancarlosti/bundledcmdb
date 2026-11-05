@@ -108,7 +108,6 @@ return [
     'col_agent_execution_user' => 'مستخدم تنفيذ الوكيل',
     'col_agent_antivirus' => 'مضاد الفيروسات للوكيل',
     'col_hds_types' => 'أنواع الأقراص',
-    'col_logged_username' => 'المستخدم المسجل',
     'col_physical_disks' => 'الأقراص الفيزيائية',
     'col_hostname' => 'اسم المضيف',
     'col_id' => 'المعرّف',

@@ -108,7 +108,6 @@ return [
     'col_agent_execution_user' => 'एजेंट निष्पादन उपयोगकर्ता',
     'col_agent_antivirus' => 'एजेंट एंटीवायरस',
     'col_hds_types' => 'डिस्क प्रकार',
-    'col_logged_username' => 'लॉग-इन उपयोगकर्ता',
     'col_physical_disks' => 'भौतिक डिस्क',
     'col_hostname' => 'होस्टनेम',
     'col_id' => 'आईडी',

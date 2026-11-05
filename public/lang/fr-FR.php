@@ -108,7 +108,6 @@ return [
     'col_agent_execution_user' => 'Utilisateur d’exécution de l’agent',
     'col_agent_antivirus' => 'Antivirus de l’agent',
     'col_hds_types' => 'Types de disques',
-    'col_logged_username' => 'Utilisateur connecté',
     'col_physical_disks' => 'Disques physiques',
     'col_hostname' => 'Nom d\'hôte',
     'col_id' => 'Id',

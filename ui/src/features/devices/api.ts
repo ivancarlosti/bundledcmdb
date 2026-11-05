@@ -46,8 +46,6 @@ export type DeviceRow = {
   manufacturer: string | null;
   last_seen: string | null;
   user_email: string | null;
-  /** Account the agent saw logged in (not a directory user). */
-  logged_username: string | null;
   byod: boolean | null;
   status: string | null;
   warranty: string | null;

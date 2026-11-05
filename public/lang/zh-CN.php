@@ -108,7 +108,6 @@ return [
     'col_agent_execution_user' => '代理执行用户',
     'col_agent_antivirus' => '代理防病毒软件',
     'col_hds_types' => '磁盘类型',
-    'col_logged_username' => '登录用户',
     'col_physical_disks' => '物理磁盘',
     'col_hostname' => '主机名',
     'col_id' => '编号',

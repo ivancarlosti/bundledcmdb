@@ -287,15 +287,21 @@ asset_normalize_input(['PhysicalDisks' => [['sizeGb' => 'x']]], $diskWrites);
 check($diskWrites === ['PhysicalDisks' => 'invalid_number'], 'disks: a bad payload surfaces as a field error', json_encode($diskWrites));
 
 $diskMapped = asset_api_map_input([
-    'physical_disks'  => [],
-    'logged_username' => 'jdoe',
+    'physical_disks' => [],
 ]);
 check($diskMapped['unknown'] === [], 'disks: the new API keys are known', json_encode($diskMapped['unknown']));
 check(
-    ($diskMapped['data']['PhysicalDisks'] ?? null) === []
-    && ($diskMapped['data']['LoggedUsername'] ?? null) === 'jdoe',
+    ($diskMapped['data']['PhysicalDisks'] ?? null) === [],
     'disks: the API keys map onto their columns',
     json_encode($diskMapped['data'])
+);
+
+// 0020 retired the hand-typed logged-in user: the agent block owns that fact.
+$retiredIdentity = asset_api_map_input(['logged_username' => 'jdoe']);
+check(
+    $retiredIdentity['unknown'] === ['logged_username'],
+    'identity: logged_username is retired',
+    json_encode($retiredIdentity['unknown'])
 );
 
 $retiredMapped = asset_api_map_input([
@@ -310,11 +316,13 @@ check(
 );
 
 $diskApiRow = asset_api_payload([
-    'PhysicalDisks'  => '[{"number":0}]',
-    'LoggedUsername' => 'jdoe',
+    'PhysicalDisks' => '[{"number":0}]',
 ]);
 check($diskApiRow['physical_disks'] === [['number' => 0]], 'disks: the API returns the decoded list');
-check($diskApiRow['logged_username'] === 'jdoe', 'disks: the identity fields are still published');
+check(
+    !array_key_exists('logged_username', $diskApiRow),
+    'identity: logged_username is gone from the API payload'
+);
 check(
     !array_key_exists('device_model', $diskApiRow) && !array_key_exists('gpus', $diskApiRow)
     && !array_key_exists('ram_gb', $diskApiRow) && !array_key_exists('disks_total_gb', $diskApiRow)
@@ -836,18 +844,24 @@ try {
     // --- hardware fields: role gate ---------------------------------------
     // `GPUs`, `RAMGB`, `DeviceModel` and the three `Disks*GB` roll-ups were
     // retired by migration 0019 — the `Agent*` block and `PhysicalDisks` own
-    // those facts now. Their old wire keys must fail loudly instead of being
-    // accepted by one code path and dropped by another.
+    // those facts now — and `LoggedUsername` by 0020, because the agent reports
+    // the logged-in user as `AgentLoggedUser`. Their old wire keys must fail
+    // loudly instead of being accepted by one code path and dropped by another.
     as_role('admin', $companyA);
     body([
-        'cpus'            => 'Intel Core i7-1365U',
-        'logged_username' => 'jdoe',
+        'cpus' => 'Intel Core i7-1365U',
     ]);
     $hardware = panel_devices_update(['id' => (string) $id])['data'];
     check($hardware['cpus'] === 'Intel Core i7-1365U', 'hardware: admin writes cpus');
-    check($hardware['logged_username'] === 'jdoe', 'hardware: admin writes logged_username');
+    check(
+        !array_key_exists('logged_username', $hardware),
+        'hardware: logged_username is gone from the panel payload'
+    );
 
-    foreach (['device_model', 'gpus', 'ram_gb', 'disks_total_gb', 'disks_free_gb', 'disks_used_gb'] as $retired) {
+    foreach ([
+        'device_model', 'gpus', 'ram_gb', 'disks_total_gb', 'disks_free_gb', 'disks_used_gb',
+        'logged_username',
+    ] as $retired) {
         body([$retired => '1']);
         check_error(
             'hardware: ' . $retired . ' is retired → 422',

@@ -127,7 +127,7 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
    *drops* is still declared in `sql/schema.sql`, or when the ledger in it is not
    up to `migrations()`.
 3. `php bin/migrate.php --dry-run` → 0 pending; a second real run reports
-   `Applied: 0, already present: 19`.
+   `Applied: 0, already present: 20`.
 4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
 5. `php bin/test-panel-api.php` → 0 failed (requires a non-production database;
    the suite also covers the role matrix, source move, `source_slug` alias, the
@@ -197,7 +197,9 @@ curl -s -H "Authorization: Bearer $TOKEN" "$B/users?per_page=2" | jq '.data.tota
   database is created from, and MySQL 8 has no `DROP COLUMN IF EXISTS`, so the
   drop lives in the migration. Backfill anything worth keeping *before* the drop
   (`migration_0019_retire_agent_only_columns` copies the hardware columns into
-  the agent block), then remove the five server-side entries above, the `col_*`
+  the agent block; `migration_0020_retire_logged_username` skips the backfill,
+  because the agent owns that fact and refreshes it on the next report), then
+  remove the five server-side entries above, the `col_*`
   key from **every** catalogue (the family is dynamic, so `check-i18n.php`
   cannot see a leftover) and the matching `FIELD_LABELS`/`DeviceRow` entry in the
   SPA. Sorting follows the live table (`panel_sortable_columns()` filters on

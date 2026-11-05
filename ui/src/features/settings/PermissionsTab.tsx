@@ -34,7 +34,6 @@ const FIELD_LABELS: Record<string, string> = {
   CypherID: 'col_cypher_id',
   CypherKey: 'col_cypher_key',
   CPUs: 'col_cpus',
-  LoggedUsername: 'col_logged_username',
   HDs: 'col_hds',
   HDsTypes: 'col_hds_types',
   HDsSpacesGB: 'col_hds_spaces_gb',

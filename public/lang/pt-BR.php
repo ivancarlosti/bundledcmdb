@@ -259,7 +259,6 @@ return [
     'col_cypher_key' => 'Chave Cypher',
     'col_notes' => 'Observações',
     'col_cpus' => 'CPUs',
-    'col_logged_username' => 'Usuário conectado',
     'col_hds' => 'Discos',
     'col_hds_types' => 'Tipos de disco',
     'col_hds_spaces_gb' => 'Espaço em disco (GB)',

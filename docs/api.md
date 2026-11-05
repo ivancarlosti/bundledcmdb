@@ -316,7 +316,6 @@ Both `snake_case` API names and raw database column names are accepted
 | `mobile`, `byod` | booleans (`true/false`, `1/0`, `yes/no`) |
 | `last_seen` | ISO-8601 or `Y-m-d H:i:s` (stored UTC) |
 | `user_email`, `status`, `warranty`, `asset`, `purchase_date` | same |
-| `logged_username` | `assets.LoggedUsername` (free text) |
 | `cypher_id`, `cypher_key`, `notes`, `cpus`, `hds`, `hds_types` | same |
 | `hds_spaces_gb`, `network_adapters`, `mac_addresses`, `eset_components` | same |
 | `physical_disks`, `disks` (alias) | `assets.PhysicalDisks` (structured, see below) |
@@ -328,7 +327,9 @@ Both `snake_case` API names and raw database column names are accepted
 `disks_used_gb` are **retired** (migration 0019) and now answer `422
 unknown_field`: the model, GPU and RAM facts belong to the inventory-agent block
 (`agent_model`, `agent_gpu`, `agent_ram_gb`) and the disk numbers to
-`physical_disks`. See [Breaking changes](#breaking-changes).
+`physical_disks`. `logged_username` is retired the same way (migration 0020): the
+agent reports the logged-in user as `agent_logged_user`, and `user_email` stays
+the owner field. See [Breaking changes](#breaking-changes).
 
 `source` is resolved as: payload → key default → `assets.default_source`
 setting; it must exist and be allowed for the key. `source_slug` is accepted as
@@ -453,6 +454,34 @@ with the structured disk inventory (*Storage*).
   widen every view; `/v1/devices` always returns them (`agent_*` keys).
 
 ## Breaking changes
+
+### 0020 — `LoggedUsername`
+
+Migration `2026_11_05_0020_retire_logged_username` **drops**
+`assets.LoggedUsername`, the hand-typed "Logged-in user" the device form showed
+under *Identity → Assignment*. The inventory agent already reports that fact as
+`AgentLoggedUser`, so the column was a second writable path for the same value
+(managers typed one, admins edited the other, and the two could disagree).
+
+Nothing is copied: the agent refreshes `agent_logged_user` on its next report,
+which makes a hand-typed value stale by definition.
+
+| Retired field | Read it from |
+|---|---|
+| `logged_username` | `agent_logged_user` (inventory report) |
+| — | `user_email` (the manager-editable "who holds the device") |
+
+What this means for an integration:
+
+* Sending `logged_username` (or the raw column name `LoggedUsername`) answers
+  `422 validation_failed` with `errors.logged_username = unknown_field`. Use
+  `agent_logged_user`, which only `admin`/`superadmin` may write, or `user_email`.
+* Reading a device no longer returns `logged_username`; the JSON key is absent,
+  not null. `agent_logged_user` and `agent_all_logged_users` are unchanged.
+* `GET /v1/devices?sort=LoggedUsername` answers `400 invalid_sort`; sort on
+  `AgentLoggedUser` instead.
+* An existing value in that column is discarded by the drop — take a dump before
+  upgrading if anything still reads it.
 
 ### 0019 — agent-only device columns
 
