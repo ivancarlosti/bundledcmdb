@@ -36,8 +36,9 @@ declare(strict_types=1);
  *
  * `physicalDisks` is deliberately absent: the structured disk inventory is the
  * same fact for the agent and for a manual edit, so it keeps the
- * `PhysicalDisks` column and the `HDs`/`HDsTypes`/`HDsSpacesGB` summaries derived
- * from it (`lib/disks.php`).
+ * `PhysicalDisks` column (`lib/disks.php`). It summarises nothing: the
+ * `HDs`/`HDsTypes`/`HDsSpacesGB` text columns are manual fields, so a report
+ * lands in the JSON only and the panel shows both side by side.
  *
  * @return array<string, array{payload: string, api: string, type: string, max: ?int, label: string}>
  */
@@ -108,7 +109,8 @@ function asset_column_defs(): array
         'HDsTypes'        => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Disk Types'],
         'HDsSpacesGB'     => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Disk Space (GB)'],
         // Canonical disk inventory (`lib/disks.php`). API-only: the panel never
-        // edits it, and writing it recomputes HDs/HDsTypes/HDsSpacesGB above.
+        // edits it, and it is independent of HDs/HDsTypes/HDsSpacesGB above —
+        // those are manual fields, not a summary of this payload.
         'PhysicalDisks'   => ['type' => 'disks', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Physical Disks'],
         'NetworkAdapters' => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'Network Adapters'],
         'MACAddresses'    => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'MAC Addresses'],
@@ -299,11 +301,10 @@ function asset_normalize_input(array $data, ?array &$errors = null): array
                     break;
                 }
                 $out[$column] = disks_encode($parsed['disks']);
-                // Derived values follow the JSON: `HDs`/`HDsTypes`/`HDsSpacesGB`
-                // are never written by a client.
-                foreach (disks_summary($parsed['disks']) as $derived => $derivedValue) {
-                    $out[$derived] = $derivedValue;
-                }
+                // Only the JSON is stored. `HDs`/`HDsTypes`/`HDsSpacesGB` are
+                // manual text fields a client owns, so an agent report must not
+                // fill or clear them (they were summarised from this payload
+                // until the two groups were made independent).
                 break;
             default:
                 $value = is_array($value) ? implode(', ', $value) : (string) $value;

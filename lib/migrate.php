@@ -902,9 +902,12 @@ function migration_0016_api_key_users_scope(PDO $pdo): void
  * disk inventory.
  *
  * `PhysicalDisks` is the canonical JSON array (`lib/disks.php`); the three
- * `Disks*GB` columns are roll-ups recomputed on every write so the grid can
+ * `Disks*GB` columns were roll-ups recomputed on every write so the grid could
  * sort and filter on free space without parsing JSON, and `HDs`/`HDsTypes`/
- * `HDsSpacesGB` stay in sync for the clients that already read them.
+ * `HDsSpacesGB` briefly stayed in sync for the clients that already read them.
+ * Both behaviours were dropped again: the roll-ups in 0019, the summarising when
+ * the three text columns became manual (they are no longer derived from the
+ * JSON at all, so a report cannot overwrite what a human typed).
  *
  * GPUs and RAMGB are free text on purpose: `RAMGB VARCHAR` keeps whatever the
  * agent reports ("16", "16 GB", "32 (2x16)") instead of forcing a unit.

@@ -101,6 +101,18 @@ describe('detailSections', () => {
     expect(sections.at(-1)?.columns.map((entry) => entry.api_key)).toEqual(['invented_later']);
   });
 
+  it('keeps the disk inventory inside the agent block, not the manual rows', () => {
+    const sections = detailSections([column('cpus'), column('hds'), column('agent_os'), column('physical_disks')]);
+
+    // `hds`/`hds_types`/`hds_spaces_gb` are typed by a human; the structured
+    // inventory is reported by the agent, so it travels with that block and is
+    // rendered as `StorageSection` instead of a cell.
+    expect(sections.map((section) => section.id)).toEqual(['hardware']);
+    expect(sections[0]?.columns.map((entry) => entry.api_key)).toEqual(['cpus', 'hds']);
+    expect(sections[0]?.groups[0]?.id).toBe('agent');
+    expect(sections[0]?.groups[0]?.columns.map((entry) => entry.api_key)).toEqual(['agent_os', 'physical_disks']);
+  });
+
   it('nests the assignment columns inside the identity card', () => {
     const sections = detailSections([column('sn'), column('user_email')]);
 

@@ -57,9 +57,14 @@ export type DeviceRow = {
   cypher_key: string | null;
   notes: string | null;
   cpus: string | null;
+  /**
+   * Manual hardware text (`HDs`/`HDsTypes`/`HDsSpacesGB`): the ESET-era columns a
+   * human or a legacy client owns. A disk report lands in `physical_disks` and
+   * never fills nor clears these three.
+   */
   hds: string | null;
   hds_types: string | null;
-  /** Sum of the volume sizes, from `HDsSpacesGB` (one spelling everywhere since 0018). */
+  /** Comma separated GB values (one spelling everywhere since 0018). */
   hds_spaces_gb: string | null;
   /** Canonical per-disk inventory (`lib/disks.php`); `[]` when never reported. */
   physical_disks: DeviceDisk[];

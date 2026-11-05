@@ -166,8 +166,9 @@ test.describe('device sections', () => {
     await expect(agent).toContainText('Additional hardware info');
     await expect(agent).toContainText('Windows 11 Pro build 22631');
     await expect(agent).toContainText('Yes');
-    // The structured disk inventory stays inside the same card.
-    await expect(hardware.getByTestId('device-storage')).toBeVisible();
+    // The structured disk inventory travels with the agent report, inside the
+    // same card: the manual `hds*` text rows are a different fact now.
+    await expect(agent.getByTestId('device-storage')).toBeVisible();
   });
 
   test('lays the view out as section cards', async ({ page }) => {

@@ -52,9 +52,10 @@ const ASSET_EVENT_ENTITIES = [
 /**
  * Columns never written to the audit diff.
  *
- * `PhysicalDisks` holds the raw JSON: the history shows the readable summaries
- * (`HDs`, `HDsTypes`, `HDsSpacesGB`) that are recomputed from it instead, so
- * nobody has to read a one-line blob.
+ * `PhysicalDisks` holds the raw JSON, which nobody wants to read as a one-line
+ * blob and which changes on every agent report. The readable
+ * `HDs`/`HDsTypes`/`HDsSpacesGB` next to it are manual fields, so they only
+ * appear in the history when a client actually edits them.
  */
 const ASSET_EVENT_IGNORED_COLUMNS = ['Id', 'updated_at', 'updated_by', 'created_at', 'created_by', 'PhysicalDisks'];
 

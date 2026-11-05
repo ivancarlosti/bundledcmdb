@@ -247,13 +247,13 @@ check(
 check(($parsedDisks['disks'][1]['volumes'][0]['used_gb'] ?? null) === 266.44, 'disks: volume used_gb is derived too');
 check(($parsedDisks['disks'][0]['used_gb'] ?? null) === 122.78, 'disks: a supplied used_gb is kept as sent');
 
-$diskSummary = disks_summary($parsedDisks['disks']);
-check($diskSummary['HDs'] === 'Seagate Expansion, WD Green M.2', 'disks: HDs lists the disk names', (string) $diskSummary['HDs']);
-check($diskSummary['HDsTypes'] === 'HDD USB, SSD NVMe', 'disks: HDsTypes lists media and bus', (string) $diskSummary['HDsTypes']);
-check($diskSummary['HDsSpacesGB'] === '1863.02, 476.94', 'disks: HDsSpacesGB lists the sizes', (string) $diskSummary['HDsSpacesGB']);
+// The legacy text columns are manual fields: a disk payload may only touch the
+// JSON, otherwise an agent report would overwrite what a human typed.
+$diskOnly = array_keys(asset_normalize_input(['PhysicalDisks' => $parsedDisks['disks']]));
 check(
-    disks_summary([]) === ['HDs' => null, 'HDsTypes' => null, 'HDsSpacesGB' => null],
-    'disks: an empty list clears every derived column'
+    $diskOnly === ['PhysicalDisks'],
+    'disks: a payload writes nothing but PhysicalDisks',
+    json_encode($diskOnly)
 );
 
 check(disks_normalize(null)['disks'] === [], 'disks: null clears the inventory');
@@ -268,12 +268,15 @@ check(
 check(disks_decode('not json') === [], 'disks: invalid stored JSON degrades to "no data"');
 check(disks_decode('[{"number":0},"x"]') === [['number' => 0]], 'disks: non-object entries are dropped');
 check(disks_encode([]) === null, 'disks: an empty list is stored as NULL');
-check(disks_gb_text(476.94) === '476.94' && disks_gb_text(477.0) === '477', 'disks: GB text drops trailing zeros');
 
 $diskWrites = [];
 $diskWritten = asset_normalize_input(['PhysicalDisks' => [['number' => 0, 'sizeGb' => 100, 'freeGb' => 40]]], $diskWrites);
 check($diskWrites === [], 'disks: writing a payload reports no error', json_encode($diskWrites));
-check(($diskWritten['HDs'] ?? null) === 'Disk 0', 'disks: an unnamed disk still gets a label');
+check(
+    !isset($diskWritten['HDs']) && !isset($diskWritten['HDsTypes']) && !isset($diskWritten['HDsSpacesGB']),
+    'disks: the manual text columns are never derived from the JSON',
+    json_encode(array_keys($diskWritten))
+);
 check(
     !isset($diskWritten['DisksTotalGB']) && !isset($diskWritten['DisksUsedGB']),
     'disks: the retired roll-up columns are never written',
@@ -370,9 +373,9 @@ check(
     (string) ($agentData['AgentAllLoggedUsers'] ?? '')
 );
 check(
-    ($agentData['HDs'] ?? null) === 'Disk 0',
-    'agent: physicalDisks still feeds the disk summaries',
-    json_encode([$agentData['HDs'] ?? null])
+    !isset($agentData['HDs']) && !isset($agentData['HDsTypes']) && !isset($agentData['HDsSpacesGB']),
+    'agent: physicalDisks no longer feeds the disk text columns',
+    json_encode(array_keys($agentData))
 );
 check(asset_validate($agentData, true) === [], 'agent: a complete report validates', json_encode(asset_validate($agentData, true)));
 
@@ -917,15 +920,24 @@ try {
         ]],
     ], $diskErrors);
     check($diskErrors === [], 'disks: the API payload validates', json_encode($diskErrors));
+    // The manual hardware text is independent of the agent-fed JSON: write it
+    // first, report disks, and it must still be there afterwards.
+    asset_update(
+        $pdo,
+        $id,
+        ['HDs' => 'Manual disk', 'HDsTypes' => 'SSD SATA', 'HDsSpacesGB' => '256'],
+        'tester@example.com',
+        $companyA === '' ? null : $companyA
+    );
     asset_update($pdo, $id, $diskData, 'tester@example.com', $companyA === '' ? null : $companyA);
 
     as_role('manager', $companyA);
     $diskRow = panel_devices_show(['id' => (string) $id])['data'];
     check(count($diskRow['physical_disks']) === 1, 'disks: the JSON is stored and decoded');
     check(($diskRow['physical_disks'][0]['used_gb'] ?? null) === 266.44, 'disks: used_gb survives the round trip');
-    check($diskRow['hds'] === 'WD Green M.2', 'disks: HDs follows the JSON', (string) $diskRow['hds']);
-    check($diskRow['hds_types'] === 'SSD NVMe', 'disks: HDsTypes follows the JSON', (string) $diskRow['hds_types']);
-    check($diskRow['hds_spaces_gb'] === '476.94', 'disks: HDsSpacesGB follows the JSON', (string) $diskRow['hds_spaces_gb']);
+    check($diskRow['hds'] === 'Manual disk', 'disks: a report leaves the manual HDs alone', (string) $diskRow['hds']);
+    check($diskRow['hds_types'] === 'SSD SATA', 'disks: a report leaves the manual HDsTypes alone', (string) $diskRow['hds_types']);
+    check($diskRow['hds_spaces_gb'] === '256', 'disks: a report leaves the manual HDsSpacesGB alone', (string) $diskRow['hds_spaces_gb']);
     check(
         !array_key_exists('disks_total_gb', $diskRow) && !array_key_exists('disks_free_gb', $diskRow),
         'disks: the retired roll-ups are not published by the panel',
@@ -948,13 +960,13 @@ try {
     ]);
     $_GET = [];
 
-    // Clearing the inventory clears the derived columns, so the grid cannot show
-    // a summary for disks that are no longer reported.
+    // Clearing the inventory only empties the JSON: the manual text columns are a
+    // different fact and stay where the admin put them.
     asset_update($pdo, $id, asset_normalize_input(['PhysicalDisks' => null]), 'tester@example.com', $companyA === '' ? null : $companyA);
     $clearedDisks = panel_devices_show(['id' => (string) $id])['data'];
     check(
-        $clearedDisks['physical_disks'] === [] && $clearedDisks['hds'] === null,
-        'disks: clearing the JSON clears the summaries',
+        $clearedDisks['physical_disks'] === [] && $clearedDisks['hds'] === 'Manual disk',
+        'disks: clearing the JSON keeps the manual text columns',
         json_encode([$clearedDisks['physical_disks'], $clearedDisks['hds']])
     );
 

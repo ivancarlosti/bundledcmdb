@@ -778,7 +778,8 @@ function panel_devices_export_rows(
                 $value = $key === null ? '' : ($payload[$key] ?? '');
                 if (is_array($value)) {
                     // Structured columns (`physical_disks`) have no flat
-                    // representation; their summaries carry the same data.
+                    // representation: the CSV shows the manual text columns
+                    // (`HDs`, `HDsTypes`, `HDsSpacesGB`) when a view enables them.
                     $value = '';
                 }
 

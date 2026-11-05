@@ -393,19 +393,12 @@ Accepted members: `number` (`index`/`slot`/`id`), `friendly_name` (`name`/
 * `null` or `[]` clears the inventory; omitting the key on `PATCH` leaves it
   untouched (`PUT` clears it, like every other omitted column).
 
-Writing it also **recomputes** the derived text columns, so they are never sent:
-
-| Derived | Content |
-|---|---|
-| `hds` | disk names, comma separated |
-| `hds_types` | `media_type` + `bus_type` per disk |
-| `hds_spaces_gb` | sizes in GB, comma separated |
-
-That keeps the old ESET-style text columns, the grid, the export and the audit
-trail readable without parsing JSON (the raw JSON is deliberately excluded from
-the history diff). `physical_disks` itself only answers `GET`; a client that
-needs a total sums `size_gb`/`free_gb` over the list (the `disks_*_gb` roll-ups
-were retired in 0019 for exactly that reason — one copy of the numbers).
+Writing it touches **only** the JSON. `hds`, `hds_types` and `hds_spaces_gb`
+are independent manual text fields (the ESET-era columns a client may still
+write), so an agent report never fills nor clears them and a value typed into the
+panel survives every report. Read the inventory back as `physical_disks`; a client
+that needs a total sums `size_gb`/`free_gb` over the list (the `disks_*_gb`
+roll-ups were retired in 0019 for exactly that reason — one copy of the numbers).
 
 ## Inventory agent
 
@@ -414,7 +407,8 @@ block. The keys are the ones the agent already sends; every one of them gets a
 dedicated `Agent*` column so a report **never** overwrites a hand-maintained
 `Hostname`/`OS`/`Manufacturer`. The block is the *only* home of the model, GPU
 and RAM facts since 0019 retired the legacy `DeviceModel`/`GPUs`/`RAMGB`
-columns; the panel shows it under *Hardware → Additional hardware info*.
+columns; the panel shows it under *Hardware → Additional hardware info*, together
+with the structured disk inventory (*Storage*).
 
 | Payload key | Column | Output key |
 |---|---|---|
@@ -442,9 +436,10 @@ columns; the panel shows it under *Hardware → Additional hardware info*.
 * `allLoggedUsers` takes a list and is stored `, `-joined (`AgentAllLoggedUsers`
   is `TEXT`, so its length is not capped; the other columns stay within the
   widths below).
-* `physicalDisks` is **not** duplicated: the structured disk inventory is the
-  same fact for an agent and for a manual edit, so it keeps `PhysicalDisks` and
-  the derived `hds*` columns (see the previous section).
+* `physicalDisks` is **not** duplicated: the structured disk inventory keeps
+  `PhysicalDisks` (see the previous section) and is independent of the manual
+  `hds`/`hds_types`/`hds_spaces_gb` text columns, which this endpoint has never
+  accepted.
 * Identity and plumbing keys keep their usual meaning on this endpoint too:
   `uuid`, `sn`, `last_seen`, `mobile`, `byod`, `status`, `company`, `source`,
   `source_ref` and `custom`.
@@ -486,7 +481,20 @@ What this means for an integration:
   columns.
 * Existing values are preserved: `AgentModel`/`AgentGPU`/`AgentRAMGB` were
   backfilled from the legacy columns during the migration, and the disk numbers
-  were always derived from `physical_disks`.
+  live in `physical_disks`.
+
+### The `hds*` text columns are manual (no migration)
+
+`hds`, `hds_types` and `hds_spaces_gb` used to be recomputed from
+`physical_disks` on every write. They are plain fields again:
+
+* An inventory report touches only `agent_*` and `physical_disks`; text an admin
+  typed survives every report.
+* Writing `physical_disks` no longer changes those three keys in the response.
+* Values stored before the change are kept as they are (frozen at the last
+  derivation): nothing is backfilled and nothing is deleted.
+* Read the disk inventory from `physical_disks`; the three columns are only what
+  a client — or an admin in the panel — wrote.
 
 ## Notes for ESET-style integrations
 

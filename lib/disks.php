@@ -4,8 +4,10 @@ declare(strict_types=1);
 /**
  * lib/disks.php — structured physical disk inventory (`assets.PhysicalDisks`).
  *
- * Inventory agents report one JSON array per device instead of the three flat
- * text columns (`HDs`, `HDsTypes`, `HDsSpacesGB`). The canonical shape is:
+ * Inventory agents report one JSON array per device; the flat text columns
+ * (`HDs`, `HDsTypes`, `HDsSpacesGB`) are manual fields and are *not* derived
+ * from it — they were until the two groups were made independent, which meant
+ * every report silently rewrote what a human had typed. The canonical shape is:
  *
  *   [{
  *     "number": 0, "friendly_name": "WD Green ...", "media_type": "SSD",
@@ -245,13 +247,6 @@ function disks_derive_used(?float $total, ?float $free): ?float
     return round(max(0.0, $total - $free), 2);
 }
 
-/** "476.94" / "931.51" — no trailing zeros, no thousands separator. */
-function disks_gb_text(float $value): string
-{
-    $text = number_format($value, 2, '.', '');
-    return rtrim(rtrim($text, '0'), '.') ?: '0';
-}
-
 /** Column value for a normalised disk list (`null` when there is none). */
 function disks_encode(array $disks): ?string
 {
@@ -260,51 +255,4 @@ function disks_encode(array $disks): ?string
     }
     $json = json_encode($disks, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     return $json === false ? null : $json;
-}
-
-/**
- * Legacy text columns derived from the disk list.
- *
- * Kept in sync on every write so the grid, the export and the clients that read
- * `HDs`/`HDsTypes`/`HDsSpacesGB` need no knowledge of the JSON. The numeric
- * roll-ups that used to live here were retired with migration 0019: `size_gb`,
- * `free_gb` and `used_gb` are in the JSON, so a client that wants a total adds
- * them up itself instead of trusting a second copy.
- *
- * @param list<array<string, mixed>> $disks normalised disks
- * @return array{HDs: ?string, HDsTypes: ?string, HDsSpacesGB: ?string}
- */
-function disks_summary(array $disks): array
-{
-    $empty = ['HDs' => null, 'HDsTypes' => null, 'HDsSpacesGB' => null];
-    if ($disks === []) {
-        return $empty;
-    }
-
-    $names = [];
-    $types = [];
-    $spaces = [];
-    foreach ($disks as $disk) {
-        $number = (int) ($disk['number'] ?? 0);
-        $name = trim((string) ($disk['friendly_name'] ?? ''));
-        $names[] = $name !== '' ? $name : 'Disk ' . $number;
-
-        $type = trim((string) ($disk['media_type'] ?? '') . ' ' . (string) ($disk['bus_type'] ?? ''));
-        if ($type !== '') {
-            $types[] = $type;
-        }
-        if (($disk['size_gb'] ?? null) !== null) {
-            $spaces[] = disks_gb_text((float) $disk['size_gb']);
-        }
-    }
-
-    $join = static fn (array $parts): ?string => $parts === []
-        ? null
-        : mb_substr(implode(', ', array_values(array_unique($parts))), 0, 255);
-
-    return [
-        'HDs'         => $join($names),
-        'HDsTypes'    => $join($types),
-        'HDsSpacesGB' => $join($spaces),
-    ];
 }

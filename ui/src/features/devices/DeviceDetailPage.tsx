@@ -53,8 +53,9 @@ function DetailSectionCard({
 
   const rows = (columns: MetaColumn[]) =>
     columns
-      // The disk inventory is structured: it renders as `StorageSection` below
-      // instead of one flattened cell (its JSON would read `[object Object]`).
+      // The disk inventory is structured: it renders as `StorageSection` inside
+      // the agent block instead of one flattened cell (its JSON would read
+      // `[object Object]`).
       .filter((column) => column.type !== 'disks')
       .map((column) => (
         <Row key={column.key} label={t(column.label_key, { defaultValue: column.label })}>
@@ -84,10 +85,11 @@ function DetailSectionCard({
         >
           <h3 className="m-0 text-sm font-semibold">{t(group.headingKey)}</h3>
           <dl className="m-0 mt-1">{rows(group.columns)}</dl>
+          {/* The disk inventory travels with the agent block: it is one of the
+              facts the host reports, not a manual hardware row. */}
+          {group.id === 'agent' ? <StorageSection device={device} /> : null}
         </section>
       ))}
-
-      {section.id === 'hardware' ? <StorageSection device={device} /> : null}
     </div>
   );
 }

@@ -51,7 +51,6 @@ const SECTIONS: readonly SectionDef[] = [
       'hds',
       'hds_types',
       'hds_spaces_gb',
-      'physical_disks',
       'network_adapters',
       'mac_addresses',
       'eset_components',
@@ -61,8 +60,11 @@ const SECTIONS: readonly SectionDef[] = [
   },
   {
     // Inventory-agent block: one column per key the agent reports
-    // (`asset_agent_columns()` on the server). A report never overwrites the
-    // legacy columns, so both sets are shown side by side.
+    // (`asset_agent_columns()` on the server) plus the structured disk
+    // inventory, which the agent owns as well. A report never fills nor clears
+    // the manual `hds`/`hds_types`/`hds_spaces_gb` rows, so the two sets are
+    // shown side by side: the text is what a human typed, *Storage* is what the
+    // host reported.
     id: 'agent',
     parent: 'hardware',
     headingKey: 'ui_agent_inventory',
@@ -82,6 +84,9 @@ const SECTIONS: readonly SectionDef[] = [
       'agent_all_logged_users',
       'agent_execution_user',
       'agent_antivirus',
+      // Structured JSON, so the view renders it as `StorageSection` instead of a
+      // table cell (a cell would read `[object Object]`).
+      'physical_disks',
     ],
   },
   {
