@@ -232,7 +232,7 @@ function panel_devices_where(PDO $pdo, array $user, array $params): array
  */
 function panel_device_payload(array $row, array $custom = [], int $filesCount = 0): array
 {
-    return [
+    $out = [
         'id'                => (int) ($row['Id'] ?? 0),
         'uuid'              => $row['UUID'] ?? null,
         'sn'                => $row['SN'] ?? null,
@@ -258,7 +258,7 @@ function panel_device_payload(array $row, array $custom = [], int $filesCount = 
         'ram_gb'            => $row['RAMGB'] ?? null,
         'hds'               => $row['HDs'] ?? null,
         'hds_types'         => $row['HDsTypes'] ?? null,
-        'hds_space_gb'      => $row['HDsSpacesGB'] ?? null,
+        'hds_spaces_gb'     => $row['HDsSpacesGB'] ?? null,
         'physical_disks'    => disks_decode($row['PhysicalDisks'] ?? null),
         'disks_total_gb'    => isset($row['DisksTotalGB']) ? (float) $row['DisksTotalGB'] : null,
         'disks_free_gb'     => isset($row['DisksFreeGB']) ? (float) $row['DisksFreeGB'] : null,
@@ -281,6 +281,17 @@ function panel_device_payload(array $row, array $custom = [], int $filesCount = 
         'files_count'       => $filesCount,
         'custom'            => $custom === [] ? new stdClass() : $custom,
     ];
+
+    // Inventory-agent block: one key per `Agent*` column (asset_agent_columns()),
+    // identical to the REST representation so the edit form and the view read the
+    // same field names.
+    foreach (asset_agent_columns() as $column => $meta) {
+        $out[$meta['api']] = $meta['type'] === 'bool'
+            ? asset_bool_parse($row[$column] ?? null)
+            : ($row[$column] ?? null);
+    }
+
+    return $out;
 }
 
 /**
@@ -570,7 +581,7 @@ function panel_devices_events(array $params = []): array
  */
 function panel_device_payload_keys(): array
 {
-    return [
+    $keys = [
         'Id'              => 'id',
         'UUID'            => 'uuid',
         'SN'              => 'sn',
@@ -596,7 +607,7 @@ function panel_device_payload_keys(): array
         'RAMGB'           => 'ram_gb',
         'HDs'             => 'hds',
         'HDsTypes'        => 'hds_types',
-        'HDsSpacesGB'     => 'hds_space_gb',
+        'HDsSpacesGB'     => 'hds_spaces_gb',
         'PhysicalDisks'   => 'physical_disks',
         'DisksTotalGB'    => 'disks_total_gb',
         'DisksFreeGB'     => 'disks_free_gb',
@@ -616,6 +627,15 @@ function panel_device_payload_keys(): array
         'deleted_at'      => 'deleted_at',
         'files'           => 'files_count',
     ];
+
+    // Inventory-agent block: the wire key is declared once in
+    // `asset_agent_columns()`, so the export, the write map and the REST payload
+    // cannot drift apart.
+    foreach (asset_agent_columns() as $column => $meta) {
+        $keys[$column] = $meta['api'];
+    }
+
+    return $keys;
 }
 
 /**

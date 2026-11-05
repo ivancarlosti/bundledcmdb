@@ -10,79 +10,10 @@ import type { MetaColumn, MetaField, MetaPayload } from './api';
  * is wasted on: an empty required field, a number that is not a number, a date
  * that is not a date. Everything else — duplicates, role rules, sources — stays
  * server-side, because a client can never know it as well as the database.
- */
-
-/**
- * Form keys grouped into tabs, in render order (`/meta.writeColumns` is written in
- * the wire spelling: `sn`, `hostname`, `cypher_id`). Unknown keys fall into
- * `more`, so a column added to the server still shows up.
- */
-const TAB_COLUMNS: Record<string, readonly string[]> = {
-  identity: ['sn', 'uuid', 'hostname', 'device_model', 'os', 'os_version', 'manufacturer', 'last_seen'],
-  hardware: [
-    'cpus',
-    'gpus',
-    'ram_gb',
-    'hds',
-    'hds_types',
-    'hds_spaces_gb',
-    'network_adapters',
-    'mac_addresses',
-    'eset_components',
-    'primary_local_ip',
-    'primary_remote_ip',
-  ],
-  assignment: [
-    'status',
-    'user_email',
-    'logged_username',
-    'asset',
-    'byod',
-    'mobile',
-    'warranty',
-    'purchase_date',
-    'source',
-  ],
-  admin: ['cypher_id', 'cypher_key', 'notes'],
-};
-
-const TAB_ORDER = ['identity', 'hardware', 'assignment', 'admin', 'more'] as const;
-
-export type FormTab = { id: string; keys: string[] };
-
-/**
- * Split the writable keys into tabs.
  *
- * Every tab that ends up empty is dropped, so a manager (no `CypherID`) does not
- * get an "Admin" tab with nothing in it, and a column the server adds later
- * shows up under `more` instead of disappearing from the form.
+ * The tab layout lives in `deviceSections.ts`, which the detail page reads too:
+ * one list decides where a field lives, for both screens.
  */
-export function formTabs(keys: string[]): FormTab[] {
-  const buckets = new Map<string, string[]>();
-  for (const id of TAB_ORDER) {
-    buckets.set(id, []);
-  }
-
-  for (const key of keys) {
-    const owner = TAB_ORDER.find((id) => (TAB_COLUMNS[id] ?? []).includes(key)) ?? 'more';
-    buckets.get(owner)?.push(key);
-  }
-
-  // Keep the declared order inside a tab, not the order the role list happened
-  // to produce: `SN` before `Hostname` reads better than a random shuffle.
-  const known = new Map<string, number>();
-  let index = 0;
-  for (const id of TAB_ORDER) {
-    for (const key of TAB_COLUMNS[id] ?? []) {
-      known.set(key, index++);
-    }
-  }
-
-  return TAB_ORDER.map((id) => ({
-    id,
-    keys: (buckets.get(id) ?? []).sort((a, b) => (known.get(a) ?? 999) - (known.get(b) ?? 999)),
-  })).filter((tab) => tab.keys.length > 0);
-}
 
 const NUMBER_TYPES = new Set(['int', 'integer', 'decimal', 'number']);
 const DATE_TYPES = new Set(['date', 'datetime']);

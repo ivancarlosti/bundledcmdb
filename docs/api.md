@@ -146,6 +146,40 @@ the body change. `custom_mode=replace` clears custom fields that are omitted.
 Matches by `UUID` first, then by `company`+`SN`; creates when nothing matches.
 `meta.created` tells which branch ran (`201` on create, `200` on update).
 
+### `POST /v1/devices/inventory` (and `PUT`)
+The inventory-agent entry point. It behaves exactly like `/v1/devices/upsert`
+(match by `UUID` then `company`+`SN`, `meta.created` tells which branch ran,
+`write` scope, custom values accepted) with one difference: the payload's own
+keys target the **agent block** instead of the legacy columns, so `os`,
+`hostname`, `manufacturer` or `model` land in `AgentOS`, `AgentHostname`,
+`AgentManufacturer` and `AgentModel`. A report therefore never overwrites a
+hand-maintained value. See [Inventory agent](#inventory-agent).
+
+```bash
+curl -X POST https://cmdb.example.com/api/v1/devices/inventory \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+        "company": "Acme",
+        "sn": "SN-1234",
+        "hostname": "acme-laptop-01",
+        "os": "Windows 11 Pro",
+        "build": "22631.4169",
+        "bios": "Dell 1.14.2",
+        "secureBoot": true,
+        "manufacturer": "Dell Inc.",
+        "model": "Latitude 5440",
+        "cpu": "Intel Core i7-1365U",
+        "gpu": "Intel Iris Xe Graphics",
+        "ramGB": "16",
+        "ip": "10.0.0.57",
+        "loggedUser": "ACME\\jdoe",
+        "allLoggedUsers": ["ACME\\jdoe", "ACME\\asmith"],
+        "executionUser": "SYSTEM",
+        "antivirus": "ESET Endpoint Security 11.1",
+        "physicalDisks": [{"number": 0, "sizeGb": 476.94, "freeGb": 210.5}]
+      }'
+```
+
 ### `POST /v1/devices/bulk`
 Body: `{"devices":[{},{ }]}` (or a bare array). Up to 500 items per request.
 Each item is processed independently:
@@ -367,6 +401,55 @@ That keeps the old ESET-style text columns, the grid, the export and the audit
 trail readable without parsing JSON (the raw JSON is deliberately excluded from
 the history diff). The roll-ups are sortable and searchable through the panel;
 `physical_disks` itself only answers `GET`.
+
+## Inventory agent
+
+`POST /v1/devices/inventory` (or `PUT`) stores a host report in its own column
+block. The keys are the ones the agent already sends; every one of them gets a
+dedicated `Agent*` column so a report **never** overwrites a hand-maintained
+`Hostname`/`OS`/`Manufacturer`/`DeviceModel`. The panel shows both sets side by
+side under *Hardware → Additional hardware info*.
+
+| Payload key | Column | Output key |
+|---|---|---|
+| `hostname` | `AgentHostname` | `agent_hostname` |
+| `os` | `AgentOS` | `agent_os` |
+| `build` | `AgentOSBuild` | `agent_os_build` |
+| `bios` | `AgentBIOS` | `agent_bios` |
+| `secureBoot` | `AgentSecureBoot` | `agent_secure_boot` (JSON boolean) |
+| `manufacturer` | `AgentManufacturer` | `agent_manufacturer` |
+| `model` | `AgentModel` | `agent_model` |
+| `cpu` | `AgentCPU` | `agent_cpu` |
+| `gpu` | `AgentGPU` | `agent_gpu` |
+| `ramGB` | `AgentRAMGB` | `agent_ram_gb` |
+| `ip` | `AgentIP` | `agent_ip` |
+| `loggedUser` | `AgentLoggedUser` | `agent_logged_user` |
+| `allLoggedUsers` | `AgentAllLoggedUsers` | `agent_all_logged_users` |
+| `executionUser` | `AgentExecutionUser` | `agent_execution_user` |
+| `antivirus` | `AgentAntivirus` | `agent_antivirus` |
+
+* The keys are matched case-insensitively (`ramGB`, `ramgb` and `AgentRAMGB` are
+  the same field), and `agent_*` names are accepted on **every** device endpoint
+  — that is what the panel form posts.
+* `secureBoot` accepts `true/false`, `1/0`, `yes/no`, `on/off` and is stored as
+  `'true'`/`'false'` (like `byod`), then published as a JSON boolean.
+* `allLoggedUsers` takes a list and is stored `, `-joined (`AgentAllLoggedUsers`
+  is `TEXT`, so its length is not capped; the other columns stay within the
+  widths below).
+* `physicalDisks` is **not** duplicated: the structured disk inventory is the
+  same fact for an agent and for a manual edit, so it keeps `PhysicalDisks` and
+  the derived `hds*`/`disks_*` columns (see the previous section).
+* Identity and plumbing keys keep their usual meaning on this endpoint too:
+  `uuid`, `sn`, `last_seen`, `mobile`, `byod`, `status`, `company`, `source`,
+  `source_ref` and `custom`.
+* Length caps: `AgentHostname`/`AgentCPU`/`AgentGPU`/`AgentRAMGB`/`AgentAntivirus`
+  255, `AgentOS`/`AgentBIOS`/`AgentManufacturer`/`AgentModel`/`AgentLoggedUser`/
+  `AgentExecutionUser` 191, `AgentOSBuild` 64, `AgentIP` 64. Exceeding one
+  answers `422` with `errors.AgentOS = "too_long"`.
+* The block is `admin`/`superadmin` writable in the panel (like `gpus`/`ram_gb`);
+  managers get `422 unknown_field` and read it in the device view.
+* The columns are off by default in the grid (Settings → Columns), so they do not
+  widen every view; `/v1/devices` always returns them (`agent_*` keys).
 
 ## Notes for ESET-style integrations
 

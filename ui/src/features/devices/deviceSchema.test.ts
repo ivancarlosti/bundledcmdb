@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MetaColumn, MetaField } from './api';
-import { buildDeviceSchema, formTabs, requireSn } from './deviceSchema';
+import { buildDeviceSchema, requireSn } from './deviceSchema';
 
 /**
  * The form's client-side rules.
@@ -46,31 +46,6 @@ function columnsOf(...keys: string[]): Map<string, MetaColumn> {
   }
   return map;
 }
-
-describe('formTabs', () => {
-  it('groups the wire keys into the fixed tab order', () => {
-    const tabs = formTabs(['notes', 'sn', 'cpus', 'status', 'cypher_id']);
-
-    expect(tabs.map((tab) => tab.id)).toEqual(['identity', 'hardware', 'assignment', 'admin']);
-    expect(tabs[0]?.keys).toEqual(['sn']);
-    expect(tabs[1]?.keys).toEqual(['cpus']);
-    expect(tabs[2]?.keys).toEqual(['status']);
-    expect(tabs[3]?.keys).toEqual(['cypher_id', 'notes']);
-  });
-
-  it('drops empty tabs and puts unknown keys last', () => {
-    const tabs = formTabs(['sn', 'something_new']);
-
-    expect(tabs.map((tab) => tab.id)).toEqual(['identity', 'more']);
-    expect(tabs[1]?.keys).toEqual(['something_new']);
-  });
-
-  it('keeps a declared order inside a tab regardless of the role list', () => {
-    const tabs = formTabs(['hostname', 'sn', 'manufacturer']);
-
-    expect(tabs[0]?.keys).toEqual(['sn', 'hostname', 'manufacturer']);
-  });
-});
 
 describe('buildDeviceSchema', () => {
   const model = (values: Record<string, unknown>, custom: Record<string, unknown> = {}) => ({

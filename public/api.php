@@ -151,13 +151,18 @@ function api_merge_errors(array $base, array $custom): array
 /**
  * Create or upsert one device from an API payload.
  *
+ * `$fieldMap` is the public field map unless the caller is the inventory-agent
+ * endpoint, which passes `asset_agent_field_map()` so the agent's keys land in
+ * the `Agent*` block instead of the legacy columns.
+ *
+ * @param array<string, string>|null $fieldMap
  * @return array{device: array, created: bool}
  * @throws ApiError
  */
-function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 'upsert'): array
+function api_write_device(PDO $pdo, array $auth, array $payload, string $mode = 'upsert', ?array $fieldMap = null): array
 {
     $actor = api_actor($auth);
-    $mapped = asset_api_map_input($payload);
+    $mapped = asset_api_map_input($payload, $fieldMap);
     $data = $mapped['data'];
 
     $errors = [];
@@ -639,6 +644,22 @@ try {
         }
         api_require_scope($auth, 'write');
         $outcome = api_write_device($pdo, $auth, request_json_body(), 'upsert');
+        json_ok($outcome['device'], $outcome['created'] ? 201 : 200, ['created' => $outcome['created']]);
+    }
+
+    if ($idPart === 'inventory') {
+        // Inventory-agent entry point. The agent reports its own copy of the
+        // identity and hardware facts, so `asset_agent_field_map()` sends the
+        // payload's keys (`os`, `hostname`, `model`, `secureBoot`, …) to the
+        // `Agent*` block: a report can never overwrite a hand-maintained
+        // `OS`/`Hostname`/`Manufacturer`, and the two sources stay comparable.
+        // Matching, validation, audit and custom values are the same code path as
+        // `/v1/devices/upsert`.
+        if (!in_array($method, ['POST', 'PUT'], true)) {
+            api_method_not_allowed(['POST', 'PUT']);
+        }
+        api_require_scope($auth, 'write');
+        $outcome = api_write_device($pdo, $auth, request_json_body(), 'upsert', asset_agent_field_map());
         json_ok($outcome['device'], $outcome['created'] ? 201 : 200, ['created' => $outcome['created']]);
     }
 

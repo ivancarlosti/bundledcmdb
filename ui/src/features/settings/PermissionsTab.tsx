@@ -49,6 +49,24 @@ const FIELD_LABELS: Record<string, string> = {
   Notes: 'col_notes',
   source: 'col_source',
   source_ref: 'col_source_ref',
+  // Inventory-agent block (`asset_agent_columns()`). A missing entry is only a
+  // cosmetic loss — the row falls back to the English `label` the server sends —
+  // so the map is complete rather than generated.
+  AgentHostname: 'col_agent_hostname',
+  AgentOS: 'col_agent_os',
+  AgentOSBuild: 'col_agent_os_build',
+  AgentBIOS: 'col_agent_bios',
+  AgentSecureBoot: 'col_agent_secure_boot',
+  AgentManufacturer: 'col_agent_manufacturer',
+  AgentModel: 'col_agent_model',
+  AgentCPU: 'col_agent_cpu',
+  AgentGPU: 'col_agent_gpu',
+  AgentRAMGB: 'col_agent_ram_gb',
+  AgentIP: 'col_agent_ip',
+  AgentLoggedUser: 'col_agent_logged_user',
+  AgentAllLoggedUsers: 'col_agent_all_logged_users',
+  AgentExecutionUser: 'col_agent_execution_user',
+  AgentAntivirus: 'col_agent_antivirus',
 };
 
 type Matrix = PermissionsPayload['matrix'];

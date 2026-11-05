@@ -23,6 +23,11 @@ declare(strict_types=1);
  * `db_table_exists()` guard disappears silently on those installs, which is
  * exactly what happened to `user_preferences`, `asset_events` and `saved_views`.
  *
+ * Columns are checked the same way: every `migrate_add_column()` call must be
+ * mirrored in `sql/legacy.sql` (fresh installs) or `sql/schema.sql` (DBA path),
+ * otherwise a managed database keeps the pre-migration table and the migration
+ * never comes back to add them.
+ *
  * No database is touched; both inputs are read as text, so this can run in CI
  * and in `bin/test-panel-api.php` without a connection.
  *
@@ -36,7 +41,8 @@ function migrate_dba_sql_drift(string $root): array
     }
 
     $errors = [];
-    $migrationTables = migrate_sql_tables((string) file_get_contents(__DIR__ . '/migrate.php'));
+    $migrationSql = (string) file_get_contents(__DIR__ . '/migrate.php');
+    $migrationTables = migrate_sql_tables($migrationSql);
     $schemaTables = migrate_sql_tables((string) file_get_contents($schemaPath));
 
     $missing = array_keys(array_diff_key($migrationTables, $schemaTables));
@@ -64,7 +70,43 @@ function migrate_dba_sql_drift(string $root): array
         $errors[] = 'sql/schema.sql records versions that no longer exist: ' . implode(', ', $unknown);
     }
 
+    // Columns, not just tables: a migration that adds a column to an existing
+    // table (0014, 0017, 0018, …) is invisible to the checks above, so a
+    // DBA-managed database silently kept the pre-migration `assets` table.
+    $legacyPath = rtrim($root, '/') . '/sql/legacy.sql';
+    $referenceSql = $schemaSql . "\n" . (is_file($legacyPath) ? (string) file_get_contents($legacyPath) : '');
+    $missingColumns = [];
+    foreach (migrate_sql_added_columns($migrationSql) as $table => $columns) {
+        foreach (array_keys($columns) as $column) {
+            if (preg_match('/\b' . preg_quote($column, '/') . '\b/i', $referenceSql) !== 1) {
+                $missingColumns[] = $table . '.' . $column;
+            }
+        }
+    }
+    if ($missingColumns !== []) {
+        sort($missingColumns);
+        $errors[] = 'sql/legacy.sql and sql/schema.sql do not mention columns that lib/migrate.php adds: '
+            . implode(', ', $missingColumns);
+    }
+
     return $errors;
+}
+
+/**
+ * Columns added by `migrate_add_column()` calls.
+ *
+ * @return array<string, array<string, true>> table => [column => true]
+ */
+function migrate_sql_added_columns(string $sql): array
+{
+    $columns = [];
+    $pattern = '/migrate_add_column\(\s*\$pdo\s*,\s*\'([A-Za-z0-9_]+)\'\s*,\s*\'([A-Za-z0-9_]+)\'/';
+    if (preg_match_all($pattern, $sql, $matches, PREG_SET_ORDER)) {
+        foreach ($matches as $match) {
+            $columns[$match[1]][$match[2]] = true;
+        }
+    }
+    return $columns;
 }
 
 /**
@@ -154,6 +196,10 @@ function migrations(): array
         '2026_11_04_0017_asset_hardware_disks' => [
             'description' => 'Add assets GPUs/RAMGB/LoggedUsername/DeviceModel + structured PhysicalDisks and its roll-ups',
             'run' => 'migration_0017_asset_hardware_disks',
+        ],
+        '2026_11_05_0018_asset_agent_inventory' => [
+            'description' => 'Add the inventory-agent block (Agent* columns) without touching the legacy columns',
+            'run' => 'migration_0018_asset_agent_inventory',
         ],
     ];
 }
@@ -822,4 +868,41 @@ function migration_0017_asset_hardware_disks(PDO $pdo): void
     migrate_add_column($pdo, 'assets', 'DisksTotalGB', 'DECIMAL(12,2) NULL');
     migrate_add_column($pdo, 'assets', 'DisksFreeGB', 'DECIMAL(12,2) NULL');
     migrate_add_column($pdo, 'assets', 'DisksUsedGB', 'DECIMAL(12,2) NULL');
+}
+
+/**
+ * The inventory-agent block.
+ *
+ * Every key the agent reports gets its own column instead of overwriting the
+ * matching legacy one (`Hostname`, `OS`, `Manufacturer`, …): an agent write can
+ * never replace a hand-maintained value and both sources stay comparable.
+ * The block is declared once in `asset_agent_columns()` (`lib/assets.php`); this
+ * migration only creates the storage.
+ *
+ * `AgentSecureBoot` is VARCHAR like `BYOD` ('true'/'false') so the panel keeps
+ * one boolean convention, and `AgentAllLoggedUsers` is TEXT because the agent
+ * reports a list.
+ */
+function migration_0018_asset_agent_inventory(PDO $pdo): void
+{
+    $definitions = [
+        'AgentHostname'       => 'VARCHAR(255) NULL',
+        'AgentOS'             => 'VARCHAR(191) NULL',
+        'AgentOSBuild'        => 'VARCHAR(64) NULL',
+        'AgentBIOS'           => 'VARCHAR(191) NULL',
+        'AgentSecureBoot'     => 'VARCHAR(16) NULL',
+        'AgentManufacturer'   => 'VARCHAR(191) NULL',
+        'AgentModel'          => 'VARCHAR(191) NULL',
+        'AgentCPU'            => 'VARCHAR(255) NULL',
+        'AgentGPU'            => 'VARCHAR(255) NULL',
+        'AgentRAMGB'          => 'VARCHAR(255) NULL',
+        'AgentIP'             => 'VARCHAR(64) NULL',
+        'AgentLoggedUser'     => 'VARCHAR(191) NULL',
+        'AgentAllLoggedUsers' => 'TEXT NULL',
+        'AgentExecutionUser'  => 'VARCHAR(191) NULL',
+        'AgentAntivirus'      => 'VARCHAR(255) NULL',
+    ];
+    foreach ($definitions as $column => $definition) {
+        migrate_add_column($pdo, 'assets', $column, $definition);
+    }
 }

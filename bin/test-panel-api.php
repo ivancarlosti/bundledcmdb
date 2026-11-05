@@ -322,6 +322,123 @@ check(
     'disks: the new fields are published on the API payload'
 );
 
+// --- inventory agent (no database needed) ----------------------------------
+// The agent reports its own copy of the identity and hardware facts. Its payload
+// keys (`os`, `hostname`, `model`, …) reach the `Agent*` block through
+// `asset_agent_field_map()`, while the very same keys on the public endpoints keep
+// meaning the legacy columns — that separation is the whole point of the block.
+$agentPayload = [
+    'hostname'       => 'pc-01',
+    'os'             => 'Windows 11 Pro',
+    'build'          => '22631.4169',
+    'bios'           => 'Dell 1.14.2',
+    'secureBoot'     => true,
+    'manufacturer'   => 'Dell Inc.',
+    'model'          => 'Latitude 5440',
+    'cpu'            => 'Intel Core i7-1365U',
+    'gpu'            => 'Intel Iris Xe Graphics',
+    'ramGB'          => '16',
+    'ip'             => '10.0.0.57',
+    'loggedUser'     => 'ACME\\jdoe',
+    'allLoggedUsers' => ['ACME\\jdoe', 'ACME\\asmith'],
+    'executionUser'  => 'SYSTEM',
+    'antivirus'      => 'ESET Endpoint Security 11.1',
+    'sn'             => 'AGENT-1',
+    'physicalDisks'  => [['number' => 0, 'sizeGb' => 476.94, 'freeGb' => 210.5]],
+];
+
+$agentMapped = asset_api_map_input($agentPayload, asset_agent_field_map());
+check($agentMapped['unknown'] === [], 'agent: every payload key is claimed', json_encode($agentMapped['unknown']));
+check(
+    !isset($agentMapped['data']['OS']) && !isset($agentMapped['data']['Hostname'])
+    && !isset($agentMapped['data']['Manufacturer']) && !isset($agentMapped['data']['DeviceModel']),
+    'agent: `os`/`hostname`/`manufacturer`/`model` never touch the legacy columns',
+    json_encode(array_keys($agentMapped['data']))
+);
+check(
+    ($agentMapped['data']['AgentOS'] ?? null) === 'Windows 11 Pro'
+    && ($agentMapped['data']['AgentModel'] ?? null) === 'Latitude 5440'
+    && ($agentMapped['data']['SN'] ?? null) === 'AGENT-1',
+    'agent: the payload keys map onto the Agent* block',
+    json_encode($agentMapped['data'])
+);
+
+$agentErrors = [];
+$agentData = asset_normalize_input($agentMapped['data'], $agentErrors);
+check($agentErrors === [], 'agent: the report normalises without errors', json_encode($agentErrors));
+check(($agentData['AgentSecureBoot'] ?? null) === 'true', 'agent: secureBoot is stored as a string boolean', json_encode($agentData['AgentSecureBoot'] ?? null));
+check(
+    ($agentData['AgentAllLoggedUsers'] ?? null) === 'ACME\\jdoe, ACME\\asmith',
+    'agent: the user list is joined with ", "',
+    (string) ($agentData['AgentAllLoggedUsers'] ?? '')
+);
+check(
+    ($agentData['DisksTotalGB'] ?? null) === 476.94 && ($agentData['HDs'] ?? null) === 'Disk 0',
+    'agent: physicalDisks still feeds the disk roll-ups',
+    json_encode([$agentData['DisksTotalGB'] ?? null, $agentData['HDs'] ?? null])
+);
+check(asset_validate($agentData, true) === [], 'agent: a complete report validates', json_encode(asset_validate($agentData, true)));
+
+check(
+    asset_normalize_input(['AgentSecureBoot' => 'yes'])['AgentSecureBoot'] === 'true'
+    && asset_normalize_input(['AgentSecureBoot' => false])['AgentSecureBoot'] === 'false'
+    && asset_normalize_input(['AgentSecureBoot' => ''])['AgentSecureBoot'] === 'false',
+    'agent: secureBoot normalises "yes"/false/"" like every other boolean'
+);
+check(
+    (asset_validate(['AgentOS' => str_repeat('x', 192)], true)['AgentOS'] ?? null) === 'too_long'
+    && !isset(asset_validate(['AgentAllLoggedUsers' => str_repeat('x', 5000)], true)['AgentAllLoggedUsers']),
+    'agent: the length caps come from asset_agent_columns() (TEXT is uncapped)'
+);
+
+// The public map is unchanged: an agent spelling sent to `/v1/devices` still means
+// the legacy column, and the block is written through its `agent_*` keys there.
+$publicMapped = asset_api_map_input(['os' => 'Windows 11 Pro', 'hostname' => 'pc-01', 'agent_os' => 'Ubuntu 24.04']);
+check(
+    ($publicMapped['data']['OS'] ?? null) === 'Windows 11 Pro'
+    && ($publicMapped['data']['Hostname'] ?? null) === 'pc-01'
+    && ($publicMapped['data']['AgentOS'] ?? null) === 'Ubuntu 24.04',
+    'agent: the public endpoints keep the legacy meaning of `os`/`hostname`',
+    json_encode($publicMapped['data'])
+);
+
+$agentRow = asset_api_payload([
+    'AgentHostname'   => 'pc-01',
+    'AgentOS'         => 'Windows 11 Pro',
+    'AgentSecureBoot' => 'true',
+    'OS'              => 'Ubuntu 24.04',
+]);
+check(
+    $agentRow['agent_hostname'] === 'pc-01' && $agentRow['agent_os'] === 'Windows 11 Pro'
+    && $agentRow['agent_secure_boot'] === true && $agentRow['os'] === 'Ubuntu 24.04',
+    'agent: the API payload publishes the block next to the legacy columns',
+    json_encode(array_intersect_key($agentRow, array_flip(['agent_hostname', 'agent_os', 'agent_secure_boot', 'os'])))
+);
+check(
+    panel_device_payload(['AgentOS' => 'Windows 11 Pro'])['agent_os'] === 'Windows 11 Pro',
+    'agent: the panel payload uses the same keys as the REST payload'
+);
+check(
+    array_keys(asset_agent_columns()) === array_keys(array_filter(
+        asset_column_defs(),
+        static fn (string $column): bool => str_starts_with($column, 'Agent'),
+        ARRAY_FILTER_USE_KEY
+    )),
+    'agent: the column definitions are derived from asset_agent_columns()'
+);
+check(
+    asset_column_defs()['AgentOS']['form_roles'] === ['admin', 'superadmin']
+    && asset_column_defs()['AgentOS']['grid'] === false,
+    'agent: admins edit the block, the grid stays opt-in'
+);
+
+// One spelling for the disk-space column, in the payload and in the export map.
+check(
+    array_key_exists('hds_spaces_gb', panel_device_payload(['HDsSpacesGB' => '476.94']))
+    && panel_device_payload_keys()['HDsSpacesGB'] === 'hds_spaces_gb',
+    'panel: HDsSpacesGB is published as hds_spaces_gb everywhere'
+);
+
 // --- grid layout (no database needed) --------------------------------------
 $layoutDefaults = grid_layout_defaults(null);
 check(in_array('SN', $layoutDefaults['enabled'], true), 'grid: the code default follows the `grid` flag');
@@ -745,6 +862,37 @@ try {
         'physical_disks' => 'unknown_field',
     ]);
 
+    // --- inventory agent: panel round trip and role gate -------------------
+    $hostnameBefore = panel_devices_show(['id' => (string) $id])['data']['hostname'];
+    as_role('admin', $companyA);
+    body([
+        'agent_hostname'    => 'pc-01',
+        'agent_os'          => 'Windows 11 Pro',
+        'agent_os_build'    => '22631.4169',
+        'agent_secure_boot' => true,
+    ]);
+    $agentPanel = panel_devices_update(['id' => (string) $id])['data'];
+    check($agentPanel['agent_os'] === 'Windows 11 Pro', 'agent: admin writes agent_os');
+    check($agentPanel['agent_os_build'] === '22631.4169', 'agent: admin writes agent_os_build');
+    check($agentPanel['agent_secure_boot'] === true, 'agent: secureBoot round-trips as a boolean');
+    check(
+        $agentPanel['agent_hostname'] === 'pc-01' && $agentPanel['hostname'] === $hostnameBefore,
+        'agent: the block does not overwrite the legacy hostname',
+        json_encode([$agentPanel['agent_hostname'], $agentPanel['hostname'], $hostnameBefore])
+    );
+
+    as_role('manager', $companyA);
+    body(['agent_os' => 'Ubuntu 24.04']);
+    check_error('agent: manager cannot write the block → 422', fn () => panel_devices_update(['id' => (string) $id]), 'validation_failed', 422, [
+        'agent_os' => 'unknown_field',
+    ]);
+    $agentRead = panel_devices_show(['id' => (string) $id])['data'];
+    check(
+        $agentRead['agent_os'] === 'Windows 11 Pro',
+        'agent: the refused write changed nothing',
+        (string) $agentRead['agent_os']
+    );
+
     // --- disks: the API write path ----------------------------------------
     // `physical_disks` is API-only, so it goes through the same helpers
     // `public/api.php` uses and is then read back through the panel payload.
@@ -774,7 +922,7 @@ try {
     );
     check($diskRow['hds'] === 'WD Green M.2', 'disks: HDs follows the JSON', (string) $diskRow['hds']);
     check($diskRow['hds_types'] === 'SSD NVMe', 'disks: HDsTypes follows the JSON', (string) $diskRow['hds_types']);
-    check($diskRow['hds_space_gb'] === '476.94', 'disks: HDsSpacesGB follows the JSON', (string) $diskRow['hds_space_gb']);
+    check($diskRow['hds_spaces_gb'] === '476.94', 'disks: HDsSpacesGB follows the JSON', (string) $diskRow['hds_spaces_gb']);
 
     $_GET = ['q' => 'WD Green'];
     check(

@@ -8,13 +8,69 @@ declare(strict_types=1);
  * `lib/panel/devices.php` (the device list, detail, exports and the write
  * handlers), the panel meta endpoint and `public/api.php` all use these helpers
  * instead of the copy-pasted SQL that used to live in each page.
+ */
+
+/**
+ * The inventory-agent block: one column per key the agent reports.
  *
+ * The agent duplicates facts the panel already models (`hostname`, `os`,
+ * `manufacturer`, `model`, `cpu`, `gpu`, `ramGB`, `ip`, `loggedUser`). Each one
+ * is stored in its own `Agent*` column instead of overwriting the legacy column,
+ * so a report can never replace a hand-maintained value and both sources stay
+ * comparable. `POST /api/v1/devices/inventory` is the only writer that targets
+ * this block (see `asset_agent_field_map()`).
+ *
+ * This table is the single source for the block: `asset_column_defs()`,
+ * `asset_form_columns()`, `asset_api_field_map()`, `asset_api_payload()`,
+ * `asset_validate()` and the panel payload/export/label maps all derive from it,
+ * so a column cannot be spelled one way in one of them and another way in the
+ * next (which is how the disk-space field ended up in the wrong form tab).
+ *
+ * Keys:
+ *   payload  wire key of the agent's own payload; only accepted on the inventory
+ *            endpoint, where it cannot collide with the legacy spellings
+ *   api      snake_case key in the panel and REST representation (`agent_*`)
+ *   type     'text' | 'bool' (VARCHAR 'true'/'false', like BYOD)
+ *   max      length cap enforced by `asset_validate()`; null = TEXT
+ *   label    English fallback label
+ *
+ * `physicalDisks` is deliberately absent: the structured disk inventory is the
+ * same fact for the agent and for a manual edit, so it keeps the
+ * `PhysicalDisks` column and the roll-ups derived from it (`lib/disks.php`).
+ *
+ * @return array<string, array{payload: string, api: string, type: string, max: ?int, label: string}>
+ */
+function asset_agent_columns(): array
+{
+    return [
+        'AgentHostname'       => ['payload' => 'hostname',       'api' => 'agent_hostname',         'type' => 'text', 'max' => 255,  'label' => 'Agent hostname'],
+        'AgentOS'             => ['payload' => 'os',             'api' => 'agent_os',               'type' => 'text', 'max' => 191,  'label' => 'Agent operating system'],
+        'AgentOSBuild'        => ['payload' => 'build',          'api' => 'agent_os_build',         'type' => 'text', 'max' => 64,   'label' => 'Agent OS build'],
+        'AgentBIOS'           => ['payload' => 'bios',           'api' => 'agent_bios',             'type' => 'text', 'max' => 191,  'label' => 'Agent BIOS'],
+        'AgentSecureBoot'     => ['payload' => 'secureBoot',     'api' => 'agent_secure_boot',      'type' => 'bool', 'max' => null, 'label' => 'Agent Secure Boot'],
+        'AgentManufacturer'   => ['payload' => 'manufacturer',   'api' => 'agent_manufacturer',     'type' => 'text', 'max' => 191,  'label' => 'Agent manufacturer'],
+        'AgentModel'          => ['payload' => 'model',          'api' => 'agent_model',            'type' => 'text', 'max' => 191,  'label' => 'Agent model'],
+        'AgentCPU'            => ['payload' => 'cpu',            'api' => 'agent_cpu',              'type' => 'text', 'max' => 255,  'label' => 'Agent CPU'],
+        'AgentGPU'            => ['payload' => 'gpu',            'api' => 'agent_gpu',              'type' => 'text', 'max' => 255,  'label' => 'Agent GPU'],
+        'AgentRAMGB'          => ['payload' => 'ramGB',          'api' => 'agent_ram_gb',           'type' => 'text', 'max' => 255,  'label' => 'Agent RAM (GB)'],
+        'AgentIP'             => ['payload' => 'ip',             'api' => 'agent_ip',               'type' => 'text', 'max' => 64,   'label' => 'Agent IP address'],
+        'AgentLoggedUser'     => ['payload' => 'loggedUser',     'api' => 'agent_logged_user',      'type' => 'text', 'max' => 191,  'label' => 'Agent logged-in user'],
+        'AgentAllLoggedUsers' => ['payload' => 'allLoggedUsers', 'api' => 'agent_all_logged_users', 'type' => 'text', 'max' => null, 'label' => 'Agent all logged-in users'],
+        'AgentExecutionUser'  => ['payload' => 'executionUser',  'api' => 'agent_execution_user',   'type' => 'text', 'max' => 191,  'label' => 'Agent execution user'],
+        'AgentAntivirus'      => ['payload' => 'antivirus',      'api' => 'agent_antivirus',        'type' => 'text', 'max' => 255,  'label' => 'Agent antivirus'],
+    ];
+}
+
+/**
  * Column metadata keys:
  *   type        input/validation hint
  *   grid        available to the SPA grid / export by default
  *   api         writable through the REST API
  *   form_roles  roles allowed to edit it in the device form ([] = read-only)
  *   label       English fallback label
+ *
+ * The inventory-agent block is appended from `asset_agent_columns()` instead of
+ * being written out again here.
  */
 function asset_column_defs(): array
 {
@@ -26,7 +82,7 @@ function asset_column_defs(): array
     $admins = ['admin', 'superadmin'];
     $managers = ['manager', 'admin', 'superadmin'];
 
-    return $defs = [
+    $defs = [
         'Id'              => ['type' => 'int', 'grid' => false, 'api' => false, 'form_roles' => [], 'label' => 'Id'],
         'UUID'            => ['type' => 'text', 'grid' => false, 'api' => true, 'form_roles' => [], 'label' => 'UUID'],
         'SN'              => ['type' => 'text', 'grid' => true, 'api' => true, 'form_roles' => $managers, 'label' => 'Serial Number'],
@@ -74,6 +130,21 @@ function asset_column_defs(): array
         'updated_by'      => ['type' => 'text', 'grid' => false, 'api' => false, 'form_roles' => [], 'label' => 'Updated by'],
         'deleted_at'      => ['type' => 'datetime', 'grid' => false, 'api' => false, 'form_roles' => [], 'label' => 'Deleted at'],
     ];
+
+    // Inventory-agent block (`asset_agent_columns()`): agent-owned hardware, so
+    // it is editable by admins like GPUs/RAMGB and opt-in for the grid
+    // (Settings → Columns) instead of widening every default view.
+    foreach (asset_agent_columns() as $column => $meta) {
+        $defs[$column] = [
+            'type'       => $meta['type'],
+            'grid'       => false,
+            'api'        => true,
+            'form_roles' => $admins,
+            'label'      => $meta['label'],
+        ];
+    }
+
+    return $defs;
 }
 /** Columns editable inline on the grid for a role. */
 function asset_grid_editable_columns(string $role): array
@@ -95,13 +166,13 @@ function asset_grid_editable_columns(string $role): array
 /** Columns the device form edits (create and PATCH), in order. */
 function asset_form_columns(): array
 {
-    return [
+    return array_merge([
         'SN', 'Hostname', 'Manufacturer', 'DeviceModel', 'OS', 'OSVersion', 'Mobile',
         'Asset', 'Status', 'UserEmail', 'LoggedUsername', 'BYOD', 'Warranty',
         'PurchaseDate', 'LastSeen', 'UUID', 'CypherID', 'CypherKey', 'CPUs', 'GPUs',
         'RAMGB', 'HDs', 'HDsTypes', 'HDsSpacesGB', 'NetworkAdapters', 'MACAddresses',
         'ESETComponents', 'PrimaryLocalIP', 'PrimaryRemoteIP', 'Notes',
-    ];
+    ], array_keys(asset_agent_columns()));
 }
 
 /** Columns a role may fill in when creating an asset. */
@@ -288,6 +359,16 @@ function asset_validate(array $data, bool $partial = false): array
     foreach (['Hostname' => 255, 'OS' => 191, 'Manufacturer' => 191, 'Asset' => 191,
                  'DeviceModel' => 191, 'LoggedUsername' => 191, 'GPUs' => 255, 'RAMGB' => 255] as $column => $max) {
         if (array_key_exists($column, $data) && $data[$column] !== null && mb_strlen((string) $data[$column]) > $max) {
+            $errors[$column] = 'too_long';
+        }
+    }
+    // Agent block: the caps live in `asset_agent_columns()` so a column can never
+    // be longer in the catalog than in the table.
+    foreach (asset_agent_columns() as $column => $meta) {
+        if ($meta['max'] === null || !array_key_exists($column, $data) || $data[$column] === null) {
+            continue;
+        }
+        if (mb_strlen((string) $data[$column]) > $meta['max']) {
             $errors[$column] = 'too_long';
         }
     }
@@ -673,7 +754,7 @@ function asset_list(PDO $pdo, array $opts = []): array
  */
 function asset_api_field_map(): array
 {
-    return [
+    $map = [
         'id'                => 'Id',
         'uuid'              => 'UUID',
         'sn'                => 'SN',
@@ -713,17 +794,69 @@ function asset_api_field_map(): array
         'source_slug'       => 'source',
         'source_ref'        => 'source_ref',
     ];
+
+    // The agent block is written through its `agent_*` keys only. The agent's own
+    // spellings (`os`, `hostname`, …) are *not* added here: on these endpoints
+    // they mean the legacy columns, and the inventory endpoint
+    // (`asset_agent_field_map()`) is where they target the block.
+    foreach (asset_agent_columns() as $column => $meta) {
+        $map[$meta['api']] = $column;
+    }
+
+    return $map;
+}
+
+/**
+ * Field map for the inventory-agent endpoint (`POST /api/v1/devices/inventory`).
+ *
+ * The agent sends its own spelling (`os`, `hostname`, `model`, `secureBoot`, …);
+ * on this endpoint those keys target the `Agent*` block instead of the legacy
+ * columns, which is why the public map cannot be reused. The identity and
+ * plumbing keys an agent still needs (`sn`, `uuid`, `company`, `source`,
+ * `source_ref`, `physicalDisks`) are passed through unchanged.
+ *
+ * @return array<string, string>
+ */
+function asset_agent_field_map(): array
+{
+    $map = [];
+    foreach (asset_agent_columns() as $column => $meta) {
+        $map[$meta['api']] = $column;
+        $map[strtolower($meta['payload'])] = $column;
+    }
+
+    return $map + [
+        'uuid'           => 'UUID',
+        'sn'             => 'SN',
+        'serial_number'  => 'SN',
+        'last_seen'      => 'LastSeen',
+        'mobile'         => 'Mobile',
+        'byod'           => 'BYOD',
+        'status'         => 'Status',
+        'company'        => 'company',
+        'source'         => 'source',
+        'source_slug'    => 'source',
+        'source_ref'     => 'source_ref',
+        'physical_disks' => 'PhysicalDisks',
+        'physicaldisks'  => 'PhysicalDisks',
+        'disks'          => 'PhysicalDisks',
+    ];
 }
 
 /**
  * Translate an API payload into DB-column keys.
  *
+ * `$fieldMap` defaults to the public map; the inventory endpoint passes
+ * `asset_agent_field_map()` so the agent's own spellings reach the `Agent*`
+ * block instead of the legacy columns.
+ *
+ * @param array<string, mixed>|null $fieldMap
  * @return array{data: array<string, mixed>, unknown: list<string>}
  */
-function asset_api_map_input(array $payload): array
+function asset_api_map_input(array $payload, ?array $fieldMap = null): array
 {
     $map = [];
-    foreach (asset_api_field_map() as $apiKey => $column) {
+    foreach (($fieldMap ?? asset_api_field_map()) as $apiKey => $column) {
         $map[strtolower($apiKey)] = $column;
         $map[strtolower($column)] = $column;
     }
@@ -755,7 +888,7 @@ function asset_api_map_input(array $payload): array
  */
 function asset_api_payload(array $row, array $custom = []): array
 {
-    return [
+    $payload = [
         'id'                => isset($row['Id']) ? (int) $row['Id'] : null,
         'uuid'              => $row['UUID'] ?? null,
         'sn'                => $row['SN'] ?? null,
@@ -803,4 +936,14 @@ function asset_api_payload(array $row, array $custom = []): array
         'duplicate_of_id'   => isset($row['duplicate_of_id']) ? (int) $row['duplicate_of_id'] : null,
         'custom'            => (object) $custom,
     ];
+
+    // Inventory-agent block: one key per `Agent*` column (asset_agent_columns()),
+    // so a GET round-trips what the agent reported.
+    foreach (asset_agent_columns() as $column => $meta) {
+        $payload[$meta['api']] = $meta['type'] === 'bool'
+            ? asset_bool_parse($row[$column] ?? null)
+            : ($row[$column] ?? null);
+    }
+
+    return $payload;
 }

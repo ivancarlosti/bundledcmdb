@@ -131,6 +131,55 @@ test.describe('device detail layout', () => {
 });
 
 /**
+ * Section layout: one list, two screens.
+ *
+ * The disk-space field used to land in the catch-all *More* tab because the panel
+ * payload and the tab map spelled its key differently (`hds_space_gb` vs
+ * `hds_spaces_gb`), and the view was a single flat list of every column. Both
+ * screens read `deviceSections.ts` now, so the field is a Hardware field and the
+ * agent report sits under its own heading inside the Hardware card.
+ */
+test.describe('device sections', () => {
+  test('keeps the disk-space field in the Hardware tab of the form', async ({ page }) => {
+    await mockPanel(page);
+
+    await page.goto('/app/devices/7/edit');
+    await page.getByRole('tab', { name: 'Hardware' }).click();
+
+    await expect(page.locator('#field-hds_spaces_gb')).toBeVisible();
+    // Nothing falls through to the catch-all, so it is not rendered at all: the
+    // tab is called *Custom* now, and "More" is gone.
+    await expect(page.getByRole('tab', { name: 'More' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Custom' })).toHaveCount(0);
+  });
+
+  test('shows the agent report under Additional hardware info', async ({ page }) => {
+    await mockPanel(page);
+
+    await page.goto('/app/devices/7');
+
+    const hardware = page.getByTestId('device-section-hardware');
+    const agent = hardware.getByTestId('device-group-agent');
+    await expect(agent).toBeVisible();
+    await expect(agent).toContainText('Additional hardware info');
+    await expect(agent).toContainText('Windows 11 Pro build 22631');
+    await expect(agent).toContainText('Yes');
+    // The structured disk inventory stays inside the same card.
+    await expect(hardware.getByTestId('device-storage')).toBeVisible();
+  });
+
+  test('lays the view out as section cards', async ({ page }) => {
+    await mockPanel(page);
+
+    await page.goto('/app/devices/7');
+
+    await expect(page.getByTestId('device-section-identity')).toBeVisible();
+    await expect(page.getByTestId('device-section-assignment')).toBeVisible();
+    await expect(page.getByTestId('device-section-record')).toBeVisible();
+  });
+});
+
+/**
  * Column reordering, both ways.
  *
  * The pointer path (`@dnd-kit` on the grip handle) is what the deferred item

@@ -10,7 +10,8 @@ import { zodResolver } from '@/lib/zodResolver';
 
 import type { DeviceDetail, MetaColumn, MetaField, MetaPayload } from './api';
 import { buildDevicePayload, formFields, formKeys, initialFormValues, type FormValue } from './deviceForm';
-import { buildDeviceSchema, formTabs, requireSn, type DeviceFormModel } from './deviceSchema';
+import { buildDeviceSchema, requireSn, type DeviceFormModel } from './deviceSchema';
+import { CUSTOM_SECTION_ID, formTabs } from './deviceSections';
 import { useCreateDevice, useUpdateDevice } from './useDeviceMutations';
 import { useCompanyUsers, useDevice, useMeta } from './useDevices';
 
@@ -265,10 +266,12 @@ function DeviceForm({ device, meta }: FormProps) {
   const pending = createDevice.isPending || updateDevice.isPending;
 
   const tabs = useMemo(() => formTabs(keys), [keys]);
-  const [activeTab, setActiveTab] = useState(tabs[0]?.id ?? 'more');
+  const [activeTab, setActiveTab] = useState(tabs[0]?.id ?? CUSTOM_SECTION_ID);
   // The server may answer `422` for a field on another tab; switching there makes
-  // the message findable instead of invisible.
-  const tabForProblem = (key: string): string | null => tabs.find((tab) => tab.keys.includes(key))?.id ?? null;
+  // the message findable instead of invisible. Grouped keys (the agent block under
+  // Hardware) belong to their parent's tab.
+  const tabForProblem = (key: string): string | null =>
+    tabs.find((tab) => tab.keys.includes(key) || tab.groups.some((group) => group.keys.includes(key)))?.id ?? null;
 
   const onSubmit = async (model: DeviceFormModel) => {
     setConflict(false);
@@ -318,6 +321,39 @@ function DeviceForm({ device, meta }: FormProps) {
     { message?: string }
   >;
   const serverErrors = Object.entries(allErrors).filter(([, value]) => value?.message !== undefined);
+
+  // One label + input + message, shared by a tab's own fields and by its nested
+  // groups (the agent block under Hardware), so the two cannot render differently.
+  const renderField = (key: string) => {
+    const column = columns.get(key);
+    const id = `field-${key.replace(/\./g, '-')}`;
+    const path = `values.${key}` as const;
+    const message = (formState.errors.values as Record<string, { message?: string } | undefined>)?.[key]?.message;
+
+    return (
+      <div key={key} className="flex flex-col gap-1">
+        <label htmlFor={id} className="text-xs font-medium text-[var(--color-muted)]">
+          {column === undefined ? key : t(column.label_key, { defaultValue: column.label })}
+        </label>
+        <Controller
+          control={control}
+          name={path}
+          render={({ field }) => (
+            <DeviceControl
+              id={id}
+              value={field.value as FormValue}
+              column={column}
+              meta={meta}
+              company={company}
+              invalid={message !== undefined}
+              onChange={field.onChange}
+            />
+          )}
+        />
+        {message === undefined ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{message}</p>}
+      </div>
+    );
+  };
 
   return (
     <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
@@ -397,36 +433,17 @@ function DeviceForm({ device, meta }: FormProps) {
             hidden={activeTab !== tab.id}
             className="grid gap-3 sm:grid-cols-2"
           >
-            {tab.keys.map((key) => {
-              const column = columns.get(key);
-              const id = `field-${key.replace(/\./g, '-')}`;
-              const path = `values.${key}` as const;
-              const message = (formState.errors.values as Record<string, { message?: string } | undefined>)?.[key]
-                ?.message;
-              return (
-                <div key={key} className="flex flex-col gap-1">
-                  <label htmlFor={id} className="text-xs font-medium text-[var(--color-muted)]">
-                    {column === undefined ? key : t(column.label_key, { defaultValue: column.label })}
-                  </label>
-                  <Controller
-                    control={control}
-                    name={path}
-                    render={({ field }) => (
-                      <DeviceControl
-                        id={id}
-                        value={field.value as FormValue}
-                        column={column}
-                        meta={meta}
-                        company={company}
-                        invalid={message !== undefined}
-                        onChange={field.onChange}
-                      />
-                    )}
-                  />
-                  {message === undefined ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{message}</p>}
-                </div>
-              );
-            })}
+            {tab.keys.map((key) => renderField(key))}
+            {tab.groups.map((group) => (
+              <div
+                key={group.id}
+                className="flex flex-col gap-2 border-t border-[var(--color-border)] pt-3 sm:col-span-2"
+                data-testid={`device-group-${group.id}`}
+              >
+                <h3 className="m-0 text-sm font-semibold">{t(group.headingKey)}</h3>
+                <div className="grid gap-3 sm:grid-cols-2">{group.keys.map((key) => renderField(key))}</div>
+              </div>
+            ))}
           </div>
         ))}
       </div>

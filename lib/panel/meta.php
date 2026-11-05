@@ -19,7 +19,7 @@ declare(strict_types=1);
  */
 function panel_column_label_keys(): array
 {
-    return [
+    $keys = [
         'Id'              => 'col_id',
         'UUID'            => 'col_uuid',
         'SN'              => 'col_sn',
@@ -65,6 +65,15 @@ function panel_column_label_keys(): array
         'deleted_at'      => 'col_deleted_at',
         'files'           => 'col_files',
     ];
+
+    // Inventory-agent block: `col_` + the wire key from `asset_agent_columns()`
+    // (`AgentOSBuild` => `col_agent_os_build`). Deriving it keeps the catalogue
+    // and the definitions from disagreeing about a name.
+    foreach (asset_agent_columns() as $column => $meta) {
+        $keys[$column] = 'col_' . $meta['api'];
+    }
+
+    return $keys;
 }
 
 /** Translation key for a column, with a snake_case fallback for unknown ones. */

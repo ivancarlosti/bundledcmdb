@@ -125,7 +125,7 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
    creates a table that `sql/schema.sql` (the DBA path) does not, or when the
    ledger in it is not up to `migrations()`.
 3. `php bin/migrate.php --dry-run` → 0 pending; a second real run reports
-   `Applied: 0, already present: 17`.
+   `Applied: 0, already present: 18`.
 4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
 5. `php bin/test-panel-api.php` → 0 failed (requires a non-production database;
    the suite also covers the role matrix, source move, `source_slug` alias, the
@@ -184,7 +184,12 @@ curl -s -H "Authorization: Bearer $TOKEN" "$B/users?per_page=2" | jq '.data.tota
   5. a migration that adds the column (mirrored in `sql/legacy.sql`, recorded in
      the `sql/schema.sql` ledger) plus the `col_*` entry in every catalogue and,
      when it belongs in the form, the tab in
-     `ui/src/features/devices/deviceSchema.ts`.
+     `ui/src/features/devices/deviceSections.ts`.
   The grid, the sort whitelist, the "any" search, the export and the permission
   matrix then follow automatically, and Settings → Columns can switch it on for
   an existing installation.
+* The inventory-agent block (`AgentHostname`, `AgentOS`, …) skips that checklist
+  on purpose: its 15 columns are declared once in `asset_agent_columns()` and the
+  five lists above are derived from it, so the only per-column work is the
+  migration entry and the `col_agent_*` labels. A new *payload* key means adding
+  the row here plus the section key in `deviceSections.ts`.

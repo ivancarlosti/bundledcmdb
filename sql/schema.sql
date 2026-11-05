@@ -227,6 +227,26 @@ DELETE FROM asset_sources
    AND NOT EXISTS (SELECT 1 FROM api_keys WHERE source_slug = 'eset' OR FIND_IN_SET('eset', allowed_sources));
 UPDATE asset_sources SET is_system = 0 WHERE slug = 'eset';
 
+-- 0018 stores the inventory agent's own copy of the identity/hardware facts in
+-- a separate `Agent*` block, so an agent report never overwrites a
+-- hand-maintained `Hostname`/`OS`/`Manufacturer`. The block is declared once in
+-- `asset_agent_columns()` (lib/assets.php).
+ALTER TABLE assets ADD COLUMN AgentHostname VARCHAR(255) NULL;
+ALTER TABLE assets ADD COLUMN AgentOS VARCHAR(191) NULL;
+ALTER TABLE assets ADD COLUMN AgentOSBuild VARCHAR(64) NULL;
+ALTER TABLE assets ADD COLUMN AgentBIOS VARCHAR(191) NULL;
+ALTER TABLE assets ADD COLUMN AgentSecureBoot VARCHAR(16) NULL;
+ALTER TABLE assets ADD COLUMN AgentManufacturer VARCHAR(191) NULL;
+ALTER TABLE assets ADD COLUMN AgentModel VARCHAR(191) NULL;
+ALTER TABLE assets ADD COLUMN AgentCPU VARCHAR(255) NULL;
+ALTER TABLE assets ADD COLUMN AgentGPU VARCHAR(255) NULL;
+ALTER TABLE assets ADD COLUMN AgentRAMGB VARCHAR(255) NULL;
+ALTER TABLE assets ADD COLUMN AgentIP VARCHAR(64) NULL;
+ALTER TABLE assets ADD COLUMN AgentLoggedUser VARCHAR(191) NULL;
+ALTER TABLE assets ADD COLUMN AgentAllLoggedUsers TEXT NULL;
+ALTER TABLE assets ADD COLUMN AgentExecutionUser VARCHAR(191) NULL;
+ALTER TABLE assets ADD COLUMN AgentAntivirus VARCHAR(255) NULL;
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -244,5 +264,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_07_0014_asset_deletion_reason'),
     ('2026_11_03_0015_permissions'),
     ('2026_11_08_0016_api_key_users_scope'),
-    ('2026_11_04_0017_asset_hardware_disks');
+    ('2026_11_04_0017_asset_hardware_disks'),
+    ('2026_11_05_0018_asset_agent_inventory');
 

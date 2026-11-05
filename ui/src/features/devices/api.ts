@@ -63,7 +63,8 @@ export type DeviceRow = {
   ram_gb: string | null;
   hds: string | null;
   hds_types: string | null;
-  hds_space_gb: string | null;
+  /** Sum of the volume sizes, from `HDsSpacesGB` (one spelling everywhere since 0018). */
+  hds_spaces_gb: string | null;
   /** Canonical per-disk inventory (`lib/disks.php`); `[]` when never reported. */
   physical_disks: DeviceDisk[];
   /** Roll-ups recomputed from `physical_disks` (sums, GB). */
@@ -75,6 +76,29 @@ export type DeviceRow = {
   eset_components: string | null;
   primary_local_ip: string | null;
   primary_remote_ip: string | null;
+  /**
+   * Inventory-agent block (`asset_agent_columns()`): the agent's own copy of the
+   * identity and hardware facts. A report never overwrites `hostname`/`os`/
+   * `manufacturer`, so the two sets are shown side by side.
+   *
+   * `agent_secure_boot` is a JSON boolean (stored as `'true'`/`'false'`, like
+   * `mobile`/`byod`); `agent_all_logged_users` is a `, `-joined list.
+   */
+  agent_hostname: string | null;
+  agent_os: string | null;
+  agent_os_build: string | null;
+  agent_bios: string | null;
+  agent_secure_boot: boolean | null;
+  agent_manufacturer: string | null;
+  agent_model: string | null;
+  agent_cpu: string | null;
+  agent_gpu: string | null;
+  agent_ram_gb: string | null;
+  agent_ip: string | null;
+  agent_logged_user: string | null;
+  agent_all_logged_users: string | null;
+  agent_execution_user: string | null;
+  agent_antivirus: string | null;
   company: string | null;
   source: string | null;
   source_ref: string | null;

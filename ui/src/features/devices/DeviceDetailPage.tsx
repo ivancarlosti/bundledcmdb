@@ -7,9 +7,10 @@ import { Alert, Button, Spinner } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
 import { formatBytes, formatDateTime } from '@/lib/format';
 
-import type { DeviceDetail, MetaPayload } from './api';
+import type { DeviceDetail, MetaColumn, MetaPayload } from './api';
 import { deviceFileDownloadUrl } from './api';
 import { cellContext, cellValue, GridCell } from './columns';
+import { detailSections, type DetailSection } from './deviceSections';
 import {
   DeleteReasonFields,
   deleteReasonLabelKey,
@@ -29,40 +30,65 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function DetailFields({ device, meta }: { device: DeviceDetail; meta: MetaPayload }) {
+/**
+ * One card of the view: the rows of a section plus the blocks it owns.
+ *
+ * Cards come from `detailSections()`, the same module the edit form's tabs use, so
+ * a field cannot sit in a different place on the two screens. Two columns on a
+ * wide screen: one device with an agent report has ~50 fields, and a single list
+ * of them is a scroll with no overview.
+ */
+function DetailSectionCard({
+  section,
+  device,
+  meta,
+}: {
+  section: DetailSection;
+  device: DeviceDetail;
+  meta: MetaPayload;
+}) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? 'en-US';
   const context = cellContext(meta, t, locale);
 
-  return (
-    <dl className="m-0">
-      {meta.columns
-        // The disk inventory is structured: it gets its own block below instead
-        // of one flattened cell (its JSON would render as `[object Object]`).
-        .filter((column) => column.type !== 'disks')
-        .map((column) => (
-          <Row key={column.key} label={t(column.label_key, { defaultValue: column.label })}>
-            <GridCell
-              value={cellValue(device, column)}
-              columnKey={column.key}
-              type={column.type}
-              truncate={false}
-              {...context}
-            />
-          </Row>
-        ))}
-      {meta.fields.map((field) => (
-        <Row key={`custom:${field.key}`} label={field.label_i18n?.[locale] ?? field.label}>
+  const rows = (columns: MetaColumn[]) =>
+    columns
+      // The disk inventory is structured: it renders as `StorageSection` below
+      // instead of one flattened cell (its JSON would read `[object Object]`).
+      .filter((column) => column.type !== 'disks')
+      .map((column) => (
+        <Row key={column.key} label={t(column.label_key, { defaultValue: column.label })}>
           <GridCell
-            value={device.custom?.[field.key] ?? null}
-            columnKey={`custom:${field.key}`}
-            type={field.type}
+            value={cellValue(device, column)}
+            columnKey={column.key}
+            type={column.type}
             truncate={false}
             {...context}
           />
         </Row>
+      ));
+
+  return (
+    <div className="card min-w-0 p-4" data-testid={`device-section-${section.id}`}>
+      <h2 className="m-0 text-base font-semibold">{t(`ui_form_tab_${section.id}`, { defaultValue: section.id })}</h2>
+
+      {section.columns.some((column) => column.type !== 'disks') ? (
+        <dl className="m-0 mt-1">{rows(section.columns)}</dl>
+      ) : null}
+
+      {section.groups.map((group) => (
+        <section
+          key={group.id}
+          className="mt-3 border-t border-[var(--color-border)] pt-3"
+          data-testid={`device-group-${group.id}`}
+        >
+          <h3 className="m-0 text-sm font-semibold">{t(group.headingKey)}</h3>
+          <dl className="m-0 mt-1">{rows(group.columns)}</dl>
+        </section>
       ))}
-    </dl>
+
+      {section.id === 'hardware' ? <StorageSection device={device} /> : null}
+    </div>
   );
 }
 
@@ -83,8 +109,8 @@ function StorageSection({ device }: { device: DeviceDetail }) {
       : new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value);
 
   return (
-    <div className="card p-4" data-testid="device-storage">
-      <h2 className="m-0 text-base font-semibold">{t('ui_storage')}</h2>
+    <section className="mt-3 border-t border-[var(--color-border)] pt-3" data-testid="device-storage">
+      <h3 className="m-0 text-sm font-semibold">{t('ui_storage')}</h3>
 
       {disks.length === 0 ? (
         <p className="m-0 mt-2 text-sm text-[var(--color-muted)]">{t('ui_storage_empty')}</p>
@@ -109,39 +135,41 @@ function StorageSection({ device }: { device: DeviceDetail }) {
               </p>
 
               {disk.volumes.length === 0 ? null : (
-                <table className="mt-1 w-full text-xs">
-                  <caption className="sr-only">{t('ui_storage')}</caption>
-                  <thead>
-                    <tr className="text-start text-[var(--color-muted)]">
-                      <th scope="col" className="py-0.5 pe-2 text-start font-medium">
-                        {t('ui_storage_drive')}
-                      </th>
-                      <th scope="col" className="py-0.5 pe-2 text-start font-medium">
-                        {t('ui_storage_label')}
-                      </th>
-                      <th scope="col" className="py-0.5 pe-2 text-end font-medium">
-                        {t('ui_storage_total_gb')}
-                      </th>
-                      <th scope="col" className="py-0.5 pe-2 text-end font-medium">
-                        {t('ui_storage_free_gb')}
-                      </th>
-                      <th scope="col" className="py-0.5 text-end font-medium">
-                        {t('ui_storage_used_gb')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {disk.volumes.map((volume, index) => (
-                      <tr key={`${disk.number}-${volume.drive ?? index}`}>
-                        <td className="py-0.5 pe-2">{volume.drive ?? '—'}</td>
-                        <td className="py-0.5 pe-2">{volume.label ?? '—'}</td>
-                        <td className="py-0.5 pe-2 text-end tabular-nums">{gb(volume.total_gb)}</td>
-                        <td className="py-0.5 pe-2 text-end tabular-nums">{gb(volume.free_gb)}</td>
-                        <td className="py-0.5 text-end tabular-nums">{gb(volume.used_gb)}</td>
+                <div className="mt-1 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <caption className="sr-only">{t('ui_storage')}</caption>
+                    <thead>
+                      <tr className="text-start text-[var(--color-muted)]">
+                        <th scope="col" className="py-0.5 pe-2 text-start font-medium">
+                          {t('ui_storage_drive')}
+                        </th>
+                        <th scope="col" className="py-0.5 pe-2 text-start font-medium">
+                          {t('ui_storage_label')}
+                        </th>
+                        <th scope="col" className="py-0.5 pe-2 text-end font-medium">
+                          {t('ui_storage_total_gb')}
+                        </th>
+                        <th scope="col" className="py-0.5 pe-2 text-end font-medium">
+                          {t('ui_storage_free_gb')}
+                        </th>
+                        <th scope="col" className="py-0.5 text-end font-medium">
+                          {t('ui_storage_used_gb')}
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {disk.volumes.map((volume, index) => (
+                        <tr key={`${disk.number}-${volume.drive ?? index}`}>
+                          <td className="py-0.5 pe-2">{volume.drive ?? '—'}</td>
+                          <td className="py-0.5 pe-2">{volume.label ?? '—'}</td>
+                          <td className="py-0.5 pe-2 text-end tabular-nums">{gb(volume.total_gb)}</td>
+                          <td className="py-0.5 pe-2 text-end tabular-nums">{gb(volume.free_gb)}</td>
+                          <td className="py-0.5 text-end tabular-nums">{gb(volume.used_gb)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </li>
           ))}
@@ -156,7 +184,7 @@ function StorageSection({ device }: { device: DeviceDetail }) {
           })}
         </p>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -466,6 +494,36 @@ function HistorySection({ device, meta }: { device: DeviceDetail; meta: MetaPayl
   );
 }
 
+/**
+ * Custom field values (`asset_custom_values`), the part of the record the
+ * installation defines itself. Kept out of the section cards because the fields
+ * are not columns: they come from `/meta.fields`, not `/meta.columns`.
+ */
+function CustomFieldsCard({ device, meta }: { device: DeviceDetail; meta: MetaPayload }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? 'en-US';
+  const context = cellContext(meta, t, locale);
+
+  return (
+    <div className="card min-w-0 p-4" data-testid="device-section-custom-fields">
+      <h2 className="m-0 text-base font-semibold">{t('custom_fields')}</h2>
+      <dl className="m-0 mt-1">
+        {meta.fields.map((field) => (
+          <Row key={field.key} label={field.label_i18n?.[locale] ?? field.label}>
+            <GridCell
+              value={device.custom?.[field.key] ?? null}
+              columnKey={`custom:${field.key}`}
+              type={field.type}
+              truncate={false}
+              {...context}
+            />
+          </Row>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 /** `/app/devices/:id` — every published column, the custom values, the files. */
 export function DeviceDetailPage() {
   const { t, i18n } = useTranslation();
@@ -575,13 +633,14 @@ export function DeviceDetailPage() {
         </Alert>
       ) : null}
 
-      <div className="card p-4">
-        <DetailFields device={device} meta={metaQuery.data} />
+      <div className="grid gap-3 lg:grid-cols-2">
+        {detailSections(metaQuery.data.columns).map((section) => (
+          <DetailSectionCard key={section.id} section={section} device={device} meta={metaQuery.data} />
+        ))}
+        {metaQuery.data.fields.length === 0 ? null : <CustomFieldsCard device={device} meta={metaQuery.data} />}
       </div>
 
       <FilesSection device={device} />
-
-      <StorageSection device={device} />
 
       <HistorySection device={device} meta={metaQuery.data} />
     </section>

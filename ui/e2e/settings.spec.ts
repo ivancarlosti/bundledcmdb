@@ -154,7 +154,10 @@ test.describe('settings', () => {
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
     const tabs = page.getByRole('tab');
-    await expect(tabs).toHaveCount(7);
+    // General, Columns, Storage, Sources, API, Fields, Logs, Maintenance: the
+    // admin defaults of `lib/permissions.php`. Permissions and Users are
+    // superadmin-only, so the roster tab is the one that must be missing.
+    await expect(tabs).toHaveCount(8);
     await expect(page.getByRole('tab', { name: 'Logs' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Users' })).toHaveCount(0);
 

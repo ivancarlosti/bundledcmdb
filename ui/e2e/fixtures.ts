@@ -34,7 +34,9 @@ export const MESSAGES: Record<string, string> = {
   ui_form_tab_hardware: 'Hardware',
   ui_form_tab_assignment: 'Assignment',
   ui_form_tab_admin: 'Admin',
-  ui_form_tab_more: 'More',
+  ui_form_tab_custom: 'Custom',
+  ui_form_tab_record: 'Record',
+  ui_agent_inventory: 'Additional hardware info',
   ui_views_empty: 'No saved views yet. Filter the grid, then name it below.',
   ui_view_name: 'View name',
   ui_view_save: 'Save view',
@@ -206,6 +208,69 @@ export const MESSAGES: Record<string, string> = {
   ui_trashed_reason: 'Deleted because: {{reason}}',
 };
 
+/**
+ * `capabilities.permissions` per role, mirroring the defaults of
+ * `permission_capability_defs()` (`lib/permissions.php`).
+ *
+ * The shell, the device actions and the settings screen all gate on this map, so a
+ * session stub without it crashes the render. The specs that exercise another role
+ * only override `role`/`rank`/`can_*`, which is why `mockPanel()` fills the map in
+ * from the role instead of trusting the override to carry it.
+ */
+const VIEWER: Record<string, boolean> = {
+  'devices.view': true,
+  'devices.export': true,
+  'devices.events': true,
+  'devices.files': true,
+};
+
+export const ROLE_PERMISSIONS: Record<'user' | 'manager' | 'admin' | 'superadmin', Record<string, boolean>> = {
+  user: { ...VIEWER },
+  manager: {
+    ...VIEWER,
+    'devices.create': true,
+    'devices.update': true,
+    'devices.bulk': true,
+    'devices.files.upload': true,
+  },
+  admin: {
+    ...VIEWER,
+    'devices.create': true,
+    'devices.update': true,
+    'devices.bulk': true,
+    'devices.files.upload': true,
+    'devices.delete': true,
+    'devices.restore': true,
+    'devices.files.delete': true,
+    'logs.view': true,
+    'settings.manage': true,
+    'settings.sources': true,
+    'settings.fields': true,
+    'settings.api_keys': true,
+    'settings.maintenance': true,
+  },
+  superadmin: {
+    ...VIEWER,
+    'devices.create': true,
+    'devices.update': true,
+    'devices.bulk': true,
+    'devices.files.upload': true,
+    'devices.delete': true,
+    'devices.restore': true,
+    'devices.files.delete': true,
+    'devices.purge': true,
+    'logs.view': true,
+    'logs.purge': true,
+    'settings.manage': true,
+    'settings.sources': true,
+    'settings.fields': true,
+    'settings.api_keys': true,
+    'settings.maintenance': true,
+    'settings.users': true,
+    'permissions.manage': true,
+  },
+};
+
 export const SESSION = {
   user: { email: 'qa@example.com', company: '', role: 'admin' },
   csrfToken: 'test-csrf-token',
@@ -221,7 +286,16 @@ export const SESSION = {
   themes: ['system', 'light', 'dark'],
   pageSizes: [10, 25, 50],
   maxPageSize: 200,
-  capabilities: { role: 'admin', rank: 3, can_write: true, can_admin: true, can_superadmin: false },
+  capabilities: {
+    role: 'admin',
+    rank: 3,
+    can_write: true,
+    can_admin: true,
+    can_superadmin: false,
+    // The capability map `/session` publishes (`lib/permissions.php`); the shell
+    // and every write action read it, so a fixture without it crashes the render.
+    permissions: ROLE_PERMISSIONS.admin,
+  },
   features: { api: true, attachments: false, devLogin: false },
   serverTime: '2026-11-02T12:00:00Z',
 };
@@ -384,6 +458,42 @@ export const META = {
       editable: true,
       virtual: false,
     },
+    {
+      // The disk-space column the form used to lose to the catch-all tab: the
+      // payload called it `hds_space_gb` while the tab map expected this key.
+      key: 'HDsSpacesGB',
+      api_key: 'hds_spaces_gb',
+      label_key: 'col_hds_spaces_gb',
+      label: 'Disk space (GB)',
+      type: 'text',
+      in_grid: false,
+      sortable: false,
+      editable: true,
+      virtual: false,
+    },
+    {
+      // Inventory-agent block: rendered under Hardware, after the hardware rows.
+      key: 'AgentOS',
+      api_key: 'agent_os',
+      label_key: 'col_agent_os',
+      label: 'Agent operating system',
+      type: 'text',
+      in_grid: false,
+      sortable: false,
+      editable: true,
+      virtual: false,
+    },
+    {
+      key: 'AgentSecureBoot',
+      api_key: 'agent_secure_boot',
+      label_key: 'col_agent_secure_boot',
+      label: 'Agent Secure Boot',
+      type: 'bool',
+      in_grid: false,
+      sortable: false,
+      editable: true,
+      virtual: false,
+    },
   ],
   statuses: [
     { value: 'In Use', label_key: 'status_in_use' },
@@ -410,8 +520,8 @@ export const META = {
     order: ['SN', 'Hostname', 'Status', 'updated_at', 'files', 'UserEmail'],
   },
   writeColumns: {
-    create: ['sn', 'hostname', 'status', 'source', 'user_email'],
-    update: ['sn', 'hostname', 'status', 'user_email'],
+    create: ['sn', 'hostname', 'status', 'source', 'user_email', 'hds_spaces_gb', 'agent_os', 'agent_secure_boot'],
+    update: ['sn', 'hostname', 'status', 'user_email', 'hds_spaces_gb', 'agent_os', 'agent_secure_boot'],
   },
   limits: { requireSn: true, maxUploadBytes: 104857600 },
   schemaReady: true,
@@ -444,7 +554,7 @@ export const ROWS = [
     ram_gb: '16',
     hds: 'SSD 512GB',
     hds_types: 'SSD',
-    hds_space_gb: '476.94',
+    hds_spaces_gb: '476.94',
     physical_disks: [
       {
         number: 0,
@@ -465,6 +575,23 @@ export const ROWS = [
     eset_components: null,
     primary_local_ip: null,
     primary_remote_ip: null,
+    // Inventory-agent block: its own copy of the facts above, plus the ones only
+    // the agent knows. A report never overwrites `os`/`hostname`.
+    agent_hostname: 'acme-laptop-07',
+    agent_os: 'Windows 11 Pro build 22631',
+    agent_os_build: '22631.4169',
+    agent_bios: 'Dell 1.14.2',
+    agent_secure_boot: true,
+    agent_manufacturer: 'Dell Inc.',
+    agent_model: 'Latitude 5440',
+    agent_cpu: 'Intel Core i7-1365U',
+    agent_gpu: 'Intel Iris Xe Graphics',
+    agent_ram_gb: '16',
+    agent_ip: '10.0.0.57',
+    agent_logged_user: 'ACME\\jdoe',
+    agent_all_logged_users: 'ACME\\jdoe, ACME\\asmith',
+    agent_execution_user: 'SYSTEM',
+    agent_antivirus: 'ESET Endpoint Security 11.1',
     company: 'Acme',
     source: 'intune',
     source_ref: null,
@@ -502,7 +629,7 @@ export const ROWS = [
     ram_gb: null,
     hds: 'NVMe 1TB',
     hds_types: null,
-    hds_space_gb: null,
+    hds_spaces_gb: null,
     physical_disks: [],
     disks_total_gb: null,
     disks_free_gb: null,
@@ -592,6 +719,22 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
   // The stubbed session is mutable so preference writes (theme, locale, column
   // layout) behave like the real server: a reload sees what was saved.
   let sessionState: Record<string, unknown> = { ...SESSION, ...(options.session ?? {}) };
+  // Deep merge the capability map: the specs that switch role only replace
+  // `role`/`rank`/`can_*`, and the app reads `capabilities.permissions[...]` on
+  // every screen — inheriting the admin map for a superadmin would hide the purge
+  // card instead of crashing, which is a wrong test rather than a broken render.
+  const capabilityOverride = (options.session as { capabilities?: Record<string, unknown> } | undefined)?.capabilities;
+  if (capabilityOverride !== undefined) {
+    const role = String(capabilityOverride.role ?? SESSION.capabilities.role) as keyof typeof ROLE_PERMISSIONS;
+    sessionState.capabilities = {
+      ...SESSION.capabilities,
+      ...capabilityOverride,
+      permissions:
+        (capabilityOverride.permissions as Record<string, boolean> | undefined) ??
+        ROLE_PERMISSIONS[role] ??
+        ROLE_PERMISSIONS.admin,
+    };
+  }
 
   await page.route('**/panel-api/v1/session', (route) => json(route, sessionState));
   await page.route('**/panel-api/v1/session/preferences', (route) => {
