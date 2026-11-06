@@ -66,6 +66,44 @@ function db_error_message(Throwable $e): string
 }
 
 /**
+ * Map a PDO failure onto the shared error envelope (`{ok,error:{code,message}}`).
+ *
+ * Only a real connection failure is an outage. Everything else — a value the
+ * server rejected, a constraint, a deadlock — is a database error and must not
+ * be reported as "the database is unreachable": both APIs used to answer that
+ * for every `PDOException`, which pointed operators at the network while the
+ * actual cause was, for example, SQLSTATE 22007 on `assets.Mobile`.
+ *
+ * @return array{code: string, message: string, status: int}
+ */
+function db_failure_map(PDOException $e): array
+{
+    $sqlState = (string) ($e->errorInfo[0] ?? '');
+    if ($sqlState === '') {
+        $sqlState = (string) $e->getCode();
+    }
+    $driverCode = (int) ($e->errorInfo[1] ?? 0);
+    // 1040/1044/1045/1129/1130: server refused the account or the host;
+    // 2002/2003/2005/2006/2013: no connection, DNS or "server has gone away".
+    $connectionCodes = [1040, 1044, 1045, 1129, 1130, 2002, 2003, 2005, 2006, 2013];
+    if (str_starts_with($sqlState, '08') || in_array($driverCode, $connectionCodes, true)) {
+        return [
+            'code' => 'database_unavailable',
+            'message' => 'The database is unreachable right now.',
+            'status' => 503,
+        ];
+    }
+
+    return [
+        'code' => 'database_error',
+        'message' => 'The change was rejected by the database'
+            . ($sqlState !== '' ? ' (SQLSTATE ' . $sqlState . ')' : '')
+            . '. Check the application log for details.',
+        'status' => 500,
+    ];
+}
+
+/**
  * True when the given table exists in the current schema.
  *
  * Only positive results are cached: migrations create tables in the same

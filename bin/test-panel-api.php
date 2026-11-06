@@ -492,7 +492,7 @@ check(
 // that is perfectly healthy (that is what hid this bug for so long).
 $rejectedValue = new PDOException("SQLSTATE[22007]: 1366 Incorrect integer value: 'false' for column `assets`.`Mobile`");
 $rejectedValue->errorInfo = ['22007', 1366, "Incorrect integer value: 'false' for column `assets`.`Mobile`"];
-$valueFailure = panel_pdo_failure($rejectedValue);
+$valueFailure = db_failure_map($rejectedValue);
 check(
     $valueFailure['code'] === 'database_error' && $valueFailure['status'] === 500,
     'database failures: a rejected value is a database_error, not an outage',
@@ -506,7 +506,7 @@ check(
 
 $lostConnection = new PDOException('SQLSTATE[HY000]: 2006 MySQL server has gone away');
 $lostConnection->errorInfo = ['HY000', 2006, 'MySQL server has gone away'];
-$connectionFailure = panel_pdo_failure($lostConnection);
+$connectionFailure = db_failure_map($lostConnection);
 check(
     $connectionFailure['code'] === 'database_unavailable' && $connectionFailure['status'] === 503,
     'database failures: a lost connection is still an outage',
@@ -516,7 +516,7 @@ check(
 $sqlStateOnly = new PDOException('SQLSTATE[08S01]: Communication link failure');
 $sqlStateOnly->errorInfo = ['08S01', 0, 'Communication link failure'];
 check(
-    panel_pdo_failure($sqlStateOnly)['code'] === 'database_unavailable',
+    db_failure_map($sqlStateOnly)['code'] === 'database_unavailable',
     'database failures: SQLSTATE class 08 is an outage'
 );
 

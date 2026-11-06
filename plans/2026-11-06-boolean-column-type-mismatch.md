@@ -66,9 +66,11 @@ three and every non-`user` save sent the value. `BYOD` had the same problem
 4. `sql/schema.sql` — the same two statements plus the new version in
    `INSERT IGNORE INTO schema_migrations` (the DBA path; `bin/check-schema.php`
    fails otherwise).
-5. `lib/panel/routes.php` — `panel_pdo_failure()`: SQLSTATE class `08` or a
-   connection driver code (`1040/1044/1045/1129/1130/2002/2003/2005/2006/2013`)
-   → 503 `database_unavailable`; everything else → 500 `database_error`.
+5. `lib/db.php` — `db_failure_map()`: SQLSTATE class `08` or a connection driver
+   code (`1040/1044/1045/1129/1130/2002/2003/2005/2006/2013`) → 503
+   `database_unavailable`; everything else → 500 `database_error`. Both
+   `lib/panel/routes.php` and `public/api.php` use it, so the Bearer API no longer
+   collapses a rejected value into `internal_error`.
 6. `bin/test-panel-api.php` — DB-free checks for the storage helpers and the
    failure mapping, plus an end-to-end block that turns the real columns into
    `tinyint(1)`, creates/patches/bulk-updates a device, and restores the schema.

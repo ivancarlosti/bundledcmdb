@@ -724,6 +724,10 @@ try {
         header('WWW-Authenticate: Bearer realm="bundledcmdb"');
     }
     json_fail($e->errorCode, $e->getMessage(), $e->status, $e->errors);
+} catch (PDOException $e) {
+    error_log('[bundledcmdb api] database error: ' . db_error_message($e));
+    $failure = db_failure_map($e);
+    json_fail($failure['code'], $failure['message'], $failure['status']);
 } catch (Throwable $e) {
     error_log('[bundledcmdb api] ' . get_class($e) . ': ' . $e->getMessage());
     json_fail('internal_error', 'Unexpected server error. Check the application log.', 500);

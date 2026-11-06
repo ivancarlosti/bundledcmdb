@@ -54,9 +54,11 @@ The plaintext token is displayed **once**, right after creation/rotation. Only
 | `database_error` | 500 | the database rejected the change — the message carries the SQLSTATE, the app log carries the statement |
 | `database_unavailable` | 503 | no connection to the database; this is the only code that means the database is actually unreachable |
 
-The panel API (`/panel-api/v1`) uses the same envelope and answers `database_error`
-for a value the server refused (a wrong column type, a constraint) and
-`database_unavailable` only when the connection itself failed.
+The Bearer API and the panel API (`/panel-api/v1`) share one mapping (`db_failure_map()`
+in `lib/db.php`): a value the server refused (a wrong column type, a constraint, a
+deadlock) is `database_error` with the SQLSTATE in the message, and
+`database_unavailable` is reserved for a connection that actually failed. Details
+go to the application log; `internal_error` now only covers a non-database bug.
 
 ## Endpoints
 
