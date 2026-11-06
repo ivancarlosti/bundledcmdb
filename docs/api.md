@@ -51,6 +51,12 @@ The plaintext token is displayed **once**, right after creation/rotation. Only
 | `schema_not_ready` | 503 | migrations not applied |
 | `api_disabled` | 503 | API turned off in Settings |
 | `internal_error` | 500 | unexpected error (details in the app log) |
+| `database_error` | 500 | the database rejected the change — the message carries the SQLSTATE, the app log carries the statement |
+| `database_unavailable` | 503 | no connection to the database; this is the only code that means the database is actually unreachable |
+
+The panel API (`/panel-api/v1`) uses the same envelope and answers `database_error`
+for a value the server refused (a wrong column type, a constraint) and
+`database_unavailable` only when the connection itself failed.
 
 ## Endpoints
 
@@ -313,7 +319,7 @@ Both `snake_case` API names and raw database column names are accepted
 | API | Column |
 |---|---|
 | `uuid`, `sn` (alias `serial_number`), `hostname`, `os`, `os_version`, `manufacturer` | same |
-| `mobile`, `byod` | booleans (`true/false`, `1/0`, `yes/no`) |
+| `mobile`, `byod` | booleans (`true/false`, `1/0`, `yes/no`); stored as `'true'`/`'false'`, or `1`/`0` while a legacy `tinyint` column has not been widened by migration 0021 yet |
 | `last_seen` | ISO-8601 or `Y-m-d H:i:s` (stored UTC) |
 | `user_email`, `status`, `warranty`, `asset`, `purchase_date` | same |
 | `cypher_id`, `cypher_key`, `notes`, `cpus`, `hds`, `hds_types` | same |
@@ -433,7 +439,10 @@ with the structured disk inventory (*Storage*).
   the same field), and `agent_*` names are accepted on **every** device endpoint
   — that is what the panel form posts.
 * `secureBoot` accepts `true/false`, `1/0`, `yes/no`, `on/off` and is stored as
-  `'true'`/`'false'` (like `byod`), then published as a JSON boolean.
+  `'true'`/`'false'` (like `byod`), then published as a JSON boolean. A database
+  whose `BYOD`/`Mobile`/`AgentSecureBoot` column is still a legacy `tinyint(1)`
+  gets `1`/`0` instead: migration 0021 widens it to `VARCHAR(16)`, and until then
+  the writer binds the number so the save still succeeds.
 * `allLoggedUsers` takes a list and is stored `, `-joined (`AgentAllLoggedUsers`
   is `TEXT`, so its length is not capped; the other columns stay within the
   widths below).

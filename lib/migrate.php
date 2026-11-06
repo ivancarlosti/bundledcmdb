@@ -245,6 +245,10 @@ function migrations(): array
             'description' => 'Retire assets LoggedUsername (the inventory agent reports it as AgentLoggedUser)',
             'run' => 'migration_0020_retire_logged_username',
         ],
+        '2026_11_06_0021_boolean_column_types' => [
+            'description' => 'Store Mobile/BYOD as the VARCHAR(16) the schema declares (legacy dumps kept tinyint(1))',
+            'run' => 'migration_0021_boolean_column_types',
+        ],
     ];
 }
 
@@ -1041,4 +1045,54 @@ function migration_0019_retire_agent_only_columns(PDO $pdo): void
 function migration_0020_retire_logged_username(PDO $pdo): void
 {
     migrate_drop_column($pdo, 'assets', 'LoggedUsername');
+}
+
+/**
+ * Normalise the physics of the boolean columns.
+ *
+ * `sql/legacy.sql` (and therefore every fresh install) declares `Mobile` and
+ * `BYOD` as `VARCHAR(16)` holding 'true'/'false', but databases created from an
+ * older release keep them as `tinyint(1)`. `asset_bool_normalize()` writes the
+ * *strings* 'true'/'false', so a strict-mode server answered SQLSTATE 22007
+ * (1366, "Incorrect integer value") and the panel reported the device save as
+ * "the database is unreachable" — for admins and managers alike.
+ *
+ * Widening the column turns `1`/`0` into `'1'`/`'0'`, which `asset_bool_parse()`
+ * and the `BYOD` filter already read, and the `CASE` then canonicalises every
+ * spelling to `'true'`/`'false'` so the column has one representation again.
+ * `NULL` stays `NULL` in both steps.
+ *
+ * A missing DDL privilege is not fatal: `asset_filter_columns()` binds 1/0 for a
+ * numeric column, so an installation whose database user cannot ALTER keeps
+ * saving devices and a DBA can apply `sql/schema.sql` later.
+ */
+function migration_0021_boolean_column_types(PDO $pdo): void
+{
+    foreach (['Mobile', 'BYOD', 'AgentSecureBoot'] as $column) {
+        if (!db_column_exists($pdo, 'assets', $column) || asset_bool_storage($pdo, $column) !== 'int') {
+            continue;
+        }
+        try {
+            $pdo->exec(sprintf('ALTER TABLE assets MODIFY `%s` VARCHAR(16) NULL', $column));
+            migrate_note("ALTER TABLE assets MODIFY {$column} VARCHAR(16)");
+        } catch (PDOException $e) {
+            error_log('migration 0021: cannot widen assets.' . $column . ': ' . db_error_message($e));
+            migrate_note('skipped ALTER TABLE assets MODIFY ' . $column . ': ' . db_error_message($e));
+            continue;
+        }
+        // The column is text now, so the cached storage kind is stale.
+        asset_bool_storage_flush();
+
+        $pdo->exec(sprintf(
+            "UPDATE assets SET `%s` = CASE"
+            . " WHEN LOWER(TRIM(`%s`)) IN ('1', 'true', 'yes', 'on') THEN 'true'"
+            . " WHEN LOWER(TRIM(`%s`)) IN ('0', 'false', 'no', 'off') THEN 'false'"
+            . ' ELSE `%s` END',
+            $column,
+            $column,
+            $column,
+            $column
+        ));
+        migrate_note("UPDATE assets {$column}: spellings normalised to 'true'/'false'");
+    }
 }

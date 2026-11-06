@@ -274,6 +274,24 @@ ALTER TABLE assets DROP COLUMN DisksUsedGB;
 -- field. Destructive: take a dump before upgrading a DBA-managed database.
 ALTER TABLE assets DROP COLUMN LoggedUsername;
 
+-- 0021 stores `Mobile`/`BYOD` as the `VARCHAR(16)` this file has always
+-- declared. Databases created from an older release kept them as `tinyint(1)`,
+-- and `asset_bool_normalize()` writes 'true'/'false', which a strict-mode server
+-- rejects with SQLSTATE 22007 (1366) — the panel showed that as "the database is
+-- unreachable" and every device save failed. Widening first keeps `1`/`0` as
+-- `'1'`/`'0'`, and the CASE then collapses every spelling to 'true'/'false'.
+-- Both steps are idempotent, and `NULL` stays `NULL` in each of them.
+ALTER TABLE assets MODIFY COLUMN Mobile VARCHAR(16) NULL;
+ALTER TABLE assets MODIFY COLUMN BYOD VARCHAR(16) NULL;
+UPDATE assets SET Mobile = CASE
+    WHEN LOWER(TRIM(Mobile)) IN ('1', 'true', 'yes', 'on') THEN 'true'
+    WHEN LOWER(TRIM(Mobile)) IN ('0', 'false', 'no', 'off') THEN 'false'
+    ELSE Mobile END;
+UPDATE assets SET BYOD = CASE
+    WHEN LOWER(TRIM(BYOD)) IN ('1', 'true', 'yes', 'on') THEN 'true'
+    WHEN LOWER(TRIM(BYOD)) IN ('0', 'false', 'no', 'off') THEN 'false'
+    ELSE BYOD END;
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -294,5 +312,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_04_0017_asset_hardware_disks'),
     ('2026_11_05_0018_asset_agent_inventory'),
     ('2026_11_05_0019_retire_agent_only_columns'),
-    ('2026_11_05_0020_retire_logged_username');
+    ('2026_11_05_0020_retire_logged_username'),
+    ('2026_11_06_0021_boolean_column_types');
 

@@ -447,6 +447,79 @@ check(
     'panel: HDsSpacesGB is published as hds_spaces_gb everywhere'
 );
 
+// --- boolean storage (no database needed) ----------------------------------
+// `Mobile`/`BYOD` are `VARCHAR(16)` ('true'/'false') in the schema, but databases
+// created from an older release kept them as `tinyint(1)`. Writing the normalised
+// string 'false' into a numeric column is SQLSTATE 22007 under strict mode, which
+// the panel reported as "the database is unreachable" while every device save
+// failed. `asset_bool_storage_kind()` keeps both layouts writable.
+check(
+    asset_bool_storage_kind('tinyint(1)') === 'int'
+    && asset_bool_storage_kind('int(11)') === 'int'
+    && asset_bool_storage_kind('BIGINT(20) UNSIGNED') === 'int'
+    && asset_bool_storage_kind('bit(1)') === 'int',
+    'bool storage: numeric columns are recognised',
+    asset_bool_storage_kind('tinyint(1)')
+);
+check(
+    asset_bool_storage_kind('varchar(16)') === 'text'
+    && asset_bool_storage_kind('text') === 'text'
+    && asset_bool_storage_kind('') === 'text'
+    && asset_bool_storage_kind(null) === 'text',
+    'bool storage: text columns keep true/false'
+);
+check(
+    asset_bool_sql_value('int', false) === 0
+    && asset_bool_sql_value('int', 'false') === 0
+    && asset_bool_sql_value('int', true) === 1
+    && asset_bool_sql_value('int', 'yes') === 1,
+    'bool storage: a numeric column gets 1/0'
+);
+check(
+    asset_bool_sql_value('int', null) === null && asset_bool_sql_value('text', null) === null,
+    'bool storage: NULL stays NULL (a PUT clears omitted columns)'
+);
+check(
+    asset_bool_sql_value('text', false) === 'false'
+    && asset_bool_sql_value('text', true) === 'true'
+    && asset_bool_sql_value('text', 'on') === 'true',
+    'bool storage: a text column keeps true/false'
+);
+
+// --- database failures (no database needed) --------------------------------
+// A rejected value is not an outage: only a lost connection may answer
+// `database_unavailable`, otherwise the SPA tells the user to wait for a database
+// that is perfectly healthy (that is what hid this bug for so long).
+$rejectedValue = new PDOException("SQLSTATE[22007]: 1366 Incorrect integer value: 'false' for column `assets`.`Mobile`");
+$rejectedValue->errorInfo = ['22007', 1366, "Incorrect integer value: 'false' for column `assets`.`Mobile`"];
+$valueFailure = panel_pdo_failure($rejectedValue);
+check(
+    $valueFailure['code'] === 'database_error' && $valueFailure['status'] === 500,
+    'database failures: a rejected value is a database_error, not an outage',
+    $valueFailure['code']
+);
+check(
+    str_contains($valueFailure['message'], '22007'),
+    'database failures: the message names the SQLSTATE',
+    $valueFailure['message']
+);
+
+$lostConnection = new PDOException('SQLSTATE[HY000]: 2006 MySQL server has gone away');
+$lostConnection->errorInfo = ['HY000', 2006, 'MySQL server has gone away'];
+$connectionFailure = panel_pdo_failure($lostConnection);
+check(
+    $connectionFailure['code'] === 'database_unavailable' && $connectionFailure['status'] === 503,
+    'database failures: a lost connection is still an outage',
+    $connectionFailure['code']
+);
+
+$sqlStateOnly = new PDOException('SQLSTATE[08S01]: Communication link failure');
+$sqlStateOnly->errorInfo = ['08S01', 0, 'Communication link failure'];
+check(
+    panel_pdo_failure($sqlStateOnly)['code'] === 'database_unavailable',
+    'database failures: SQLSTATE class 08 is an outage'
+);
+
 // --- grid layout (no database needed) --------------------------------------
 $layoutDefaults = grid_layout_defaults(null);
 check(in_array('SN', $layoutDefaults['enabled'], true), 'grid: the code default follows the `grid` flag');
@@ -824,6 +897,12 @@ try {
     check($replaced['data']['hostname'] === 'REPLACED', 'replace: hostname written');
     check($replaced['data']['status'] === null, 'replace: omitted columns are cleared');
     check($replaced['data']['notes'] === null, 'replace: notes cleared');
+    $replacedRow = asset_get($pdo, $id, null, true);
+    check(
+        is_array($replacedRow) && array_key_exists('BYOD', $replacedRow) && $replacedRow['BYOD'] === null,
+        'replace: an omitted boolean is cleared to NULL, not false',
+        var_export($replacedRow['BYOD'] ?? 'missing', true)
+    );
 
     // --- read scope --------------------------------------------------------
     as_role('manager', $companyA);
@@ -1442,6 +1521,90 @@ try {
     panel_devices_bulk();
     $freshRow = asset_get($pdo, $id, null, true);
     check(asset_bool_parse($freshRow['BYOD'] ?? null) === false, 'bulk: byod written to the row');
+
+    // --- boolean columns stored as tinyint ---------------------------------
+    // The installations created from an older release keep `Mobile`/`BYOD` as
+    // `tinyint(1)`. Writing the normalised string 'false' there is SQLSTATE 22007
+    // under strict mode, and the panel answered "the database is unreachable",
+    // which is why admins and managers could not save a device at all.
+    // `asset_filter_columns()` now binds 1/0 for a numeric column; the ALTERs are
+    // reverted at the end so the suite leaves the schema as it found it.
+    // The rows are rewritten first: strict mode refuses to truncate 'true' into a
+    // TINYINT, and the values are semantically identical either way.
+    $rewriteBoolColumns = static function (PDO $pdo, bool $numeric): void {
+        $on = $numeric ? '1' : 'true';
+        $off = $numeric ? '0' : 'false';
+        foreach (['Mobile', 'BYOD'] as $column) {
+            $stmt = $pdo->prepare(
+                "UPDATE assets SET `{$column}` = CASE"
+                . " WHEN LOWER(TRIM(`{$column}`)) IN ('1', 'true', 'yes', 'on') THEN ?"
+                . " WHEN LOWER(TRIM(`{$column}`)) IN ('0', 'false', 'no', 'off') THEN ?"
+                . " ELSE `{$column}` END"
+                . " WHERE `{$column}` IS NOT NULL"
+            );
+            $stmt->execute([$on, $off]);
+        }
+    };
+
+    $tinyintReady = true;
+    try {
+        $rewriteBoolColumns($pdo, true);
+        $pdo->exec('ALTER TABLE assets MODIFY `Mobile` TINYINT(1) NULL, MODIFY `BYOD` TINYINT(1) NULL');
+    } catch (PDOException $e) {
+        $tinyintReady = false;
+        $rewriteBoolColumns($pdo, false);
+        fwrite(STDOUT, '  skip bool storage: the database user cannot ALTER TABLE (' . $e->getCode() . ")\n");
+    }
+    if ($tinyintReady) {
+        asset_bool_storage_flush();
+        try {
+            as_role('manager', $companyA);
+            $tinyintBody = $createBody;
+            $tinyintBody['sn'] = $sn . '-TINYINT';
+            $tinyintBody['mobile'] = false;
+            $tinyintBody['byod'] = true;
+            body($tinyintBody);
+            $tinyintCreated = panel_devices_create();
+            $tinyintId = (int) $tinyintCreated['data']['id'];
+            $createdIds[] = $tinyintId;
+            check(
+                ($tinyintCreated['data']['mobile'] ?? null) === false && ($tinyintCreated['data']['byod'] ?? null) === true,
+                'bool storage: create saves booleans into tinyint columns',
+                json_encode(['mobile' => $tinyintCreated['data']['mobile'] ?? null, 'byod' => $tinyintCreated['data']['byod'] ?? null])
+            );
+
+            body(['hostname' => 'TEST-HOST-TINYINT', 'mobile' => false]);
+            $tinyintSaved = panel_devices_update(['id' => (string) $tinyintId]);
+            check(
+                ($tinyintSaved['data']['hostname'] ?? null) === 'TEST-HOST-TINYINT',
+                'bool storage: saving a device on a tinyint column succeeds'
+            );
+            $tinyintRow = asset_get($pdo, $tinyintId, null, true);
+            check(
+                (string) ($tinyintRow['Mobile'] ?? '') === '0',
+                'bool storage: mobile stored as 0 in the tinyint column',
+                (string) ($tinyintRow['Mobile'] ?? 'null')
+            );
+
+            body(['ids' => [$tinyintId], 'op' => 'byod', 'value' => true]);
+            panel_devices_bulk();
+            $tinyintRow = asset_get($pdo, $tinyintId, null, true);
+            check(
+                (string) ($tinyintRow['BYOD'] ?? '') === '1',
+                'bool storage: a bulk byod writes 1 into the tinyint column',
+                (string) ($tinyintRow['BYOD'] ?? 'null')
+            );
+        } finally {
+            $pdo->exec('ALTER TABLE assets MODIFY `Mobile` VARCHAR(16) NULL, MODIFY `BYOD` VARCHAR(16) NULL');
+            $rewriteBoolColumns($pdo, false);
+            asset_bool_storage_flush();
+        }
+        check(
+            (string) db_column_definition($pdo, 'assets', 'Mobile') === 'varchar(16)',
+            'bool storage: the suite restores the declared column type',
+            (string) db_column_definition($pdo, 'assets', 'Mobile')
+        );
+    }
 
     check_error('bulk: unknown op → 422', function (): void {
         body(['ids' => [1], 'op' => 'explode']);

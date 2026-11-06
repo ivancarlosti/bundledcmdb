@@ -158,6 +158,44 @@ function panel_dispatch(): never
 }
 
 /**
+ * Map a PDO failure onto the documented error envelope.
+ *
+ * Only a real connection failure is an outage. Everything else (a value the
+ * server rejected, a constraint, a deadlock) is a database error and must not be
+ * reported as "the database is unreachable": the panel used to answer that for
+ * every `PDOException`, which pointed operators at the network while the actual
+ * cause was, for example, SQLSTATE 22007 on `assets.Mobile`.
+ *
+ * @return array{code: string, message: string, status: int}
+ */
+function panel_pdo_failure(PDOException $e): array
+{
+    $sqlState = (string) ($e->errorInfo[0] ?? '');
+    if ($sqlState === '') {
+        $sqlState = (string) $e->getCode();
+    }
+    $driverCode = (int) ($e->errorInfo[1] ?? 0);
+    // 1040/1044/1045/1129/1130: server refused the account or the host;
+    // 2002/2003/2005/2006/2013: no connection, DNS or "server has gone away".
+    $connectionCodes = [1040, 1044, 1045, 1129, 1130, 2002, 2003, 2005, 2006, 2013];
+    if (str_starts_with($sqlState, '08') || in_array($driverCode, $connectionCodes, true)) {
+        return [
+            'code' => 'database_unavailable',
+            'message' => 'The database is unreachable right now.',
+            'status' => 503,
+        ];
+    }
+
+    return [
+        'code' => 'database_error',
+        'message' => 'The change was rejected by the database'
+            . ($sqlState !== '' ? ' (SQLSTATE ' . $sqlState . ')' : '')
+            . '. Check the application log for details.',
+        'status' => 500,
+    ];
+}
+
+/**
  * Call one handler and render its result (or its exception) as JSON.
  *
  * @param array<string, string> $params
@@ -177,7 +215,8 @@ function panel_invoke(string $handler, array $params = []): never
         json_fail($e->errorCode, $e->getMessage(), $e->status, $e->errors);
     } catch (PDOException $e) {
         error_log('panel-api database error: ' . db_error_message($e));
-        json_fail('database_unavailable', 'The database is unreachable right now.', 503);
+        $failure = panel_pdo_failure($e);
+        json_fail($failure['code'], $failure['message'], $failure['status']);
     } catch (Throwable $e) {
         error_log('panel-api error: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
         $message = app_env() === 'production' ? 'Unexpected server error.' : $e->getMessage();

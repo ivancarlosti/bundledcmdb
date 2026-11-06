@@ -231,6 +231,74 @@ function asset_bool_parse(mixed $value): bool
     return asset_bool_normalize($value) === 'true';
 }
 
+/**
+ * Physical storage of a boolean column.
+ *
+ * `sql/legacy.sql` declares `Mobile`/`BYOD` as `VARCHAR(16)` holding
+ * 'true'/'false', but databases created from an older release keep them as
+ * `tinyint(1)`. `asset_bool_normalize()` writes the *strings* 'true'/'false', so
+ * a strict-mode MySQL/MariaDB rejected the value with SQLSTATE 22007 (1366,
+ * "Incorrect integer value") and a device save failed for every role — reported
+ * by the panel as "the database is unreachable". Asking the column what it holds
+ * instead of assuming text keeps both layouts writable.
+ *
+ * @param string|null $columnType `COLUMN_TYPE` from information_schema
+ * @return string 'int' for a numeric column, 'text' otherwise
+ */
+function asset_bool_storage_kind(?string $columnType): string
+{
+    $columnType = strtolower(trim((string) $columnType));
+    return preg_match('/^(?:(?:tiny|small|medium|big)?int|bit)\b/', $columnType) === 1 ? 'int' : 'text';
+}
+
+/**
+ * The value to bind for a boolean column of the given storage kind.
+ *
+ * `NULL` stays `NULL`: a PUT replaces every omitted column with `null`, and the
+ * "unknown" state must not silently become `false`.
+ */
+function asset_bool_sql_value(string $kind, mixed $value): int|string|null
+{
+    if ($value === null) {
+        return null;
+    }
+    $normalized = asset_bool_normalize($value);
+    if ($kind === 'int') {
+        return $normalized === 'true' ? 1 : 0;
+    }
+    return $normalized;
+}
+
+/**
+ * `asset_bool_storage_kind()` for one `assets` column, cached per request.
+ *
+ * A migration can change the type mid-request, so `asset_bool_storage_flush()`
+ * drops the cache; the only caller that needs it is migration 0021.
+ */
+function asset_bool_storage(PDO $pdo, string $column): string
+{
+    $GLOBALS['bcmdb_bool_storage'] ??= [];
+    $key = DB_NAME . '.assets.' . $column;
+    if (!isset($GLOBALS['bcmdb_bool_storage'][$key])) {
+        $GLOBALS['bcmdb_bool_storage'][$key] = asset_bool_storage_kind(
+            db_column_definition($pdo, 'assets', $column)
+        );
+    }
+    return (string) $GLOBALS['bcmdb_bool_storage'][$key];
+}
+
+/** A boolean value in the physical form of one `assets` column. */
+function asset_bool_storage_value(PDO $pdo, string $column, mixed $value): int|string|null
+{
+    return asset_bool_sql_value(asset_bool_storage($pdo, $column), $value);
+}
+
+/** Forget the cached storage kinds (a migration changed the column types). */
+function asset_bool_storage_flush(): void
+{
+    $GLOBALS['bcmdb_bool_storage'] = [];
+}
+
 /** Accept ISO-8601 / "Y-m-d H:i:s" / "Y-m-d"; store "Y-m-d H:i:s" (UTC). */
 function asset_datetime_normalize(mixed $value): ?string
 {
@@ -432,6 +500,13 @@ function asset_filter_columns(PDO $pdo, array $data): array
             continue;
         }
         if (!db_column_exists($pdo, 'assets', $column)) {
+            continue;
+        }
+        // Boolean columns arrive normalised to 'true'/'false' (see
+        // `asset_normalize_input()`), but a legacy `tinyint(1)` column needs 1/0:
+        // 'false' there is SQLSTATE 22007 under strict mode.
+        if ($defs[$column]['type'] === 'bool') {
+            $out[$column] = asset_bool_storage_value($pdo, $column, $value);
             continue;
         }
         $out[$column] = $value;
