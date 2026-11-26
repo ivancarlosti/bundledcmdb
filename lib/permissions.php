@@ -54,6 +54,10 @@ function permission_capability_defs(): array
         'devices.files'        => ['group' => 'devices',  'label_key' => 'perm_cap_devices_files',        'default_roles' => ['user', 'manager', 'admin', 'superadmin']],
         'devices.files.upload' => ['group' => 'devices',  'label_key' => 'perm_cap_devices_files_upload', 'default_roles' => ['manager', 'admin', 'superadmin']],
         'devices.files.delete' => ['group' => 'devices',  'label_key' => 'perm_cap_devices_files_delete', 'default_roles' => ['admin', 'superadmin']],
+        // Experimental "Collect data" download (Settings → Collect). Every role
+        // gets it by default: the collector only ever writes devices for the
+        // signed-in user's own e-mail inside their own company.
+        'devices.collect'      => ['group' => 'devices',  'label_key' => 'perm_cap_devices_collect',      'default_roles' => ['user', 'manager', 'admin', 'superadmin']],
         'logs.view'            => ['group' => 'logs',      'label_key' => 'perm_cap_logs_view',            'default_roles' => ['admin', 'superadmin']],
         'logs.purge'           => ['group' => 'logs',      'label_key' => 'perm_cap_logs_purge',           'default_roles' => ['superadmin']],
         // `/settings` is superadmin-only; migration `0022` clears the rows an

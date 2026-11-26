@@ -257,6 +257,26 @@ Dates are inclusive in the configured timezone: "purge before 2026-06-01"
 removes everything older than 2026-06-01 00:00 local time. Values written by a
 settings write are recorded with secrets masked (`••••••`), never in clear.
 
+### Collect data (superadmin)
+The experimental collector (`lib/collect.php`). Three settings, all under
+`collect.*`:
+
+* **Enable the data collector** (`collect.enabled`, default `0`) — the feature is
+  off until an installation opts in. Turning it off hides `/app/collect` and makes
+  every in-flight download answer `403 collect_disabled`.
+* **Collector link lifetime** (`collect.token_ttl_minutes`, default `120`, 5–10080)
+  — how long a downloaded file keeps working. A longer window is a longer-lived
+  credential on somebody's desktop.
+* **Collector writes per minute** (`collect.rate_limit`, default `10`) — the
+  per-token throttle; the per-address bucket is six times this value so an office
+  behind one NAT address still works.
+
+The capability that opens the user-facing screen (`/app/collect`) is
+`devices.collect` (default: every role, revocable in Settings → Permissions).
+These three settings stay `settings.manage`, so only a superadmin can turn the
+feature on or lengthen the window. See [collect.md](collect.md) for the
+user-facing flow and the security model.
+
 ### Maintenance
 Schema status (applied/pending migrations), secret-encryption state, a *Run
 migrations* button (with dry-run), and diagnostics (version, PHP, DB, timezone,

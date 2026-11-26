@@ -48,6 +48,7 @@ bin/
   check-ui.sh         SPA gates (typecheck, lint, format, vitest, build, e2e)
   test-panel-api.php  panel API integration suite
   test-api-users.php  /api/v1/users integration suite (roster + can_users scope)
+  test-collector.php  "Collect data" suite (tokens, gates, write path, script)
   bench-devices.php   100k-row query benchmarks
   docker-entrypoint.sh  container start (owns var/storage, then php-fpm + nginx)
 docker/
@@ -111,6 +112,7 @@ php bin/check-schema.php        # sql/schema.sql ↔ lib/migrate.php (no databas
 php bin/check-i18n.php          # missing, unknown and dead catalogue keys
 php bin/test-panel-api.php      # panel API integration suite (needs a non-production DB)
 php bin/test-api-users.php      # /api/v1/users suite (needs a non-production DB)
+php bin/test-collector.php      # "Collect data" suite (needs a non-production DB)
 ./bin/check-ui.sh               # SPA gates (add --e2e for Playwright)
 ```
 
@@ -136,9 +138,12 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
 6. `php bin/test-api-users.php` → 0 failed (user roster CRUD/upsert, the
    `can_users` scope, company binding and session revocation; it creates and
    removes its own rows and keys).
-7. SPA: `./bin/check-ui.sh --e2e` (typecheck, lint, format, vitest, build, then
+7. `php bin/test-collector.php` → 0 failed (collector tokens, the authorisation
+   gates, the write path with its ownership rules, the generated `.bat`/`.ps1`,
+   and the panel handlers, including their CSRF gate).
+8. SPA: `./bin/check-ui.sh --e2e` (typecheck, lint, format, vitest, build, then
    Playwright against `vite preview`; `--no-install` skips `npm ci`).
-8. API smoke (`curl`):
+9. API smoke (`curl`):
 
 ```bash
 TOKEN=... # Settings → API → Create key
@@ -153,7 +158,8 @@ curl -s -H "Authorization: Bearer $TOKEN" "$B/users?per_page=2" | jq '.data.tota
 
 9. Panel: `/app/`, `/app/devices/1`, `/app/devices/1/edit` and every
    `/app/settings?tab=…` render without console errors, in `en-US` and `ar-SA`
-   (`dir="rtl"`).
+   (`dir="rtl"`). With `collect.enabled` on, `/app/collect` generates a file and
+   the *Revoke link* button ends it.
 10. ESET compatibility: `INSERT` a row into `assets` without `source` and check
     that it appears with the `eset` badge.
 11. Version: `curl -s $B/health | jq -r .version` matches `manifest.json` (or the

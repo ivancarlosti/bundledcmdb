@@ -102,6 +102,14 @@ RUN printf '%s\n' \
   '            fastcgi_pass 127.0.0.1:9000;' \
   '        }' \
   '' \
+  '        # Experimental data collector (public, token in the request): /collect' \
+  '        location ~ ^/collect(/.*)?$ {' \
+  '            include fastcgi_params;' \
+  '            fastcgi_param SCRIPT_FILENAME $document_root/collect.php;' \
+  '            fastcgi_param SCRIPT_NAME /collect.php;' \
+  '            fastcgi_pass 127.0.0.1:9000;' \
+  '        }' \
+  '' \
   '        # SPA authentication: /auth/login, /auth/callback, /auth/logout' \
   '        location ~ ^/auth(/.*)?$ {' \
   '            include fastcgi_params;' \

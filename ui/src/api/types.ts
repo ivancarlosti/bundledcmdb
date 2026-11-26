@@ -39,6 +39,12 @@ export type Session = {
   pageSizes: number[];
   maxPageSize: number;
   capabilities: Capabilities;
-  features: { api: boolean; attachments: boolean; devLogin: boolean };
+  features: {
+    api: boolean;
+    attachments: boolean;
+    devLogin: boolean;
+    /** Experimental "Collect data" tab (Settings → Collect). */
+    collect: boolean;
+  };
   serverTime: string;
 };

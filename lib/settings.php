@@ -145,6 +145,26 @@ function settings_definitions(): array
             ],
         ],
 
+        // --- Collect data (experimental, `lib/collect.php`) ---
+        // Off by default: the collector endpoint is public (it carries its own
+        // token), so an installation opts in explicitly.
+        'collect.enabled' => [
+            'group' => 'collect', 'type' => 'bool', 'default' => '0',
+            'label' => 'Enable the data collector',
+        ],
+        // Lifetime of one download. The script carries the token, so a longer
+        // window is a longer-lived credential on somebody's desktop.
+        'collect.token_ttl_minutes' => [
+            'group' => 'collect', 'type' => 'int', 'default' => '120', 'min' => 5, 'max' => 10080,
+            'label' => 'Collector link lifetime (minutes)',
+        ],
+        // Requests per token per minute (`lib/rate_limit.php`), independent of
+        // `api.panel_rate_limit`: the collector writes without a session.
+        'collect.rate_limit' => [
+            'group' => 'collect', 'type' => 'int', 'default' => '10', 'min' => 1, 'max' => 600,
+            'label' => 'Collector writes per minute (per token)',
+        ],
+
         // --- Grid layout (Settings → Columns, `lib/grid_layout.php`) ---
         // JSON: {"order": [...], "enabled": [...], "locked": bool}. `hidden` keeps
         // it out of the generic Settings form: it has its own tab and endpoint.

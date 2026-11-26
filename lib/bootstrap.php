@@ -33,6 +33,7 @@ require_once __DIR__ . '/users.php';
 require_once __DIR__ . '/companies.php';
 require_once __DIR__ . '/api_users.php';
 require_once __DIR__ . '/api_auth.php';
+require_once __DIR__ . '/collect.php';
 
 /**
  * Configured timezone, validated; falls back to the env value then UTC.

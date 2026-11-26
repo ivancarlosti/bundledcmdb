@@ -89,6 +89,39 @@ export const MESSAGES: Record<string, string> = {
   logs_entity_source: 'Source',
   logs_entity_system: 'System',
   logs_entity_user: 'User',
+  // Experimental "Collect data" screen (`features.collect`).
+  ui_collect: 'Collect data',
+  collect_title: 'Collect data',
+  collect_intro: 'Download a small file and run it on the computer you want to register.',
+  collect_disabled: 'Data collection is disabled on this installation.',
+  collect_your_file: 'Your download',
+  collect_no_file: 'You have no active download.',
+  collect_expired: 'The previous link expired.',
+  collect_expires: 'Link expires',
+  collect_uses: 'Times run',
+  collect_uses_value: '{{count}} run(s)',
+  collect_last_used: 'Last run',
+  collect_never_used: 'The file has not been run yet.',
+  collect_file_name: 'File',
+  collect_format: 'File type',
+  collect_format_bat: 'Double-clickable file (.bat)',
+  collect_format_ps1: 'PowerShell script (.ps1)',
+  collect_generate: 'Generate download',
+  collect_regenerate: 'Generate a new file',
+  collect_revoke: 'Revoke link',
+  collect_confirm_regenerate: 'A new file replaces the previous link. Continue?',
+  collect_confirm_revoke: 'Revoke the link?',
+  collect_one_file_hint: 'One link per user, valid for {{minutes}} minutes.',
+  collect_endpoint: 'Server: {{endpoint}}',
+  collect_how_title: 'How it works',
+  collect_how_step_1: 'Download the file and save it on the computer you want to register.',
+  collect_how_step_2: 'Double-click it. No administrator rights are needed.',
+  collect_how_step_3: 'The device appears in the inventory assigned to your e-mail.',
+  collect_how_note: 'Collected devices are assigned to {{email}}.',
+  collect_ps1_hint: 'Administrators who deploy scripts themselves can download the .ps1 variant.',
+  collect_download_started: 'The file was saved to your downloads folder.',
+  collect_generate_failed: 'The file could not be generated.',
+  collect_revoked: 'The link was revoked.',
   set_tab_logs: 'Logs',
   set_group_logs: 'Audit log',
   set_logs_intro: 'How long the audit trail is kept.',
@@ -242,6 +275,8 @@ const VIEWER: Record<string, boolean> = {
   'devices.export': true,
   'devices.events': true,
   'devices.files': true,
+  // Every role gets the experimental collector by default (`lib/permissions.php`).
+  'devices.collect': true,
 };
 
 export const ROLE_PERMISSIONS: Record<'user' | 'manager' | 'admin' | 'superadmin', Record<string, boolean>> = {
@@ -314,8 +349,33 @@ export const SESSION = {
     // and every write action read it, so a fixture without it crashes the render.
     permissions: ROLE_PERMISSIONS.admin,
   },
-  features: { api: true, attachments: false, devLogin: false },
+  features: { api: true, attachments: false, devLogin: false, collect: true },
   serverTime: '2026-11-02T12:00:00Z',
+};
+
+/** Experimental collector stub (`GET /collect`), no active download. */
+export const COLLECT_STATUS = {
+  enabled: true,
+  ttl_minutes: 120,
+  rate_limit: 10,
+  script_version: '1.0.0',
+  endpoint: 'https://cmdb.example.com/collect',
+  token: null,
+  can_collect: true,
+};
+
+/** An issued token, as `POST /collect/file` reports it (never the raw value). */
+export const COLLECT_TOKEN = {
+  id: 4,
+  file_name: 'collect-qa.bat',
+  created_at: '2026-11-26T12:00:00Z',
+  // Far future on purpose: the screen compares against the browser clock, so a
+  // fixture date would start failing the day it is reached.
+  expires_at: '2030-01-01T00:00:00Z',
+  revoked_at: null,
+  last_used_at: null,
+  last_used_ip: null,
+  uses: 0,
 };
 
 /** Audit trail stub: newest first, one field change each. */
@@ -692,6 +752,8 @@ export type MockOptions = {
   onSaveView?: (view: { id: number; name: string; state: Record<string, unknown> }) => void;
   /** Merged into the stubbed session (role, capabilities, locale, …). */
   session?: Record<string, unknown>;
+  /** Replaces the `GET /collect` payload (active download, expiry, …). */
+  collect?: Record<string, unknown>;
   pages?: number;
   total?: number;
 };
@@ -792,6 +854,31 @@ export async function mockPanel(page: Page, options: MockOptions = {}): Promise<
       retention_days: 180,
     }),
   );
+
+  // Experimental collector: `GET /collect` reports the state, `POST /collect/file`
+  // answers with the script text the SPA saves as a Blob (the raw token never
+  // travels through the page except inside that text).
+  await page.route('**/panel-api/v1/collect', (route) => json(route, options.collect ?? COLLECT_STATUS));
+  await page.route('**/panel-api/v1/collect/file', (route) => {
+    if (route.request().method() === 'DELETE') {
+      return json(route, { revoked: 1 });
+    }
+    return route.fulfill({
+      status: 201,
+      json: {
+        ok: true,
+        data: {
+          file: {
+            name: 'collect-qa.bat',
+            format: 'bat',
+            content: '@echo off\r\necho collected\r\n',
+            expires_at: COLLECT_TOKEN.expires_at,
+          },
+          token: COLLECT_TOKEN,
+        },
+      },
+    });
+  });
 
   await page.route('**/panel-api/v1/devices**', (route) => {
     const request = route.request();

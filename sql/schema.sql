@@ -318,6 +318,30 @@ DELETE FROM role_capabilities
 -- table and its backfill live next to `role_field_permissions` above.
 DELETE FROM role_capabilities WHERE capability = 'settings.users';
 
+-- 0024 adds the experimental "Collect data" downloads. Only the SHA-256 of the
+-- token is stored; the raw value lives in the downloaded script only. The
+-- `collector` source is what those writes are stamped with.
+CREATE TABLE IF NOT EXISTS collector_tokens (
+    id INT NOT NULL AUTO_INCREMENT,
+    token_hash CHAR(64) NOT NULL,
+    email VARCHAR(191) NOT NULL,
+    company VARCHAR(191) NULL,
+    role VARCHAR(32) NOT NULL,
+    file_name VARCHAR(191) NOT NULL,
+    created_at DATETIME NOT NULL,
+    expires_at DATETIME NOT NULL,
+    revoked_at DATETIME NULL,
+    last_used_at DATETIME NULL,
+    last_used_ip VARCHAR(45) NULL,
+    uses INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_collect_token (token_hash),
+    KEY idx_collect_email (email, expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO asset_sources (slug, label, color, is_system, is_default) VALUES
+    ('collector', 'Collector', '#b7791f', 1, 0);
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -341,5 +365,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_05_0020_retire_logged_username'),
     ('2026_11_06_0021_boolean_column_types'),
     ('2026_11_26_0022_settings_superadmin_only'),
-    ('2026_11_26_0023_companies');
+    ('2026_11_26_0023_companies'),
+    ('2026_11_26_0024_collector_tokens');
 

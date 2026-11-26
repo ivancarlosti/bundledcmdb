@@ -34,5 +34,7 @@ require_once __DIR__ . '/../lib/panel/device_writes.php';
 require_once __DIR__ . '/../lib/panel/settings.php';
 require_once __DIR__ . '/../lib/panel/logs.php';
 require_once __DIR__ . '/../lib/panel/users.php';
+require_once __DIR__ . '/../lib/panel/collect.php';
+require_once __DIR__ . '/../lib/collect_script.php';
 
 panel_dispatch();

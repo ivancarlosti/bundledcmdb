@@ -24,6 +24,7 @@
 | `ui/src/features/grid/*` | Grid state machine, URL binding, TanStack Table renderer |
 | `ui/src/features/devices/*` | Device list/detail screens, column model built from `/meta` |
 | `ui/src/features/settings/*` | `/app/settings` screens (one tab per settings group, sources, custom fields, API keys, users, maintenance) |
+| `ui/src/features/collect/*` | `/app/collect` — the experimental "Collect data" download (see [collect.md](collect.md)) |
 
 The SPA is same-origin with the API, so there is no CORS layer and the session
 cookie works with `SameSite=Lax`.
@@ -39,6 +40,7 @@ lands on the SPA's own login screen, and a browser with one lands on the grid.
 | `/app/*` | The SPA (history fallback to `/app/index.html`) |
 | `/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/dev-login` | SPA authentication (`public/auth.php`) |
 | `/panel-api/v1/*`, `/api/v1/*` | Panel and public APIs |
+| `/collect` | Public data-collector endpoint (the downloaded file posts here; its own token, see [collect.md](collect.md)) |
 | anything else ending in `.php` | `404` — only the entry points above execute PHP |
 
 The legacy pages (`main.php`, `settings.php`, `manage_permissions.php`,
@@ -136,6 +138,9 @@ the server-side guard.
 | `GET /panel-api/v1/logs` | audit rows (admin+), filters `q`/`action`/`entity`/`actor`/`company`/`from`/`to`/`page`/`per_page`; `meta` carries the filter options, retention and last purge |
 | `POST /panel-api/v1/logs/purge` | superadmin: `{"before": "YYYY-MM-DD", "dry_run": true}` deletes (or counts) everything older than that day |
 | `GET /panel-api/v1/users` | directory for the device form's company-filtered e-mail dropdown (manager+; a company-bound caller always sees its own company) |
+| `GET /panel-api/v1/collect` | experimental collector state: `enabled`, `ttl_minutes`, `endpoint`, `can_collect` and the caller's active token (metadata only) |
+| `POST /panel-api/v1/collect/file` | issue a download (`{format: "bat"\|"ps1"}`); `201` with the script text, revokes the caller's previous file |
+| `DELETE /panel-api/v1/collect/file` | revoke the active download (`{revoked: n}`) |
 
 Every mutation (`POST`/`PATCH`/`PUT`/`DELETE`) is counted against
 `api.panel_rate_limit` (default 120 per user per minute, fixed window in

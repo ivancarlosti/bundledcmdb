@@ -80,6 +80,11 @@ function panel_routes(): array
         ['GET',   '/settings/columns',    'panel_settings_columns_index'],
         ['PUT',   '/settings/columns',    'panel_settings_columns_update'],
         ['DELETE', '/settings/columns',   'panel_settings_columns_delete'],
+        // Experimental "Collect data" download. Literal paths, so no `{id}`
+        // route can swallow them; the handlers are per-user (lib/panel/collect.php).
+        ['GET',   '/collect',             'panel_collect_show'],
+        ['POST',  '/collect/file',        'panel_collect_store'],
+        ['DELETE', '/collect/file',       'panel_collect_revoke'],
         // Audit log. `/logs/purge` is a literal, so it is listed before nothing
         // that could swallow it (there is no `{id}` on this resource).
         ['GET',   '/logs',                'panel_logs_index'],

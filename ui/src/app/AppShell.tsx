@@ -55,6 +55,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               {t('ui_devices')}
             </Link>
+            {session.features.collect && session.capabilities.permissions['devices.collect'] ? (
+              <Link
+                to="/collect"
+                className={NAV_LINK}
+                activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
+              >
+                {t('ui_collect')}
+              </Link>
+            ) : null}
             {session.capabilities.permissions['logs.view'] ? (
               <Link
                 to="/logs"

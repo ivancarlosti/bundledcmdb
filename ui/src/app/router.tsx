@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter, Link, Outlet } from '@tanst
 import { useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/ui';
+import { CollectPage } from '@/features/collect/CollectPage';
 import { DeviceDetailPage } from '@/features/devices/DeviceDetailPage';
 import { DeviceFormPage } from '@/features/devices/DeviceFormPage';
 import { DeviceGridPage } from '@/features/devices/DeviceGridPage';
@@ -99,6 +100,13 @@ const routeTree = rootRoute.addChildren([
     getParentRoute: () => rootRoute,
     path: '/logs',
     component: LogsPage,
+  }),
+  // Experimental "Collect data" download (`features.collect` hides the link when
+  // the setting is off; the screen explains itself when reached directly).
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/collect',
+    component: CollectPage,
   }),
   settingsRoute,
 ]);

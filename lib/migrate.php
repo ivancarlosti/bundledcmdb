@@ -257,6 +257,10 @@ function migrations(): array
             'description' => 'Create companies (tenant registry), backfill from users/assets, index users.company',
             'run' => 'migration_0023_companies',
         ],
+        '2026_11_26_0024_collector_tokens' => [
+            'description' => 'Create collector_tokens (experimental data-collector downloads) + seed the collector source',
+            'run' => 'migration_0024_collector_tokens',
+        ],
     ];
 }
 
@@ -1177,6 +1181,55 @@ function migration_0023_companies(PDO $pdo): void
         $stmt = $pdo->prepare("DELETE FROM role_capabilities WHERE capability = 'settings.users'");
         $stmt->execute();
         migrate_note('removed ' . $stmt->rowCount() . ' stale settings.users grant(s)');
+    }
+}
+
+/**
+ * Experimental "Collect data" downloads (lib/collect.php).
+ *
+ * Only the SHA-256 of the token is stored: the raw value exists in the
+ * downloaded script and in the response that generated it, and nowhere else —
+ * the same rule as `api_keys.key_hash`. A row is "active" while
+ * `revoked_at IS NULL AND expires_at > NOW()`; generating a new file revokes the
+ * previous one for that e-mail, so a user has at most one link to hand out.
+ *
+ * The `collector` provenance source is seeded here (not in 0002) so that a
+ * database that already ran that migration still gets it; the label is what the
+ * device grid and the audit log show.
+ */
+function migration_0024_collector_tokens(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'collector_tokens')) {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS collector_tokens (
+                id INT NOT NULL AUTO_INCREMENT,
+                token_hash CHAR(64) NOT NULL,
+                email VARCHAR(191) NOT NULL,
+                company VARCHAR(191) NULL,
+                role VARCHAR(32) NOT NULL,
+                file_name VARCHAR(191) NOT NULL,
+                created_at DATETIME NOT NULL,
+                expires_at DATETIME NOT NULL,
+                revoked_at DATETIME NULL,
+                last_used_at DATETIME NULL,
+                last_used_ip VARCHAR(45) NULL,
+                uses INT UNSIGNED NOT NULL DEFAULT 0,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_collect_token (token_hash),
+                KEY idx_collect_email (email, expires_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        migrate_note('CREATE TABLE collector_tokens');
+    }
+
+    if (db_table_exists($pdo, 'asset_sources')) {
+        $stmt = $pdo->prepare(
+            'INSERT IGNORE INTO asset_sources (slug, label, color, is_system, is_default) VALUES (?, ?, ?, 1, 0)'
+        );
+        $stmt->execute(['collector', 'Collector', '#b7791f']);
+        migrate_note('seed asset_sources: collector');
+    } else {
+        migrate_note('skipped collector source seed: asset_sources missing');
     }
 }
 

@@ -107,6 +107,9 @@ foreach ([
     ['POST',  '/settings/maintenance/migrate',      'panel_settings_maintenance_migrate'],
     ['GET',   '/logs',                              'panel_logs_index'],
     ['POST',  '/logs/purge',                        'panel_logs_purge'],
+    ['GET',   '/collect',                           'panel_collect_show'],
+    ['POST',  '/collect/file',                      'panel_collect_store'],
+    ['DELETE', '/collect/file',                     'panel_collect_revoke'],
     ['GET',   '/users',                             'panel_users_index'],
     // Pre-existing literals, kept here so the ordering rule has one home.
     ['GET',   '/devices/export',                    'panel_devices_export'],
@@ -1777,8 +1780,8 @@ try {
     check(($settingsPayload['groups'] ?? []) !== [], 'settings: superadmin reads the groups');
     $settingsGroupIds = array_column($settingsPayload['groups'], 'id');
     check(
-        $settingsGroupIds === ['general', 'assets', 'logs', 'api', 'storage', 's3'],
-        'settings: cards have one group each (general, assets, logs, api, storage, s3)'
+        $settingsGroupIds === ['general', 'assets', 'logs', 'api', 'storage', 's3', 'collect'],
+        'settings: cards have one group each (general, assets, logs, api, storage, s3, collect)'
     );
     $settingsGroupLabels = array_column($settingsPayload['groups'], 'label_key', 'id');
     check(

@@ -201,9 +201,9 @@ test.describe('settings', () => {
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
     // General, Columns, Storage, Sources, Companies, API, Fields, Logs,
-    // Maintenance, Permissions, Users: the whole surface belongs to the
-    // recovery role.
-    await expect(page.getByRole('tab')).toHaveCount(11);
+    // Collect data, Maintenance, Permissions, Users: the whole surface belongs
+    // to the recovery role.
+    await expect(page.getByRole('tab')).toHaveCount(12);
     await expect(page.getByRole('tab', { name: 'Companies' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Permissions' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Users' })).toBeVisible();

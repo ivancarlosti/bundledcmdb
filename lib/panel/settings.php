@@ -144,6 +144,7 @@ function panel_settings_payload(): array
         'storage' => 'set_group_storage',
         's3'      => 'set_group_s3',
         'logs'    => 'set_group_logs',
+        'collect' => 'set_group_collect',
     ];
 
     foreach (settings_all(true) as $key => $entry) {

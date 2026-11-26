@@ -470,6 +470,91 @@ with the structured disk inventory (*Storage*).
 * The columns are off by default in the grid (Settings → Columns), so they do not
   widen every view; `/v1/devices` always returns them (`agent_*` keys).
 
+## Collect data (experimental)
+
+The "Collect data" feature lets a signed-in user download a small Windows script
+that reports the machine it runs on. It is the only public write path that is not
+the Bearer API: the credential is a **short-lived token inside the downloaded
+file**, and every device it writes belongs to the user who downloaded it.
+
+* Endpoint: `POST https://<host>/collect` (nginx `location ~ ^/collect(/.*)?$` →
+  `public/collect.php`)
+* Auth: `X-Collector-Token: bcx_<48 hex>` (the JSON body may carry `"token"`
+  instead, for a hand-run `curl`)
+* Content type: `application/json`
+* Optional: `X-Collector-Version: 1.0.0` (for support; the script sends it)
+
+Enabled with **Settings → Collect data → `collect.enabled`** (default `off`);
+a download is issued per user by `POST /panel-api/v1/collect/file`.
+
+### Request
+
+```bash
+curl -X POST https://cmdb.example.com/collect \
+  -H 'X-Collector-Token: bcx_…' -H 'Content-Type: application/json' \
+  -d '{"sn":"SN-1234","hostname":"acme-laptop-01","agent_model":"Latitude 5440",
+       "physical_disks":[{"number":0,"friendly_name":"WD 480GB","size_gb":476.94,"free_gb":210.5}]}'
+```
+
+### Response
+
+```json
+{"ok": true, "data": {"device": {"id": 12, "sn": "SN-1234", "hostname": "acme-laptop-01", "…": "…"}, "created": true}}
+```
+
+`201` when the device was created, `200` when an existing one was updated.
+
+### What the payload may contain
+
+Only identity/hardware facts — the same shape as the public device map, with the
+`agent_*` keys of the inventory block:
+
+| Allowed | Rejected (`422 errors.<field> = "forbidden_field"`) |
+|---|---|
+| `sn`, `uuid`, `hostname`, `os`, `os_version`, `manufacturer`, `cpus`, `hds`, `hds_types`, `hds_spaces_gb`, `physical_disks`, `network_adapters`, `mac_addresses`, `primary_local_ip`, `primary_remote_ip`, `agent_*` | `company`, `user_email`, `source`, `source_ref`, `status`, `asset`, `notes`, `warranty`, `purchase_date`, `byod`, `mobile`, `cypher_id`, `cypher_key`, anything unknown |
+
+Server-side decisions, which the payload cannot override:
+
+* `company` = the roster row's company; `UserEmail` = the token's e-mail;
+* `source` = `collector` on create (an existing device keeps its provenance);
+* `LastSeen` = now;
+* the device is matched by `uuid` then `sn` **inside that company only**, so the
+  same serial in another tenant is a different device and does not block.
+
+### Errors
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `invalid_token` | 401 | missing/unknown/revoked-shaped token (never says which) |
+| `token_revoked` | 401 | a newer download replaced this file |
+| `token_expired` | 401 | past `expires_at` — download again |
+| `collect_disabled` | 403 | `collect.enabled` is off |
+| `user_not_found` | 401 | the e-mail is no longer on the roster |
+| `company_unassigned` | 403 | the roster row has no company |
+| `role_not_allowed` | 403 | the role no longer holds `devices.collect` |
+| `device_assigned_to_other_user` | 409 | the matched device has another `UserEmail` |
+| `serial_soft_deleted` | 409 | the serial belongs to a soft-deleted device |
+| `serial_missing` | 422 | no serial and `assets.require_sn` is on |
+| `validation_failed` | 422 | field errors in `errors` (`too_long`, `invalid_disks`, …) |
+| `forbidden_field` | 422 | a key the collector may not write (see `errors`) |
+| `conflict` | 409 | duplicate identity inside the company |
+| `rate_limited` | 429 | per-token (`collect.rate_limit`) or per-address cap |
+| `collect_unavailable` | 503 | migration `0024` has not run |
+
+### Panel endpoints
+
+| Method | Path | Result |
+|---|---|---|
+| `GET` | `/panel-api/v1/collect` | feature state, endpoint, TTL, the caller's active token (metadata only) |
+| `POST` | `/panel-api/v1/collect/file` | `201` + `{file: {name, format, content, expires_at}, token}`; `format` = `bat` (default) or `ps1` |
+| `DELETE` | `/panel-api/v1/collect/file` | `{revoked: n}` |
+
+`POST` and `DELETE` need the CSRF header and `devices.collect`; each `POST`
+revokes the caller's previous download, so a user always has exactly one live
+file. The response carries the script text (the SPA saves it as a `Blob`), and the
+raw token appears **only** inside that text — never in `GET /collect`, never in a
+log line.
+
 ## Breaking changes
 
 ### 0020 — `LoggedUsername`

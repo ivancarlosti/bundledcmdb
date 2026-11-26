@@ -68,9 +68,16 @@ function panel_session_payload(array $user): array
             'api'         => settings_bool('api.enabled'),
             'attachments' => panel_storage_configured(),
             'devLogin'    => app_dev_login_enabled(),
+            // Experimental "Collect data" tab (Settings → Collect turns it on).
+            'collect'     => collect_enabled(),
         ];
     } catch (Throwable) {
-        $features = ['api' => false, 'attachments' => false, 'devLogin' => app_dev_login_enabled()];
+        $features = [
+            'api'         => false,
+            'attachments' => false,
+            'devLogin'    => app_dev_login_enabled(),
+            'collect'     => false,
+        ];
     }
 
     $maxPageSize = 200;

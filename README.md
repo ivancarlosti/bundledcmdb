@@ -114,6 +114,12 @@ the file); change them before exposing the stack. The panel is published on
 * **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert, bulk
   and delete-by-`uuid`/`sn`, per-key company/source scopes, IP allowlists, token
   rotation. See [docs/api.md](docs/api.md).
+* **Collect data** (experimental, off by default) — a user downloads a
+  double-clickable, no-admin Windows file from `/app/collect`; it reports the
+  machine and creates the device under that user's own e-mail. The file carries a
+  short-lived token, one per user, and the server enforces the ownership rules.
+  See [docs/collect.md](docs/collect.md) and `POST /collect` in
+  [docs/api.md](docs/api.md).
 * **REST API for the user roster** — `GET/POST/PATCH/DELETE /api/v1/users` plus
   `POST /api/v1/users/upsert`, behind a separate `can_users` key scope (off by
   default). It maintains the `users` rows that authorise a Keycloak login; no
@@ -171,6 +177,8 @@ coverage.
 * [docs/frontend.md](docs/frontend.md) — React SPA: structure, `npm` scripts,
   local `vite` workflow, conventions and i18n rules
   (migration plan: [`plans/2026-11-02-spa-migration.md`](plans/2026-11-02-spa-migration.md)).
+* [docs/collect.md](docs/collect.md) — the experimental "Collect data" download:
+  user flow, what it reads, security model, troubleshooting.
 
 ## 📸 Screenshots
 

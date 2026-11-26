@@ -40,6 +40,8 @@ const TABS: Tab[] = [
   { id: 'api', label_key: 'set_tab_api', capability: 'settings.api_keys' },
   { id: 'fields', label_key: 'set_tab_fields', capability: 'settings.fields' },
   { id: 'logs', label_key: 'set_tab_logs', capability: 'settings.manage' },
+  // Experimental: on/off, link lifetime and throttle for the collector.
+  { id: 'collect', label_key: 'set_tab_collect', capability: 'settings.manage' },
   { id: 'maintenance', label_key: 'set_tab_maintenance', capability: 'settings.maintenance' },
   { id: 'permissions', label_key: 'set_tab_permissions', capability: 'permissions.manage' },
   // Delegable: an admin gets this tab and nothing else.
@@ -158,6 +160,9 @@ export function SettingsPage() {
         {tab === 'fields' ? <FieldsTab labelledBy={headingId} /> : null}
         {tab === 'logs' ? (
           <SettingsGroupPanel groups={['logs']} intro={t('set_logs_intro')} labelledBy={headingId} />
+        ) : null}
+        {tab === 'collect' ? (
+          <SettingsGroupPanel groups={['collect']} intro={t('set_collect_intro')} labelledBy={headingId} />
         ) : null}
         {tab === 'maintenance' ? <MaintenanceTab labelledBy={headingId} /> : null}
         {tab === 'permissions' ? <PermissionsTab labelledBy={headingId} /> : null}
