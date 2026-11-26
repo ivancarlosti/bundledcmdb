@@ -103,10 +103,14 @@ the file); change them before exposing the stack. The panel is published on
   purge by date from the screen.
 * **Per-user preferences** — locale, theme and page size live in
   `user_preferences`, so they follow the user across browsers.
-* **Settings tabs** (`/app/settings`, superadmin only) — general, storage (secret
-  encrypted with `APP_ENCRYPTION_KEY`), sources, API keys, custom fields, log
-  retention and schema maintenance. Values are stored in the database with
-  `DB → ENV → default` precedence; see [docs/settings.md](docs/settings.md).
+* **Settings tabs** (`/app/settings`) — general, storage (secret encrypted with
+  `APP_ENCRYPTION_KEY`), sources, API keys, custom fields, log retention, schema
+  maintenance and the company (tenant) registry. Values are stored in the
+  database with `DB → ENV → default` precedence; see
+  [docs/settings.md](docs/settings.md). The screen is superadmin-only except for
+  **Users** (`users.manage`): an admin gets that one tab and manages only its own
+  company, with a role ceiling of `user`/`manager`; a superadmin manages every
+  company and the registry itself.
 * **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert, bulk
   and delete-by-`uuid`/`sn`, per-key company/source scopes, IP allowlists, token
   rotation. See [docs/api.md](docs/api.md).
@@ -197,8 +201,8 @@ UI change is one command away from fresh pictures.
 |---|---|
 | ![Settings tab that chooses the device grid columns and their order](docs/screenshots/09-settings-columns.png) | ![Permission matrix assigning capabilities to each role](docs/screenshots/10-settings-permissions.png) |
 
-### Users and roles (SuperAdmin)
-![Settings screen listing users and their roles](docs/screenshots/06-settings-users.png)
+### Users and roles (SuperAdmin/Admin)
+![Settings screen listing users and their roles, with company scope and creation controls](docs/screenshots/06-settings-users.png)
 
 ### Language switcher (es-MX)
 ![Asset dashboard displayed in Spanish](docs/screenshots/04-dashboard-es-MX.png)

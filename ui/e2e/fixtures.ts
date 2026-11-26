@@ -137,6 +137,17 @@ export const MESSAGES: Record<string, string> = {
   set_tab_fields: 'Custom fields',
   set_tab_maintenance: 'Maintenance',
   set_tab_users: 'Users',
+  set_tab_companies: 'Companies',
+  set_companies_intro: 'The companies (tenants) this installation knows.',
+  set_company_add: 'Add company',
+  set_company_create: 'Create company',
+  set_company_delete_confirm: 'Delete the company "{{name}}"?',
+  set_company_empty: 'No companies registered yet.',
+  set_company_in_use: 'Still referenced by users, devices or API keys.',
+  set_company_name: 'Company name',
+  set_company_name_hint: 'Exact spelling used on users and devices.',
+  set_company_usage: '{{users}} users · {{assets}} devices · {{keys}} API keys',
+  set_company_usage_header: 'Usage',
   set_group_general: 'General',
   set_group_assets: 'Assets',
   set_group_api: 'API',
@@ -157,6 +168,15 @@ export const MESSAGES: Record<string, string> = {
   set_user_search: 'Search users',
   set_user_search_placeholder: 'Search by e-mail, company or role',
   set_user_summary: 'Showing {{shown}} of {{total}} users',
+  set_user_add: 'Add user',
+  set_user_company_hint: 'Leave empty for a superadmin; otherwise pick a registered company.',
+  set_user_create: 'Create user',
+  set_user_delete: 'Remove',
+  set_user_delete_confirm: 'Remove this user from the roster?',
+  set_user_readonly: 'Outside your role scope',
+  set_user_scope_all: 'You can manage every company.',
+  set_user_scope_company: 'You can manage the users of {{company}}.',
+  set_users_intro: 'Who may sign in and the role each person gets.',
   setting_assets_require_sn: 'Enable serial number requirement',
   setting_s3_bucket: 'Bucket',
   setting_s3_path_style: 'Enable path-style URLs (MinIO / self-hosted)',
@@ -243,8 +263,8 @@ export const ROLE_PERMISSIONS: Record<'user' | 'manager' | 'admin' | 'superadmin
     'devices.restore': true,
     'devices.files.delete': true,
     'logs.view': true,
-    // `/settings` is superadmin-only (`settings.*` and `permissions.manage` are
-    // flagged `superadmin_only`); an admin deliberately has none of them.
+    // Settings → Users only: the rest of `/settings` stays superadmin-only.
+    'users.manage': true,
   },
   superadmin: {
     ...VIEWER,
@@ -263,7 +283,8 @@ export const ROLE_PERMISSIONS: Record<'user' | 'manager' | 'admin' | 'superadmin
     'settings.fields': true,
     'settings.api_keys': true,
     'settings.maintenance': true,
-    'settings.users': true,
+    'settings.companies': true,
+    'users.manage': true,
     'permissions.manage': true,
   },
 };
@@ -1050,6 +1071,34 @@ export type SettingsMockOptions = {
   onSave?: (body: Record<string, unknown>) => void;
   /** Answered as `422 validation_failed` with these per-key codes. */
   invalid?: Record<string, string>;
+  /** Overrides the Users payload (scope/roles/rows) for an admin view. */
+  users?: Partial<SettingsUsersPayload>;
+};
+
+/** Registry stub: one used tenant and one empty one. */
+export const SETTINGS_COMPANIES = [
+  { name: 'Acme', users: 1, assets: 2, api_keys: 0, total: 3 },
+  { name: 'Globex', users: 0, assets: 0, api_keys: 0, total: 0 },
+];
+
+export type SettingsUsersPayload = {
+  users: { email: string; company: string; role: string; is_self: boolean; manageable: boolean }[];
+  roles: string[];
+  companies: string[];
+  scope: { company: string; all_companies: boolean };
+  can_create: boolean;
+};
+
+/** Superadmin view of the roster: every company, every role. */
+export const SETTINGS_USERS: SettingsUsersPayload = {
+  users: [
+    { email: 'qa@example.com', company: '', role: 'superadmin', is_self: true, manageable: false },
+    { email: 'ops@example.com', company: 'Acme', role: 'manager', is_self: false, manageable: true },
+  ],
+  roles: ['user', 'manager', 'admin', 'superadmin'],
+  companies: ['Acme', 'Globex'],
+  scope: { company: '', all_companies: true },
+  can_create: true,
 };
 
 /**
@@ -1060,6 +1109,7 @@ export type SettingsMockOptions = {
  * carries `errors` keyed by setting key, which is what the inline messages read.
  */
 export async function mockSettings(page: Page, options: SettingsMockOptions = {}): Promise<void> {
+  const usersPayload: SettingsUsersPayload = { ...SETTINGS_USERS, ...(options.users ?? {}) };
   await page.route('**/panel-api/v1/settings', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ json: { ok: true, data: SETTINGS_PAYLOAD } });
@@ -1110,19 +1160,18 @@ export async function mockSettings(page: Page, options: SettingsMockOptions = {}
   await page.route('**/panel-api/v1/settings/api-keys**', (route) =>
     route.fulfill({ json: { ok: true, data: { keys: [], sources: SETTINGS_SOURCES } } }),
   );
-  await page.route('**/panel-api/v1/settings/users', (route) =>
-    route.fulfill({
-      json: {
-        ok: true,
-        data: {
-          users: [
-            { email: 'qa@example.com', company: '', role: 'superadmin', is_self: true },
-            { email: 'ops@example.com', company: 'Acme', role: 'manager', is_self: false },
-          ],
-          roles: ['user', 'manager', 'admin', 'superadmin'],
-        },
-      },
-    }),
+  await page.route('**/panel-api/v1/settings/users', (route) => {
+    const created = route.request().method() === 'POST';
+    return route.fulfill({
+      status: created ? 201 : 200,
+      json: { ok: true, data: usersPayload },
+    });
+  });
+  await page.route('**/panel-api/v1/settings/users/*', (route) =>
+    route.fulfill({ json: { ok: true, data: usersPayload } }),
+  );
+  await page.route('**/panel-api/v1/settings/companies**', (route) =>
+    route.fulfill({ json: { ok: true, data: { companies: SETTINGS_COMPANIES } } }),
   );
   await page.route('**/panel-api/v1/settings/maintenance', (route) =>
     route.fulfill({

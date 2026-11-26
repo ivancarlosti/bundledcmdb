@@ -1,11 +1,11 @@
 /**
- * `/app/settings` — the superadmin surface.
+ * `/app/settings` — the admin surface.
  *
  * One screen, tabs as a `?tab=` parameter (the same "URL is the state" rule the
- * grid follows, so a tab can be bookmarked and survives a reload). The screen is
- * reserved for `superadmin`: every `settings.*` and `permissions.manage`
- * capability is `superadmin_only` (see `lib/permissions.php`), so the tab list
- * still filters on the capability map but an admin/manager never gets a tab.
+ * grid follows, so a tab can be bookmarked and survives a reload). The tab list
+ * filters on the capability map: a superadmin gets every tab, while an admin
+ * gets only Users (`users.manage`) and sees a forbidden state when they hold no
+ * settings-area capability at all.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -16,6 +16,7 @@ import { useCurrentSession } from '@/features/auth/SessionContext';
 
 import { ApiKeysTab } from './ApiKeysTab';
 import { ColumnsTab } from './ColumnsTab';
+import { CompaniesTab } from './CompaniesTab';
 import { FieldsTab } from './FieldsTab';
 import { MaintenanceTab } from './MaintenanceTab';
 import { PermissionsTab } from './PermissionsTab';
@@ -35,12 +36,14 @@ const TABS: Tab[] = [
   { id: 'columns', label_key: 'set_tab_columns', capability: 'settings.manage' },
   { id: 'storage', label_key: 'set_tab_storage', capability: 'settings.manage' },
   { id: 'sources', label_key: 'set_tab_sources', capability: 'settings.sources' },
+  { id: 'companies', label_key: 'set_tab_companies', capability: 'settings.companies' },
   { id: 'api', label_key: 'set_tab_api', capability: 'settings.api_keys' },
   { id: 'fields', label_key: 'set_tab_fields', capability: 'settings.fields' },
   { id: 'logs', label_key: 'set_tab_logs', capability: 'settings.manage' },
   { id: 'maintenance', label_key: 'set_tab_maintenance', capability: 'settings.maintenance' },
   { id: 'permissions', label_key: 'set_tab_permissions', capability: 'permissions.manage' },
-  { id: 'users', label_key: 'set_tab_users', capability: 'settings.users' },
+  // Delegable: an admin gets this tab and nothing else.
+  { id: 'users', label_key: 'set_tab_users', capability: 'users.manage' },
 ];
 
 const TAB_LINK = 'rounded-[var(--radius-md)] px-3 py-1.5 text-sm';
@@ -96,7 +99,7 @@ export function SettingsPage() {
   const ids = useMemo(() => allowed.map((item) => item.id), [allowed]);
   const [tab, select] = useTab(ids);
 
-  if (!session.capabilities.can_superadmin || allowed.length === 0) {
+  if (allowed.length === 0) {
     return <Alert title={t('ui_err_forbidden')}>{t('set_title')}</Alert>;
   }
 
@@ -143,6 +146,7 @@ export function SettingsPage() {
         ) : null}
         {tab === 'columns' ? <ColumnsTab labelledBy={headingId} /> : null}
         {tab === 'sources' ? <SourcesTab labelledBy={headingId} /> : null}
+        {tab === 'companies' ? <CompaniesTab labelledBy={headingId} /> : null}
         {tab === 'api' ? (
           <div className="flex flex-col gap-6">
             {session.capabilities.permissions['settings.manage'] ? (

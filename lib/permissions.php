@@ -28,9 +28,14 @@ function permission_roles(): array
  *
  * `superadmin_only` marks a capability the matrix may show but never delegate:
  * `/settings` (general, storage, sources, fields, API keys, columns,
- * maintenance), the user roster and the matrix itself belong to the recovery
- * role. A stored override is ignored for those keys, so an older grant (or a
- * manual INSERT) cannot reopen the screen.
+ * maintenance), the company registry and the matrix itself belong to the
+ * recovery role. A stored override is ignored for those keys, so an older grant
+ * (or a manual INSERT) cannot reopen the screen.
+ *
+ * `users.manage` is the one settings-area capability that *is* delegable: it
+ * defaults to admin + superadmin and opens only the Users tab. An admin is
+ * further limited to the roster rows of their own company (the handlers scope
+ * every query and refuse an unbound admin — no company means superadmin).
  *
  * @return array<string, array{group: string, label_key: string, default_roles: list<string>, superadmin_only?: bool}>
  */
@@ -58,7 +63,10 @@ function permission_capability_defs(): array
         'settings.fields'      => ['group' => 'settings',  'label_key' => 'perm_cap_settings_fields',      'default_roles' => ['superadmin'], 'superadmin_only' => true],
         'settings.api_keys'    => ['group' => 'settings',  'label_key' => 'perm_cap_settings_api_keys',    'default_roles' => ['superadmin'], 'superadmin_only' => true],
         'settings.maintenance' => ['group' => 'settings',  'label_key' => 'perm_cap_settings_maintenance', 'default_roles' => ['superadmin'], 'superadmin_only' => true],
-        'settings.users'       => ['group' => 'settings',  'label_key' => 'perm_cap_settings_users',       'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'settings.companies'   => ['group' => 'settings',  'label_key' => 'perm_cap_settings_companies',   'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        // Delegable on purpose: it opens Settings → Users and nothing else, and
+        // the handlers scope an admin to their own company.
+        'users.manage'         => ['group' => 'settings',  'label_key' => 'perm_cap_users_manage',         'default_roles' => ['admin', 'superadmin']],
         'permissions.manage'   => ['group' => 'settings',  'label_key' => 'perm_cap_permissions_manage',   'default_roles' => ['superadmin'], 'superadmin_only' => true],
     ];
 }

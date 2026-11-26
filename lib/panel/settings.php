@@ -23,15 +23,23 @@ declare(strict_types=1);
  *   POST   /settings/api-keys/{id}/rotate  token returned once           (superadmin)
  *   PATCH  /settings/api-keys/{id}                                       (superadmin)
  *   DELETE /settings/api-keys/{id}                                       (superadmin)
- *   GET    /settings/users                 roles per e-mail              (superadmin)
- *   PATCH  /settings/users/{email}         change one role               (superadmin)
+ *   GET    /settings/users                 role roster, scoped per company (users.manage)
+ *   POST   /settings/users                 add a roster row              (users.manage)
+ *   PATCH  /settings/users/{email}         change role / company         (users.manage)
+ *   DELETE /settings/users/{email}         revoke the authorisation row  (users.manage)
+ *   GET    /settings/companies             tenant registry + usage       (superadmin)
+ *   POST   /settings/companies             register a company            (superadmin)
+ *   DELETE /settings/companies/{name}      refused while in use          (superadmin)
  *   GET    /settings/maintenance           schema state + diagnostics    (superadmin)
  *   POST   /settings/maintenance/migrate   run (or dry-run) migrations   (superadmin)
  *
- * The whole screen is superadmin-only: every `settings.*` capability and
- * `permissions.manage` is flagged `superadmin_only` in `lib/permissions.php`
- * (migration `0022` clears older grants), so the role matrix cannot delegate
- * any of these areas and a company admin never reaches the handlers.
+ * The settings screen is superadmin-only except for the Users tab: every
+ * `settings.*` capability and `permissions.manage` is flagged `superadmin_only`
+ * in `lib/permissions.php`, while `users.manage` (admin + superadmin) opens just
+ * the roster. An admin only ever sees the rows of their own company, cannot
+ * assign a role at or above their own and cannot move a row to another tenant;
+ * a non-superadmin without a company is refused outright, because a user with
+ * no company is a superadmin.
  *
  * The handlers are thin on purpose: every rule (validation, protection of system
  * sources, token hashing, migration ledger) already lives in the model helpers
@@ -988,28 +996,94 @@ function panel_settings_keys_delete(array $params = []): array
     return ['data' => panel_settings_keys_payload($pdo), 'meta' => ['deleted' => $id]];
 }
 
-// --- User roles (superadmin) ---------------------------------------------
+// --- Users (tenant-scoped) ------------------------------------------------
 
 /**
- * `users` has no surrogate key in the legacy schema, so the e-mail is the
- * identity of a row — and therefore the path parameter.
+ * Signed-in actor allowed to manage the roster.
  *
- * @return list<array{email: string, company: string, role: string, is_self: bool}>
+ * `users.manage` opens the Users tab for admins and superadmins. An account
+ * without a company is a superadmin by definition (`session_roster_sync()`
+ * keeps the session row in step), so an unbound non-superadmin is refused
+ * instead of silently matching an empty `company` predicate.
  */
-function panel_settings_user_rows(PDO $pdo): array
+function panel_settings_user_actor(): array
+{
+    $user = session_require_capability('users.manage');
+    if (
+        session_role_normalize((string) ($user['role'] ?? '')) !== 'superadmin'
+        && trim((string) ($user['company'] ?? '')) === ''
+    ) {
+        throw new ApiError(
+            'forbidden',
+            'An account without a company is a superadmin; it cannot manage a tenant roster.',
+            403
+        );
+    }
+
+    return $user;
+}
+
+function panel_settings_is_superadmin(array $user): bool
+{
+    return session_role_normalize((string) ($user['role'] ?? '')) === 'superadmin';
+}
+
+/**
+ * Roles an actor may assign.
+ *
+ * A superadmin assigns anything; an admin only down (user/manager). The
+ * catalogue order is weakest first, which is what the select renders.
+ *
+ * @return list<string>
+ */
+function panel_settings_assignable_roles(array $user): array
+{
+    return panel_settings_is_superadmin($user) ? array_keys(SESSION_ROLES) : ['user', 'manager'];
+}
+
+/**
+ * Rows visible to the actor, with the per-row write permission.
+ *
+ * The scope is applied in SQL (`company = ?`), not after the fetch: a
+ * cross-company row must be indistinguishable from a missing one. `manageable`
+ * adds the role ceiling — an admin cannot touch a row at or above their own
+ * rank (self included, which the UI already disables).
+ *
+ * @return list<array{email: string, company: string, role: string, is_self: bool, manageable: bool}>
+ */
+function panel_settings_user_rows(PDO $pdo, array $actor): array
 {
     if (!db_table_exists($pdo, 'users')) {
         return [];
     }
-    $self = (string) session_user_email();
+
+    $all = panel_settings_is_superadmin($actor);
+    $sql = 'SELECT email, company, role FROM users';
+    $bind = [];
+    if (!$all) {
+        $sql .= ' WHERE company = ?';
+        $bind[] = (string) ($actor['company'] ?? '');
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($bind);
+
+    $self = strtolower((string) ($actor['email'] ?? ''));
+    $actorRank = session_role_rank((string) ($actor['role'] ?? ''));
+    $assignable = panel_settings_assignable_roles($actor);
+
     $rows = [];
-    foreach ($pdo->query('SELECT email, company, role FROM users')->fetchAll() as $row) {
+    foreach ($stmt->fetchAll() as $row) {
         $email = (string) $row['email'];
+        $role = session_role_normalize($row['role'] ?? null);
+        $isSelf = strcasecmp($email, $self) === 0;
         $rows[] = [
-            'email'   => $email,
-            'company' => (string) ($row['company'] ?? ''),
-            'role'    => session_role_normalize($row['role'] ?? null),
-            'is_self' => strcasecmp($email, $self) === 0,
+            'email'      => $email,
+            'company'    => (string) ($row['company'] ?? ''),
+            'role'       => $role,
+            'is_self'    => $isSelf,
+            'manageable' => !$isSelf && ($all || (
+                session_role_rank($role) < $actorRank && in_array($role, $assignable, true)
+            )),
         ];
     }
     usort($rows, static function (array $a, array $b): int {
@@ -1020,66 +1094,337 @@ function panel_settings_user_rows(PDO $pdo): array
     return $rows;
 }
 
-function panel_settings_users_payload(PDO $pdo): array
+function panel_settings_users_payload(PDO $pdo, array $actor): array
 {
+    $all = panel_settings_is_superadmin($actor);
+    $company = trim((string) ($actor['company'] ?? ''));
+
     return [
-        'users' => panel_settings_user_rows($pdo),
-        'roles' => array_keys(SESSION_ROLES),
+        'users'      => panel_settings_user_rows($pdo, $actor),
+        'roles'      => panel_settings_assignable_roles($actor),
+        // Admins never choose a company; the registry is only meaningful to a
+        // superadmin, and their own tenant is the only option they can use.
+        'companies'  => $all ? company_names($pdo) : ($company === '' ? [] : [$company]),
+        'scope'      => ['company' => $company, 'all_companies' => $all],
+        'can_create' => true,
     ];
 }
 
 /** GET /settings/users */
 function panel_settings_users_index(array $params = []): array
 {
-    panel_settings_user('settings.users');
-    return ['data' => panel_settings_users_payload(db())];
+    $actor = panel_settings_user_actor();
+    return ['data' => panel_settings_users_payload(db(), $actor)];
 }
 
-/** PATCH /settings/users/{email} — body `{"role": "manager"}`. */
+
+/**
+ * PATCH /settings/users/{email} — body `{ "role": "manager", "company": "Acme" }`.
+ *
+ * `company` is accepted only from a superadmin; an admin is pinned to their own
+ * tenant. Cross-company lookups answer 404 (never 403) so the endpoint does not
+ * disclose that a row exists elsewhere.
+ */
 function panel_settings_users_update(array $params = []): array
 {
-    $user = panel_settings_writer('settings.users');
+    $actor = panel_settings_writer('users.manage');
     $pdo = db();
     $email = trim(rawurldecode((string) ($params['email'] ?? '')));
     if ($email === '') {
         throw new ApiError('invalid_email', 'Expected an e-mail in the path.', 400);
     }
 
-    $stmt = $pdo->prepare('SELECT email, company, role FROM users WHERE email = ?');
-    $stmt->execute([$email]);
+    $all = panel_settings_is_superadmin($actor);
+    $sql = 'SELECT email, company, role FROM users WHERE email = ?';
+    $bind = [$email];
+    if (!$all) {
+        $sql .= ' AND company = ?';
+        $bind[] = (string) ($actor['company'] ?? '');
+    }
+    $stmt = $pdo->prepare($sql . ' LIMIT 1');
+    $stmt->execute($bind);
     $row = $stmt->fetch();
     if ($row === false) {
         throw new ApiError('not_found', 'No user with e-mail ' . $email . '.', 404);
     }
 
-    $role = strtolower(trim((string) (panel_settings_body()['role'] ?? '')));
-    if (!isset(SESSION_ROLES[$role])) {
-        throw new ApiError('validation_failed', 'Unknown role.', 422, ['role' => 'invalid_option']);
-    }
-
-    $self = (string) session_user_email();
-    if (strcasecmp($email, $self) === 0) {
-        // A superadmin removing their own rights would lock the instance out of
-        // user management with no way back in from the panel.
+    if (strcasecmp($email, (string) ($actor['email'] ?? '')) === 0) {
+        // Removing your own rights would lock the instance out of user
+        // management with no way back in from the panel.
         throw new ApiError('self_role_change', 'You cannot change your own role.', 409, ['role' => 'self_role_change']);
     }
 
-    $previousRole = session_role_normalize((string) ($row['role'] ?? ''));
-    $pdo->prepare('UPDATE users SET role = ? WHERE email = ?')->execute([$role, $email]);
+    $targetRole = session_role_normalize((string) ($row['role'] ?? ''));
+    if (!$all && session_role_rank($targetRole) >= session_role_rank((string) ($actor['role'] ?? ''))) {
+        throw new ApiError(
+            'forbidden',
+            'You cannot change a user at or above your own role.',
+            403,
+            ['role' => 'role_not_allowed']
+        );
+    }
 
-    panel_settings_audit(
+    $body = panel_settings_body();
+    $role = array_key_exists('role', $body)
+        ? strtolower(trim((string) $body['role']))
+        : $targetRole;
+    if (!isset(SESSION_ROLES[$role])) {
+        throw new ApiError('validation_failed', 'Unknown role.', 422, ['role' => 'invalid_option']);
+    }
+    if (!in_array($role, panel_settings_assignable_roles($actor), true)) {
+        throw new ApiError('validation_failed', 'Your role cannot assign that role.', 422, ['role' => 'role_not_allowed']);
+    }
+
+    $company = (string) ($row['company'] ?? '');
+    if (array_key_exists('company', $body)) {
+        if (!$all) {
+            throw new ApiError('forbidden', 'You cannot move a user to another company.', 403, ['company' => 'forbidden']);
+        }
+        $company = trim((string) $body['company']);
+        if ($company !== '') {
+            $canonical = company_canonical($pdo, $company);
+            if ($canonical === '') {
+                throw new ApiError('validation_failed', 'Unknown company.', 422, ['company' => 'invalid_option']);
+            }
+            $company = $canonical;
+        }
+    }
+
+    if ($company === '' && $role !== 'superadmin') {
+        // A user without a company is a superadmin; keep the invariant instead
+        // of creating a row no tenant can reach.
+        throw new ApiError('validation_failed', 'A user without a company must be a superadmin.', 422, ['company' => 'company_required']);
+    }
+
+    $changes = asset_event_diff(
+        ['company' => (string) ($row['company'] ?? ''), 'role' => $targetRole],
+        ['company' => $company, 'role' => $role]
+    );
+    if ($changes === []) {
+        return ['data' => panel_settings_users_payload($pdo, $actor), 'meta' => ['email' => $email, 'role' => $role]];
+    }
+
+    if ($role !== $targetRole) {
+        user_guard_last_superadmin($pdo, $row, $role);
+    }
+
+    $pdo->prepare('UPDATE users SET company = ?, role = ? WHERE email = ?')->execute([$company, $role, $email]);
+
+    user_audit(
         $pdo,
-        $user,
-        'role_change',
-        'user',
-        $email,
-        $email,
-        $previousRole === $role ? [] : ['role' => [$previousRole, $role]],
-        null,
+        $role !== $targetRole ? 'role_change' : 'update',
+        (string) ($actor['email'] ?? 'system'),
+        (string) $row['email'],
+        $changes,
+        $company === '' ? null : $company
+    );
+
+    return [
+        'data' => panel_settings_users_payload($pdo, $actor),
+        'meta' => ['email' => $email, 'role' => $role, 'company' => $company],
+    ];
+}
+
+
+/**
+ * POST /settings/users — body `{ "email", "company", "role" }`.
+ *
+ * The row authorises an existing Keycloak account; this endpoint never creates
+ * one (see `lib/users.php`). An admin always creates inside their own company
+ * and only with the roles below their rank.
+ */
+function panel_settings_users_store(array $params = []): array
+{
+    $actor = panel_settings_writer('users.manage');
+    $pdo = db();
+    $input = user_normalize_input(panel_settings_body());
+    $data = $input['data'];
+
+    $email = (string) ($data['email'] ?? '');
+    $role = strtolower(trim((string) ($data['role'] ?? '')));
+    $companyInput = trim((string) ($data['company'] ?? ''));
+
+    $errors = [];
+    foreach ($input['unknown'] as $key) {
+        $errors[(string) $key] = 'unknown_field';
+    }
+    if ($email === '') {
+        $errors['email'] = 'required';
+    } elseif (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        $errors['email'] = 'invalid_email';
+    } elseif (mb_strlen($email) > 191) {
+        $errors['email'] = 'too_long';
+    }
+    if (!isset(SESSION_ROLES[$role])) {
+        $errors['role'] = 'invalid_option';
+    } elseif (!in_array($role, panel_settings_assignable_roles($actor), true)) {
+        $errors['role'] = 'role_not_allowed';
+    }
+
+    if (panel_settings_is_superadmin($actor)) {
+        if ($companyInput !== '') {
+            $canonical = company_canonical($pdo, $companyInput);
+            if ($canonical === '') {
+                $errors['company'] = 'invalid_option';
+            }
+            $companyInput = $canonical;
+        }
+    } else {
+        $ownCompany = (string) ($actor['company'] ?? '');
+        if ($companyInput !== '' && strcasecmp($companyInput, $ownCompany) !== 0) {
+            throw new ApiError(
+                'forbidden',
+                'You can only manage users of your own company.',
+                403,
+                ['company' => 'forbidden']
+            );
+        }
+        $companyInput = $ownCompany;
+    }
+
+    if ($companyInput === '' && $role !== 'superadmin' && !isset($errors['company'])) {
+        $errors['company'] = 'company_required';
+    }
+
+    if ($errors !== []) {
+        throw new ApiError('validation_failed', 'The user could not be created.', 422, $errors);
+    }
+    if (user_find($pdo, $email) !== null) {
+        throw new ApiError('duplicate', 'A user with e-mail ' . $email . ' already exists.', 409, ['email' => 'duplicate']);
+    }
+
+    $created = user_create($pdo, [
+        'email'   => $email,
+        'company' => $companyInput,
+        'role'    => $role,
+    ], (string) ($actor['email'] ?? 'system'));
+
+    return [
+        'data'   => panel_settings_users_payload($pdo, $actor),
+        'status' => 201,
+        'meta'   => ['email' => $created['email']],
+    ];
+}
+
+/**
+ * DELETE /settings/users/{email}
+ *
+ * Removing the Keycloak account is out of scope: this only revokes the
+ * authorisation row. The own row is refused (`409 self_delete`) and the last
+ * superadmin stays protected.
+ */
+function panel_settings_users_delete(array $params = []): array
+{
+    $actor = panel_settings_writer('users.manage');
+    $pdo = db();
+    $email = trim(rawurldecode((string) ($params['email'] ?? '')));
+    if ($email === '') {
+        throw new ApiError('invalid_email', 'Expected an e-mail in the path.', 400);
+    }
+
+    $all = panel_settings_is_superadmin($actor);
+    $sql = 'SELECT email, company, role FROM users WHERE email = ?';
+    $bind = [$email];
+    if (!$all) {
+        $sql .= ' AND company = ?';
+        $bind[] = (string) ($actor['company'] ?? '');
+    }
+    $stmt = $pdo->prepare($sql . ' LIMIT 1');
+    $stmt->execute($bind);
+    $row = $stmt->fetch();
+    if ($row === false) {
+        throw new ApiError('not_found', 'No user with e-mail ' . $email . '.', 404);
+    }
+
+    if (strcasecmp($email, (string) ($actor['email'] ?? '')) === 0) {
+        throw new ApiError('self_delete', 'You cannot delete your own account.', 409, ['email' => 'self_delete']);
+    }
+    $targetRole = session_role_normalize((string) ($row['role'] ?? ''));
+    if (!$all && session_role_rank($targetRole) >= session_role_rank((string) ($actor['role'] ?? ''))) {
+        throw new ApiError(
+            'forbidden',
+            'You cannot delete a user at or above your own role.',
+            403,
+            ['role' => 'role_not_allowed']
+        );
+    }
+
+    user_guard_last_superadmin($pdo, $row);
+    $pdo->prepare('DELETE FROM users WHERE email = ?')->execute([(string) $row['email']]);
+
+    user_audit(
+        $pdo,
+        'delete',
+        (string) ($actor['email'] ?? 'system'),
+        (string) $row['email'],
+        [],
         (string) ($row['company'] ?? '') === '' ? null : (string) $row['company']
     );
 
-    return ['data' => panel_settings_users_payload($pdo), 'meta' => ['email' => $email, 'role' => $role]];
+    return [
+        'data' => panel_settings_users_payload($pdo, $actor),
+        'meta' => ['deleted' => (string) $row['email']],
+    ];
+}
+
+// --- Companies (tenant registry, superadmin) -----------------------------
+
+function panel_settings_companies_payload(PDO $pdo): array
+{
+    return ['companies' => company_rows($pdo)];
+}
+
+/** GET /settings/companies */
+function panel_settings_companies_index(array $params = []): array
+{
+    panel_settings_user('settings.companies');
+    return ['data' => panel_settings_companies_payload(db())];
+}
+
+/** POST /settings/companies — body `{ "name": "Acme" }`. */
+function panel_settings_companies_store(array $params = []): array
+{
+    $actor = panel_settings_writer('settings.companies');
+    $pdo = db();
+    $name = trim((string) (panel_settings_body()['name'] ?? ''));
+    $created = company_create($pdo, $name, (string) ($actor['email'] ?? 'system'));
+
+    return [
+        'data'   => panel_settings_companies_payload($pdo),
+        'status' => 201,
+        'meta'   => ['name' => $created['name']],
+    ];
+}
+
+/** DELETE /settings/companies/{name} — refused while rows still reference it. */
+function panel_settings_companies_delete(array $params = []): array
+{
+    $actor = panel_settings_writer('settings.companies');
+    $pdo = db();
+    $name = trim(rawurldecode((string) ($params['name'] ?? '')));
+    if ($name === '') {
+        throw new ApiError('invalid_name', 'Expected a company name in the path.', 400);
+    }
+
+    $result = company_delete($pdo, $name, (string) ($actor['email'] ?? 'system'));
+    if (!$result['ok']) {
+        $code = (string) ($result['error'] ?? 'not_found');
+        if ($code === 'in_use') {
+            $usage = (array) ($result['usage'] ?? []);
+            throw new ApiError(
+                'in_use',
+                'The company still has users, devices or API keys.',
+                409,
+                ['name' => 'in_use', 'usage' => $usage]
+            );
+        }
+        throw new ApiError('not_found', 'No company named ' . $name . '.', 404);
+    }
+
+    return [
+        'data' => panel_settings_companies_payload($pdo),
+        'meta' => ['deleted' => (string) ($result['name'] ?? $name)],
+    ];
 }
 
 // --- Role permissions ----------------------------------------------------

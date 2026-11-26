@@ -3,13 +3,15 @@
 Everything on **Settings** (superadmin only) is stored in the database,
 so an installation can move away from `.env` without code changes.
 
-`/settings` is reserved for `superadmin`. Every `settings.*` capability and
-`permissions.manage` is flagged `superadmin_only` in `lib/permissions.php`, so
-the role matrix lists them but cannot grant them, a stored `role_capabilities`
-row is ignored, and migration `0022_settings_superadmin_only` deletes the grants
-an older installation may have written. An admin keeps the rest of the role
-(devices, logs, `can_admin`) but neither the navigation entry nor the screen: a
-bookmarked `/app/settings` renders the forbidden state.
+`/settings` is superadmin-only **except for Users**. Every `settings.*`
+capability and `permissions.manage` is flagged `superadmin_only` in
+`lib/permissions.php`, so the role matrix lists them but cannot grant them, a
+stored `role_capabilities` row is ignored, and migration `0022_settings_superadmin_only`
+deletes the grants an older installation may have written. `users.manage` is the
+one delegable settings capability (default: admin + superadmin): it opens the
+navigation entry and a one-tab screen, while every other tab and handler stays
+refused for an admin. An admin is additionally scoped to its own company and to
+the roles below its own rank (see [Users](#users-tenant-scoped)).
 
 ## Precedence (DB → ENV → default)
 
@@ -260,21 +262,52 @@ Schema status (applied/pending migrations), secret-encryption state, a *Run
 migrations* button (with dry-run), and diagnostics (version, PHP, DB, timezone,
 counts).
 
-### Users (superadmin)
-The `users` roster with one role per e-mail. The e-mail is the identity of the
-row, so it is the path parameter of the write. The search box and company filter
-work on the roster the endpoint already returned (no extra request while typing)
-and a summary reports how many rows are shown. A superadmin cannot change their
-own role (`409 self_role_change`): that would lock the instance out of user
-management with no way back in from the panel.
+### Companies (superadmin)
+The company (tenant) registry: create a name here before adding its first user or
+device, and delete it once nothing references it. Tenancy itself is still the
+`company` string on `users`, `assets`, `api_keys` and `asset_events` — there are
+no foreign keys, so the registry records which names exist rather than owning
+rows. `asset_companies()` (the derived list behind the device form) is unchanged.
 
-The same roster is available to integrations through `/api/v1/users`, behind the
-dedicated `can_users` key scope (see [api.md](api.md#users-the-roster)). Every
-panel request re-reads the caller's row (`session_roster_sync()`), so a delete or
-a role change made through the API applies on the next request instead of at the
-next login. `lib/users.php` owns both paths, which is why the panel guard
-(`self_role_change`) and the API guard (`last_superadmin`) share the same role
-catalogue.
+The table shows the usage counts (users, devices, API keys) and a delete is
+disabled while any of them is non-zero; the server answers `409 in_use` with the
+same counts. New names reject `/`, `\`, `{`, `}` and control characters because
+`s3.prefix` expands `{{company}}` into an object key; the name is otherwise
+trimmed, limited to 191 characters and matched case-insensitively (a duplicate is
+`422 errors.name = "duplicate"`). Creation audits an `asset_events` row with
+`entity = company`.
+
+The registry is available only to a superadmin: `settings.companies` is
+`superadmin_only`. An admin's user form is pinned to their own company and reads
+that name from the session instead of the registry.
+
+### Users (tenant-scoped)
+`users.manage` opens the roster for admins and superadmins. The e-mail is the
+identity of the row, so it is the path parameter of the write. The search box and
+company filter work on the roster the endpoint already returned (no extra request
+while typing) and a summary reports how many rows are shown.
+
+* A **superadmin** sees every company, may assign any role, may move a row to
+  another registered company and may create a company-less superadmin. An empty
+  company is what makes an account a superadmin: demoting such a row to another
+  role is `422 errors.company = "company_required"`.
+* An **admin** only ever receives the rows of its own company (the SQL predicate
+  is `company = ?`), may assign `user`/`manager` only, cannot change the company
+  and cannot touch a row at or above its own rank. A cross-company e-mail answers
+  `404`, not `403`, so the endpoint does not disclose that the row exists. An
+  admin whose session has no company is refused (`403`): without a company it
+  would be a superadmin.
+* **Self edits are refused**: role (`409 self_role_change`) and delete
+  (`409 self_delete`). The last superadmin guard (`409 last_superadmin`) is shared
+  with the REST API, and a create with an existing e-mail is `409 duplicate`.
+
+Creating a row only authorises an existing Keycloak account; no account is
+created. The same roster is available to integrations through `/api/v1/users`,
+behind the dedicated `can_users` key scope (see
+[api.md](api.md#users-the-roster)). Every panel request re-reads the caller's row
+(`session_roster_sync()`), so a delete or a role change made through the API
+applies on the next request instead of at the next login. `lib/users.php` owns
+both paths; `lib/companies.php` owns the registry.
 
 ## REST API (`/panel-api/v1/settings*`)
 
@@ -282,10 +315,11 @@ The SPA renders the same tabs against these endpoints; the handlers are thin
 wrappers over `lib/settings.php`, so `/app/settings` and `bin/test-panel-api.php`
 cannot disagree about validation, defaults or protection rules.
 
-Every endpoint below is **superadmin-only**: the capability column names the
-area, but `settings.*` and `permissions.manage` are flagged `superadmin_only`, so
-an admin is refused by the handler itself (the SPA only hides the entry — see
-[frontend.md](frontend.md) for the gating).
+Every endpoint below is **superadmin-only** except the four `/settings/users*`
+routes: the capability column names the area, `settings.*` and
+`permissions.manage` are flagged `superadmin_only`, and `users.manage` is
+delegable but scoped by company and role rank inside the handler (the SPA only
+hides the tabs it cannot open — see [frontend.md](frontend.md) for the gating).
 
 | Method + path | Capability | Notes |
 |---|---|---|
@@ -308,8 +342,13 @@ an admin is refused by the handler itself (the SPA only hides the entry — see
 | `PATCH /settings/api-keys/{id}` | `settings.api_keys` | Scopes/label only, the token is untouched |
 | `POST /settings/api-keys/{id}/rotate` | `settings.api_keys` | New token in `meta.token`; the old one dies immediately |
 | `DELETE /settings/api-keys/{id}` | `settings.api_keys` | |
-| `GET /settings/users` | `settings.users` | `email`, `company`, `role`, `is_self` |
-| `PATCH /settings/users/{email}` | `settings.users` | `{ "role": "manager" }`, URL-encoded e-mail |
+| `GET /settings/users` | `users.manage` | Scoped roster: `email`, `company`, `role`, `is_self`, `manageable` + `roles`/`companies`/`scope`/`can_create` |
+| `POST /settings/users` | `users.manage` | `{ email, company, role }`; an admin is pinned to its own company and may assign user/manager |
+| `PATCH /settings/users/{email}` | `users.manage` | `{ "role": "manager", "company": "Acme" }`; only a superadmin may send `company` |
+| `DELETE /settings/users/{email}` | `users.manage` | `409 self_delete` / `409 last_superadmin`; cross-company is `404` |
+| `GET /settings/companies` | `settings.companies` | Registry rows + `users`/`assets`/`api_keys` usage |
+| `POST /settings/companies` | `settings.companies` | `{ "name": "Acme" }`; `422 duplicate` / `invalid_name` |
+| `DELETE /settings/companies/{name}` | `settings.companies` | `409 in_use` while users, devices or keys reference it |
 | `GET /settings/maintenance` | `settings.maintenance` | Migrations + diagnostics (no credentials) |
 | `POST /settings/maintenance/migrate` | `settings.maintenance` | `{ "dry_run": true }` is the default; `meta.log` carries the steps |
 | `GET /settings/columns` | `settings.manage` | Column catalogue (`id`, `label`, `label_key`, `group`, `enabled`, `default`) + the stored layout |
@@ -369,8 +408,8 @@ that nothing references any more:
 php bin/check-i18n.php
 ```
 
-Current coverage: en-US 100 %, pt-BR 97 %, es-MX 88 %, fr-FR/zh-CN/hi-IN/ar-SA
-56 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
+Current coverage: en-US 100 %, pt-BR 98 %, es-MX 92 %, fr-FR/zh-CN/hi-IN/ar-SA
+48 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
 `role_*` string). The remaining `set_*` keys are the settings screens, which fall
 back to en-US in those four locales; `ui/src/i18n/coverage.test.ts` keeps the
 panel families complete so a new `col_*` key cannot ship untranslated.

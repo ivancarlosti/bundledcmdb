@@ -125,8 +125,12 @@ the server-side guard.
 | `GET/POST /panel-api/v1/settings/api-keys` | key list / create; the plaintext token is returned **once** in `meta.token` |
 | `PATCH/DELETE /panel-api/v1/settings/api-keys/{id}` | edit label/scopes (read, write, delete, users)/allow-list / revoke |
 | `POST /panel-api/v1/settings/api-keys/{id}/rotate` | new secret, same row; the old token stops working |
-| `GET /panel-api/v1/settings/users` | roster with roles and `is_self` (superadmin only) |
-| `PATCH /panel-api/v1/settings/users/{email}` | change a role; changing your own is `409 self_role_change` |
+| `GET /panel-api/v1/settings/users` | scoped roster (`users.manage`): rows + `roles`, `companies`, `scope` and `can_create` |
+| `POST /panel-api/v1/settings/users` | create `{email, company, role}`; an admin is pinned to its own company and to user/manager |
+| `PATCH /panel-api/v1/settings/users/{email}` | change role/company; `409 self_role_change`, cross-company `404` |
+| `DELETE /panel-api/v1/settings/users/{email}` | revoke the row; `409 self_delete` / `409 last_superadmin` |
+| `GET/POST /panel-api/v1/settings/companies` | tenant registry + usage / create `{name}` (`422 duplicate`/`invalid_name`) |
+| `DELETE /panel-api/v1/settings/companies/{name}` | delete an unused tenant; `409 in_use` while users/devices/keys reference it |
 | `GET /panel-api/v1/settings/maintenance` | migration status, PHP/DB/encryption diagnostics, cron hints |
 | `POST /panel-api/v1/settings/maintenance/migrate` | runs the migration runner; `{"dry_run": true}` is the default |
 | `GET /panel-api/v1/logs` | audit rows (admin+), filters `q`/`action`/`entity`/`actor`/`company`/`from`/`to`/`page`/`per_page`; `meta` carries the filter options, retention and last purge |
@@ -178,14 +182,14 @@ means "unchanged", and a deliberate wipe is `{"clear": ["s3.secret_key"]}`.
 ## Settings screens
 
 `/app/settings` is one screen with tabs, and the tab lives in the URL
-(`?tab=general|storage|sources|api|fields|maintenance|users`) so it can be
-bookmarked and survives a reload. The screen is **superadmin-only**: the header
-link and the route both require `can_superadmin`, the tab strip is not rendered
-for anyone else, and a bookmarked `/app/settings` shows the forbidden state. The
-server enforces the same rule — `settings.*` and `permissions.manage` are
-`superadmin_only` capabilities, so an admin is refused even with a stored grant
-(see [settings.md](settings.md)). A hidden tab is never a security boundary on
-its own.
+(`?tab=general|storage|sources|companies|api|fields|maintenance|users`) so it can
+be bookmarked and survives a reload. The tab strip filters on the capability map:
+a superadmin gets every tab, while an admin gets exactly one (`Users`, from the
+delegable `users.manage`) and a manager/user with no settings-area capability sees
+the forbidden state. The server enforces the same rule — `settings.*` and
+`permissions.manage` are `superadmin_only`, while the roster handlers scope an
+admin to its own company (see [settings.md](settings.md)). A hidden tab is never a
+security boundary on its own.
 
 The five behaviours worth knowing when you touch this screen:
 
@@ -206,10 +210,13 @@ The five behaviours worth knowing when you touch this screen:
 * **Writes seed the cache.** Every settings mutation answers the refreshed list
   and the hook writes it into the query cache, so nothing re-fetches and the
   stale value cannot flash back (the same rule as the device writes).
-* **The user roster filters on the client.** `GET /settings/users` already
-  returns the full list; the search box matches e-mail, company and role, the
-  company `<select>` includes a "No company" option, and the summary line stays
-  in sync through `aria-live`.
+* **The user roster is scoped and filtered on the client.**
+  `GET /settings/users` already returns the rows the caller may manage plus its
+  `scope`, `roles`, `companies` and `manageable` flags; the search box matches
+  e-mail, company and role, the company `<select>` includes a "No company"
+  option, and the summary line stays in sync through `aria-live`. A row outside
+  the caller's rank is rendered as text, and an admin's create form is pinned to
+  the session company.
 
 ### Bulk actions
 

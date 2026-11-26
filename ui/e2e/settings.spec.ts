@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-import { mockPanel, mockSettings } from './fixtures';
+import { SETTINGS_USERS, mockPanel, mockSettings } from './fixtures';
 
 /**
  * Settings screens (phase 7).
  *
- * `/settings` is superadmin-only (`settings.*` and `permissions.manage` are
- * flagged `superadmin_only` in `lib/permissions.php`), so every screen test
- * signs in as a superadmin; `mockPanel` fills the capability map from
- * `ROLE_PERMISSIONS.superadmin`.
+ * `/settings` is superadmin-only except for Users: `settings.*` and
+ * `permissions.manage` are flagged `superadmin_only` in `lib/permissions.php`,
+ * while the delegable `users.manage` opens only the roster. `mockPanel` fills
+ * the capability map from `ROLE_PERMISSIONS.<role>`.
  *
  * The behaviours that only exist in the SPA and are easy to regress:
  *
@@ -17,8 +17,8 @@ import { mockPanel, mockSettings } from './fixtures';
  *    opaque banner;
  *  - cards follow the server groups (Storage is split into attachment and S3)
  *    and the user roster filters on the client;
- *  - the navigation link and the screen itself follow `can_superadmin`, not
- *    `can_admin`.
+ *  - the navigation link and the screen follow `users.manage` as well as
+ *    `can_superadmin`, and an admin sees exactly one tab.
  */
 const SUPERADMIN = {
   user: { email: 'qa@example.com', company: '', role: 'superadmin' },
@@ -148,8 +148,13 @@ test.describe('settings', () => {
     expect((saved[0]?.values as Record<string, unknown>)['s3.bucket']).toBe('cmdb');
   });
 
-  test('hides the settings link and screen from an admin', async ({ page }) => {
-    await mockPanel(page);
+  test('hides the settings link and screen from a manager', async ({ page }) => {
+    await mockPanel(page, {
+      session: {
+        user: { email: 'qa@example.com', company: '', role: 'manager' },
+        capabilities: { role: 'manager', rank: 2, can_write: true, can_admin: true, can_superadmin: false },
+      },
+    });
     await mockSettings(page);
 
     await page.goto('/app/devices');
@@ -161,6 +166,32 @@ test.describe('settings', () => {
     await expect(page.getByRole('tab')).toHaveCount(0);
   });
 
+  test('gives an admin the Users tab and nothing else', async ({ page }) => {
+    await mockPanel(page);
+    await mockSettings(page, {
+      users: {
+        ...SETTINGS_USERS,
+        users: [
+          { email: 'boss@example.com', company: 'Acme', role: 'admin', is_self: true, manageable: false },
+          { email: 'ops@example.com', company: 'Acme', role: 'manager', is_self: false, manageable: true },
+        ],
+        roles: ['user', 'manager'],
+        companies: ['Acme'],
+        scope: { company: 'Acme', all_companies: false },
+      },
+    });
+
+    await page.goto('/app/devices');
+    await page.getByRole('link', { name: 'Settings' }).click();
+
+    // `users.manage` is the only settings-area capability an admin holds.
+    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('tab')).toHaveCount(1);
+    await expect(page.getByRole('tab', { name: 'Users' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText('You can manage the users of Acme.')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'General' })).toHaveCount(0);
+  });
+
   test('opens every tab for a superadmin', async ({ page }) => {
     await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page);
@@ -169,9 +200,11 @@ test.describe('settings', () => {
     await page.getByRole('link', { name: 'Settings' }).click();
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
-    // General, Columns, Storage, Sources, API, Fields, Logs, Maintenance,
-    // Permissions, Users: the whole surface belongs to the recovery role.
-    await expect(page.getByRole('tab')).toHaveCount(10);
+    // General, Columns, Storage, Sources, Companies, API, Fields, Logs,
+    // Maintenance, Permissions, Users: the whole surface belongs to the
+    // recovery role.
+    await expect(page.getByRole('tab')).toHaveCount(11);
+    await expect(page.getByRole('tab', { name: 'Companies' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Permissions' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Users' })).toBeVisible();
 
@@ -188,9 +221,12 @@ test.describe('settings', () => {
     await page.goto('/app/settings?tab=users');
 
     await expect(page.getByRole('tab', { name: 'Users' })).toHaveAttribute('aria-selected', 'true');
-    const own = page.getByRole('row', { name: /qa@example.com/ }).getByRole('combobox');
-    await expect(own).toBeDisabled();
+    // The own row is rendered as text (the server refuses a self-edit)…
+    const own = page.getByRole('row', { name: /qa@example.com/ });
+    await expect(own.getByRole('combobox')).toHaveCount(0);
+    await expect(own.getByText('Superadmin')).toBeVisible();
 
+    // …while a row inside the role ceiling keeps its select.
     const other = page.getByRole('row', { name: /ops@example.com/ }).getByRole('combobox');
     await expect(other).toBeEnabled();
     await expect(other).toHaveValue('manager');

@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {t('logs_title')}
               </Link>
             ) : null}
-            {session.capabilities.can_superadmin ? (
+            {session.capabilities.can_superadmin || session.capabilities.permissions['users.manage'] === true ? (
               <Link
                 to="/settings"
                 className={NAV_LINK}

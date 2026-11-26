@@ -352,21 +352,76 @@ export function deleteApiKey(id: number): Promise<ApiKeysPayload> {
   return apiRequest<ApiKeysPayload>(`/settings/api-keys/${id}`, { method: 'DELETE' });
 }
 
-// --- Users (superadmin) ----------------------------------------------------
+// --- Users (tenant-scoped) -------------------------------------------------
 
-export type UserRow = { email: string; company: string; role: string; is_self: boolean };
-export type UsersPayload = { users: UserRow[]; roles: string[] };
+export type UserRow = {
+  email: string;
+  company: string;
+  role: string;
+  is_self: boolean;
+  /** False for the own row and for a row outside the actor's role ceiling. */
+  manageable: boolean;
+};
+
+/** `{ company: '' , all_companies: true }` for a superadmin. */
+export type UsersScope = { company: string; all_companies: boolean };
+
+export type UsersPayload = {
+  users: UserRow[];
+  /** Roles the signed-in actor may assign (an admin only sees user/manager). */
+  roles: string[];
+  /** Companies the actor may place a user in; the registry for a superadmin. */
+  companies: string[];
+  scope: UsersScope;
+  can_create: boolean;
+};
+
+export type UserCreateInput = { email: string; company: string; role: string };
+export type UserUpdateInput = { role?: string; company?: string };
 
 export function fetchUsers(): Promise<UsersPayload> {
   return apiRequest<UsersPayload>('/settings/users');
 }
 
 /** The e-mail is the identity of a `users` row, so it is the path parameter. */
-export function updateUserRole(email: string, role: string): Promise<UsersPayload> {
+export function createUser(input: UserCreateInput): Promise<UsersPayload> {
+  return apiRequest<UsersPayload>('/settings/users', { method: 'POST', body: input });
+}
+
+export function updateUser(email: string, input: UserUpdateInput): Promise<UsersPayload> {
   return apiRequest<UsersPayload>(`/settings/users/${encodeURIComponent(email)}`, {
     method: 'PATCH',
-    body: { role },
+    body: input,
   });
+}
+
+export function deleteUser(email: string): Promise<UsersPayload> {
+  return apiRequest<UsersPayload>(`/settings/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
+}
+
+// --- Companies (tenant registry, superadmin) --------------------------------
+
+export type CompanyRow = {
+  name: string;
+  users: number;
+  assets: number;
+  api_keys: number;
+  /** users + assets + api_keys; a non-zero total blocks the delete. */
+  total: number;
+};
+
+export type CompaniesPayload = { companies: CompanyRow[] };
+
+export function fetchCompanies(): Promise<CompaniesPayload> {
+  return apiRequest<CompaniesPayload>('/settings/companies');
+}
+
+export function createCompany(name: string): Promise<CompaniesPayload> {
+  return apiRequest<CompaniesPayload>('/settings/companies', { method: 'POST', body: { name } });
+}
+
+export function deleteCompany(name: string): Promise<CompaniesPayload> {
+  return apiRequest<CompaniesPayload>(`/settings/companies/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
 
 // --- Grid columns (installation-wide layout) --------------------------------

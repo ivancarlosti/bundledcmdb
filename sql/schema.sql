@@ -84,6 +84,22 @@ CREATE TABLE IF NOT EXISTS role_field_permissions (
     PRIMARY KEY (role, field_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 0023: the company (tenant) registry. A name is a registry row, not a parent
+-- record: `users`/`assets`/`api_keys` keep their free-form `company` string and
+-- there are no foreign keys. The backfill picks up the names already in use
+-- (`users` first, so its spelling wins a case-only collision).
+CREATE TABLE IF NOT EXISTS companies (
+    name VARCHAR(191) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(191) NULL,
+    PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO companies (name)
+SELECT DISTINCT company FROM users WHERE company IS NOT NULL AND company <> '';
+INSERT IGNORE INTO companies (name)
+SELECT DISTINCT company FROM assets WHERE company IS NOT NULL AND company <> '';
+
 CREATE TABLE IF NOT EXISTS asset_field_defs (
     id INT NOT NULL AUTO_INCREMENT,
     field_key VARCHAR(64) NOT NULL,
@@ -292,6 +308,16 @@ UPDATE assets SET BYOD = CASE
     WHEN LOWER(TRIM(BYOD)) IN ('0', 'false', 'no', 'off') THEN 'false'
     ELSE BYOD END;
 
+-- 0022 reserved `/settings` for superadmin: the capability catalogue flags every
+-- `settings.*` key and `permissions.manage`, so older delegable grants are gone.
+DELETE FROM role_capabilities
+ WHERE role <> 'superadmin'
+   AND (capability LIKE 'settings.%' OR capability = 'permissions.manage');
+
+-- 0023 retires `settings.users` in favour of the delegable `users.manage`. The
+-- table and its backfill live next to `role_field_permissions` above.
+DELETE FROM role_capabilities WHERE capability = 'settings.users';
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -314,5 +340,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_05_0019_retire_agent_only_columns'),
     ('2026_11_05_0020_retire_logged_username'),
     ('2026_11_06_0021_boolean_column_types'),
-    ('2026_11_26_0022_settings_superadmin_only');
+    ('2026_11_26_0022_settings_superadmin_only'),
+    ('2026_11_26_0023_companies');
 

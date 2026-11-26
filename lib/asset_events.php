@@ -43,6 +43,7 @@ const ASSET_EVENT_ENTITIES = [
     'field',
     'api_key',
     'user',
+    'company',
     'migration',
     'logs',
     'permission',

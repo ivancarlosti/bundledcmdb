@@ -7,6 +7,8 @@
 --
 -- Requires sql/legacy.sql to have run (the tables) and is not idempotent.
 
+INSERT INTO companies (name) VALUES ('Acme'), ('Globex');
+
 -- Hardware facts (model, GPU, RAM) are seeded into the `Agent*` block: the
 -- legacy `DeviceModel`/`GPUs`/`RAMGB` columns are retired by migration 0019, and
 -- the disk snapshots stay in `PhysicalDisks`.

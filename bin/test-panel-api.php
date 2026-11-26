@@ -97,7 +97,12 @@ foreach ([
     ['GET',   '/settings/permissions',              'panel_settings_permissions_index'],
     ['PUT',   '/settings/permissions',              'panel_settings_permissions_update'],
     ['GET',   '/settings/users',                    'panel_settings_users_index'],
+    ['POST',  '/settings/users',                    'panel_settings_users_store'],
     ['PATCH', '/settings/users/a%40example.com',    'panel_settings_users_update'],
+    ['DELETE', '/settings/users/a%40example.com',   'panel_settings_users_delete'],
+    ['GET',   '/settings/companies',                'panel_settings_companies_index'],
+    ['POST',  '/settings/companies',                'panel_settings_companies_store'],
+    ['DELETE', '/settings/companies/Test%20Co',     'panel_settings_companies_delete'],
     ['GET',   '/settings/maintenance',              'panel_settings_maintenance_show'],
     ['POST',  '/settings/maintenance/migrate',      'panel_settings_maintenance_migrate'],
     ['GET',   '/logs',                              'panel_logs_index'],
@@ -731,6 +736,8 @@ $fieldId = 0;
 $keyId = 0;
 // Previous tier of the setting the storage test overwrites.
 $restoreSetting = null;
+// Registry rows created by the tenant tests (removed in `finally`).
+$testCompanies = [];
 
 try {
     // --- /meta role matrix -------------------------------------------------
@@ -1711,10 +1718,11 @@ try {
     $createdIds = array_values(array_diff($createdIds, [$id]));
 
     // --- settings: role gate ----------------------------------------------
-    // `/settings` is superadmin-only: every `settings.*` capability and
-    // `permissions.manage` is flagged `superadmin_only`, so an admin cannot even
-    // read the screen and no grant can reopen it.
-    foreach (['admin', 'manager'] as $deniedRole) {
+    // `/settings` is superadmin-only except for the roster: every `settings.*`
+    // capability and `permissions.manage` is flagged `superadmin_only`, so an
+    // admin cannot read the screen. `users.manage` is delegable, but it opens
+    // only the Users tab.
+    foreach (['admin', 'manager', 'user'] as $deniedRole) {
         as_role($deniedRole, $companyA);
         check_error("settings: {$deniedRole} cannot read → 403", fn () => panel_settings_show(), 'forbidden', 403);
         check_error("settings: {$deniedRole} cannot write → 403", function (): void {
@@ -1727,7 +1735,41 @@ try {
         check_error("settings: {$deniedRole} cannot read maintenance → 403", fn () => panel_settings_maintenance_show(), 'forbidden', 403);
         check_error("settings: {$deniedRole} cannot read the columns → 403", fn () => panel_settings_columns_index(), 'forbidden', 403);
         check_error("settings: {$deniedRole} cannot read the matrix → 403", fn () => panel_settings_permissions_index(), 'forbidden', 403);
-        check_error("settings: {$deniedRole} cannot list users → 403", fn () => panel_settings_users_index(), 'forbidden', 403);
+        check_error("companies: {$deniedRole} cannot list → 403", fn () => panel_settings_companies_index(), 'forbidden', 403);
+    }
+
+    // The roster is the one delegable settings area: manager/user are refused,
+    // an admin is scoped to its own company.
+    foreach (['manager', 'user'] as $noRoster) {
+        as_role($noRoster, $companyA);
+        check_error("users: {$noRoster} cannot list the roster → 403", fn () => panel_settings_users_index(), 'forbidden', 403);
+    }
+    if ($companyA !== '') {
+        as_role('admin', $companyA, 'settings-admin@example.com');
+        $scoped = panel_settings_users_index()['data'] ?? [];
+        check(
+            ($scoped['scope']['company'] ?? '') === $companyA
+            && ($scoped['scope']['all_companies'] ?? true) === false,
+            'users: an admin is scoped to their own company'
+        );
+        check(
+            ($scoped['roles'] ?? []) === ['user', 'manager'],
+            'users: an admin may only assign user/manager'
+        );
+        $scopedCompanies = array_values(array_unique(array_column($scoped['users'] ?? [], 'company')));
+        check(
+            $scopedCompanies === [] || $scopedCompanies === [$companyA],
+            'users: no row from another company leaks into the admin list',
+            json_encode($scopedCompanies)
+        );
+    } else {
+        as_role('admin', '', 'settings-admin-unbound@example.com');
+        check_error(
+            'users: an admin without a company is refused → 403',
+            fn () => panel_settings_users_index(),
+            'forbidden',
+            403
+        );
     }
 
     as_role('superadmin', '');
@@ -2082,6 +2124,23 @@ try {
         ($devicesView['superadmin_only'] ?? true) === false,
         'permissions: an ordinary capability is delegable'
     );
+    $usersCap = array_values(array_filter(
+        $permissions['capabilities'],
+        static fn (array $cap): bool => $cap['key'] === 'users.manage'
+    ))[0] ?? [];
+    check($usersCap !== [], 'permissions: users.manage is in the catalogue');
+    check(
+        ($usersCap['superadmin_only'] ?? true) === false,
+        'permissions: users.manage is delegable'
+    );
+    check(
+        permission_capability_allowed('admin', 'users.manage', $pdo),
+        'permissions: an admin gets users.manage by default'
+    );
+    check(
+        !permission_capability_allowed('manager', 'users.manage', $pdo),
+        'permissions: a manager does not get users.manage by default'
+    );
 
     body(['capabilities' => ['admin' => ['settings.manage' => true]]]);
     $locked = panel_settings_permissions_update();
@@ -2251,48 +2310,195 @@ try {
         panel_settings_keys_delete(['id' => '999999']);
     }, 'not_found', 404);
 
-    // --- settings: users (superadmin only) --------------------------------
+    // --- settings: users + companies (tenant-scoped) ----------------------
     as_role('superadmin', '');
     $usersPayload = panel_settings_users_index()['data'] ?? [];
     check(($usersPayload['users'] ?? []) !== [], 'users: superadmin lists the roster');
     check(($usersPayload['roles'] ?? []) === array_keys(SESSION_ROLES), 'users: the role catalogue is included');
+    check(($usersPayload['scope']['all_companies'] ?? false) === true, 'users: a superadmin scope spans every company');
+    check((bool) ($usersPayload['can_create'] ?? false), 'users: a superadmin may create rows');
+    check(is_array($usersPayload['companies'] ?? null), 'users: the registry travels with the roster');
 
-    $otherEmail = null;
-    foreach ($usersPayload['users'] as $row) {
-        if (!$row['is_self']) {
-            $otherEmail = (string) $row['email'];
-            break;
-        }
-    }
-
-    // Sign in *as* a real roster entry to exercise the lockout guard.
-    if ($otherEmail !== null) {
-        as_role('superadmin', '', $otherEmail);
-        check_error('users: changing your own role → 409', function () use ($otherEmail): void {
-            body(['role' => 'admin']);
-            panel_settings_users_update(['email' => rawurlencode($otherEmail)]);
-        }, 'self_role_change', 409);
-        as_role('superadmin', '');
-    }
-
+    check_error('users: changing your own role → 409', function (): void {
+        body(['role' => 'admin']);
+        panel_settings_users_update(['email' => rawurlencode('tester@example.com')]);
+    }, 'self_role_change', 409);
+    check_error('users: deleting your own row → 409', function (): void {
+        panel_settings_users_delete(['email' => rawurlencode('tester@example.com')]);
+    }, 'self_delete', 409);
     check_error('users: unknown e-mail → 404', function (): void {
         body(['role' => 'admin']);
         panel_settings_users_update(['email' => 'nobody%40example.invalid']);
     }, 'not_found', 404);
 
-    if ($otherEmail !== null) {
-        $otherBefore = (string) $pdo->query('SELECT role FROM users WHERE email = ' . $pdo->quote($otherEmail))->fetchColumn();
-        check_error('users: unknown role → 422', function () use ($otherEmail): void {
-            body(['role' => 'emperor']);
-            panel_settings_users_update(['email' => rawurlencode($otherEmail)]);
-        }, 'validation_failed', 422, ['role' => 'invalid_option']);
-
-        body(['role' => 'manager']);
-        $promoted = panel_settings_users_update(['email' => rawurlencode($otherEmail)]);
-        check(($promoted['meta']['role'] ?? '') === 'manager', 'users: role is written');
-        check((string) $pdo->query('SELECT role FROM users WHERE email = ' . $pdo->quote($otherEmail))->fetchColumn() === 'manager', 'users: the row holds the new role');
-        $pdo->prepare('UPDATE users SET role = ? WHERE email = ?')->execute([$otherBefore, $otherEmail]);
+    // A row may only point at a registered company, so make sure one exists.
+    $registry = company_names($pdo);
+    $tenant = (string) ($registry[0] ?? '');
+    if ($tenant === '') {
+        $tenant = 'Panel Test Co ' . strtoupper(bin2hex(random_bytes(2)));
+        company_create($pdo, $tenant, 'tester@example.com');
+        $testCompanies[] = $tenant;
     }
+
+    $targetEmail = 'panel-target-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid';
+    body(['email' => $targetEmail, 'company' => $tenant, 'role' => 'user']);
+    $createdUser = panel_settings_users_store();
+    check(($createdUser['status'] ?? 0) === 201, 'users: create returns 201');
+    check(user_find($pdo, $targetEmail) !== null, 'users: the row was inserted');
+    $GLOBALS['test_roster_emails'][] = $targetEmail;
+
+    check_error('users: a duplicate e-mail → 409', function () use ($targetEmail, $tenant): void {
+        body(['email' => $targetEmail, 'company' => $tenant, 'role' => 'user']);
+        panel_settings_users_store();
+    }, 'duplicate', 409, ['email' => 'duplicate']);
+
+    check_error('users: unknown role → 422', function () use ($targetEmail): void {
+        body(['role' => 'emperor']);
+        panel_settings_users_update(['email' => rawurlencode($targetEmail)]);
+    }, 'validation_failed', 422, ['role' => 'invalid_option']);
+
+    body(['role' => 'manager']);
+    $promoted = panel_settings_users_update(['email' => rawurlencode($targetEmail)]);
+    check(($promoted['meta']['role'] ?? '') === 'manager', 'users: role is written');
+    check(
+        (string) $pdo->query('SELECT role FROM users WHERE email = ' . $pdo->quote($targetEmail))->fetchColumn() === 'manager',
+        'users: the row holds the new role'
+    );
+
+    check_error('users: unknown company → 422', function () use ($targetEmail): void {
+        body(['company' => 'No Such Company ' . bin2hex(random_bytes(2))]);
+        panel_settings_users_update(['email' => rawurlencode($targetEmail)]);
+    }, 'validation_failed', 422, ['company' => 'invalid_option']);
+    check_error('users: no company + non-superadmin → 422', function () use ($targetEmail): void {
+        body(['company' => '', 'role' => 'manager']);
+        panel_settings_users_update(['email' => rawurlencode($targetEmail)]);
+    }, 'validation_failed', 422, ['company' => 'company_required']);
+
+    $globalEmail = 'panel-global-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid';
+    body(['email' => $globalEmail, 'company' => '', 'role' => 'superadmin']);
+    panel_settings_users_store();
+    $GLOBALS['test_roster_emails'][] = $globalEmail;
+    check((user_find($pdo, $globalEmail)['company'] ?? 'x') === '', 'users: a company-less superadmin is accepted');
+
+    $deletedUser = panel_settings_users_delete(['email' => rawurlencode($targetEmail)]);
+    check(($deletedUser['meta']['deleted'] ?? '') === $targetEmail, 'users: delete reports the e-mail');
+    check(user_find($pdo, $targetEmail) === null, 'users: delete removed the row');
+    panel_settings_users_delete(['email' => rawurlencode($globalEmail)]);
+
+    // An admin is scoped to its company and to the roles below its rank.
+    if ($companyA !== '') {
+        $adminCompany = $companyA;
+        $adminEmail = 'panel-admin-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid';
+        as_role('admin', $adminCompany, $adminEmail);
+
+        $managerEmail = 'panel-manager-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid';
+        user_create($pdo, ['email' => $managerEmail, 'company' => $adminCompany, 'role' => 'manager'], 'tester@example.com');
+        $GLOBALS['test_roster_emails'][] = $managerEmail;
+
+        as_role('admin', $adminCompany, $adminEmail);
+        $adminPayload = panel_settings_users_index()['data'] ?? [];
+        check(($adminPayload['scope']['company'] ?? '') === $adminCompany, 'users: admin scope reports the company');
+        check(($adminPayload['roles'] ?? []) === ['user', 'manager'], 'users: admin role ceiling is the assignable list');
+
+        body(['role' => 'user']);
+        $adminUpdated = panel_settings_users_update(['email' => rawurlencode($managerEmail)]);
+        check(($adminUpdated['meta']['role'] ?? '') === 'user', 'users: an admin may change a manager below it');
+        body(['role' => 'manager']);
+        panel_settings_users_update(['email' => rawurlencode($managerEmail)]);
+
+        $peerEmail = 'panel-peer-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid';
+        user_create($pdo, ['email' => $peerEmail, 'company' => $adminCompany, 'role' => 'admin'], 'tester@example.com');
+        $GLOBALS['test_roster_emails'][] = $peerEmail;
+        check_error('users: an admin cannot edit a peer admin → 403', function () use ($peerEmail): void {
+            body(['role' => 'user']);
+            panel_settings_users_update(['email' => rawurlencode($peerEmail)]);
+        }, 'forbidden', 403, ['role' => 'role_not_allowed']);
+
+        check_error('users: an admin cannot move a user to another company → 403', function () use ($managerEmail, $companyB): void {
+            body(['company' => $companyB === '' ? 'Elsewhere' : $companyB]);
+            panel_settings_users_update(['email' => rawurlencode($managerEmail)]);
+        }, 'forbidden', 403, ['company' => 'forbidden']);
+
+        $foreignCompany = ($companyB !== '' && $companyB !== $adminCompany)
+            ? $companyB
+            : 'Panel Foreign ' . strtoupper(bin2hex(random_bytes(2)));
+        $foreignEmail = 'panel-foreign-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid';
+        user_create($pdo, ['email' => $foreignEmail, 'company' => $foreignCompany, 'role' => 'user'], 'tester@example.com');
+        $GLOBALS['test_roster_emails'][] = $foreignEmail;
+        check_error('users: an admin cannot reach another company → 404', function () use ($foreignEmail): void {
+            body(['role' => 'manager']);
+            panel_settings_users_update(['email' => rawurlencode($foreignEmail)]);
+        }, 'not_found', 404);
+
+        $newEmail = 'panel-created-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid';
+        body(['email' => $newEmail, 'company' => '', 'role' => 'user']);
+        panel_settings_users_store();
+        $GLOBALS['test_roster_emails'][] = $newEmail;
+        check(
+            (user_find($pdo, $newEmail)['company'] ?? '') === $adminCompany,
+            'users: an admin create lands in its own company'
+        );
+        check_error('users: an admin cannot create for another company → 403', function () use ($foreignCompany): void {
+            body([
+                'email'   => 'panel-nope-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid',
+                'company' => $foreignCompany,
+                'role'    => 'user',
+            ]);
+            panel_settings_users_store();
+        }, 'forbidden', 403, ['company' => 'forbidden']);
+        check_error('users: an admin cannot delete its own row → 409', function () use ($adminEmail): void {
+            panel_settings_users_delete(['email' => rawurlencode($adminEmail)]);
+        }, 'self_delete', 409);
+    }
+
+    as_role('admin', '', 'panel-unbound-' . strtolower(bin2hex(random_bytes(3))) . '@example.invalid');
+    check_error(
+        'users: an admin without a company is refused → 403',
+        fn () => panel_settings_users_index(),
+        'forbidden',
+        403
+    );
+
+    // --- settings: companies (registry) -----------------------------------
+    as_role('superadmin', '');
+    $newCompany = 'Panel Co ' . strtoupper(bin2hex(random_bytes(3)));
+    body(['name' => $newCompany]);
+    $createdCompany = panel_settings_companies_store();
+    check(($createdCompany['status'] ?? 0) === 201, 'companies: create returns 201');
+    check(($createdCompany['meta']['name'] ?? '') === $newCompany, 'companies: create reports the name');
+    $testCompanies[] = $newCompany;
+    check(in_array($newCompany, company_names($pdo), true), 'companies: the name is registered');
+
+    body(['name' => strtolower($newCompany)]);
+    check_error('companies: a duplicate (case-insensitive) → 422', fn () => panel_settings_companies_store(), 'validation_failed', 422, ['name' => 'duplicate']);
+    body(['name' => 'bad/name']);
+    check_error('companies: a slash is rejected → 422', fn () => panel_settings_companies_store(), 'validation_failed', 422, ['name' => 'invalid_name']);
+    body(['name' => 'bad{{name}}']);
+    check_error('companies: braces are rejected → 422', fn () => panel_settings_companies_store(), 'validation_failed', 422, ['name' => 'invalid_name']);
+    body(['name' => '']);
+    check_error('companies: a blank name → 422', fn () => panel_settings_companies_store(), 'validation_failed', 422, ['name' => 'required']);
+
+    $inUseCompany = null;
+    foreach (company_names($pdo) as $registered) {
+        if (array_sum(company_usage($pdo, $registered)) > 0) {
+            $inUseCompany = $registered;
+            break;
+        }
+    }
+    if ($inUseCompany !== null) {
+        check_error('companies: an in-use tenant → 409', function () use ($inUseCompany): void {
+            panel_settings_companies_delete(['name' => rawurlencode($inUseCompany)]);
+        }, 'in_use', 409, ['name' => 'in_use']);
+    }
+
+    $deletedCompany = panel_settings_companies_delete(['name' => rawurlencode($newCompany)]);
+    check(($deletedCompany['meta']['deleted'] ?? '') === $newCompany, 'companies: delete reports the name');
+    check(!in_array($newCompany, company_names($pdo), true), 'companies: the name is gone');
+    check_error('companies: deleting twice → 404', function () use ($newCompany): void {
+        panel_settings_companies_delete(['name' => rawurlencode($newCompany)]);
+    }, 'not_found', 404);
+
+
 
     // --- settings: maintenance --------------------------------------------
     as_role('superadmin', '');
@@ -2473,6 +2679,13 @@ try {
             $pdo->exec("DELETE FROM asset_events WHERE actor IN ('tester@example.com', 'ratelimit@example.com')");
         } catch (Throwable $e) {
             fwrite(STDERR, 'events cleanup failed: ' . $e->getMessage() . "\n");
+        }
+    }
+    foreach ($testCompanies as $testCompany) {
+        try {
+            company_delete($pdo, (string) $testCompany, 'tester@example.com');
+        } catch (Throwable $e) {
+            fwrite(STDERR, "company cleanup failed ({$testCompany}): " . $e->getMessage() . "\n");
         }
     }
     foreach (array_unique((array) ($GLOBALS['test_roster_emails'] ?? [])) as $testEmail) {

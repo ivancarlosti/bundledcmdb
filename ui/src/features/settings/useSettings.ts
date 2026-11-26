@@ -17,13 +17,18 @@ import { metaQueryKey } from '@/features/devices/useDevices';
 
 import {
   createApiKey,
+  createCompany,
   createField,
   createSource,
+  createUser,
   deleteApiKey,
+  deleteCompany,
   deleteField,
   deleteSource,
+  deleteUser,
   fetchApiKeys,
   fetchColumns,
+  fetchCompanies,
   fetchFields,
   fetchMaintenance,
   fetchPermissions,
@@ -41,11 +46,12 @@ import {
   updateApiKey,
   updateField,
   updateSource,
-  updateUserRole,
+  updateUser,
   type ApiKeyCreated,
   type ApiKeyInput,
   type ColumnsInput,
   type ColumnsPayload,
+  type CompaniesPayload,
   type FieldsPayload,
   type FieldInput,
   type MaintenancePayload,
@@ -57,7 +63,9 @@ import {
   type SourceInput,
   type SourceMoveResponse,
   type SourcesPayload,
+  type UserCreateInput,
   type UsersPayload,
+  type UserUpdateInput,
 } from './api';
 
 export const settingsQueryKey = ['settings', 'core'] as const;
@@ -65,6 +73,7 @@ export const settingsSourcesQueryKey = ['settings', 'sources'] as const;
 export const settingsFieldsQueryKey = ['settings', 'fields'] as const;
 export const settingsKeysQueryKey = ['settings', 'api-keys'] as const;
 export const settingsUsersQueryKey = ['settings', 'users'] as const;
+export const settingsCompaniesQueryKey = ['settings', 'companies'] as const;
 export const settingsMaintenanceQueryKey = ['settings', 'maintenance'] as const;
 export const settingsPermissionsQueryKey = ['settings', 'permissions'] as const;
 export const settingsColumnsQueryKey = ['settings', 'columns'] as const;
@@ -167,6 +176,16 @@ export function useSettingsUsers(enabled: boolean) {
   return useQuery({
     queryKey: settingsUsersQueryKey,
     queryFn: fetchUsers,
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** Company registry (Settings → Companies, superadmin). */
+export function useCompanies(enabled: boolean) {
+  return useQuery({
+    queryKey: settingsCompaniesQueryKey,
+    queryFn: fetchCompanies,
     enabled,
     staleTime: 30_000,
   });
@@ -411,25 +430,100 @@ export function useApiKeyMutations() {
   return { create, update, rotate, remove };
 }
 
-/** Superadmin role changes (the server refuses a self-demotion with 409). */
+/**
+ * Roster writes: create, change role/company, remove.
+ *
+ * Every answer is the actor's refreshed, already-scoped payload, so the list
+ * never briefly shows a row the caller may not manage. The server is the
+ * authority for the role ceiling and the company scope (`403`/`404`), which the
+ * toast reports verbatim.
+ */
 export function useUserMutations() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
-  return useMutation({
-    mutationFn: ({ email, role }: { email: string; role: string }): Promise<UsersPayload> =>
-      updateUserRole(email, role),
+  const seed = (payload: UsersPayload) => {
+    queryClient.setQueryData(settingsUsersQueryKey, payload);
+  };
+
+  const onError = (error: unknown) => {
+    if (isFieldLevel(error)) {
+      return;
+    }
+    toast.error(t('set_error'), { description: messageOf(error, '') });
+  };
+
+  const create = useMutation({
+    mutationFn: (input: UserCreateInput) => createUser(input),
     onSuccess: (payload) => {
-      queryClient.setQueryData(settingsUsersQueryKey, payload);
+      seed(payload);
       toast.success(t('set_saved'));
     },
-    onError: (error: unknown) => {
-      if (isFieldLevel(error)) {
-        return;
-      }
-      toast.error(t('set_error'), { description: messageOf(error, '') });
-    },
+    onError,
   });
+
+  const update = useMutation({
+    mutationFn: ({ email, input }: { email: string; input: UserUpdateInput }) => updateUser(email, input),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_saved'));
+    },
+    onError,
+  });
+
+  const remove = useMutation({
+    mutationFn: (email: string) => deleteUser(email),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_delete'));
+    },
+    onError,
+  });
+
+  return { create, update, remove };
+}
+
+/**
+ * Company registry writes.
+ *
+ * A create/delete changes the options of the Users add form, so the roster is
+ * invalidated as well; the registry itself is seeded from the answer.
+ */
+export function useCompanyMutations() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const seed = (payload: CompaniesPayload) => {
+    queryClient.setQueryData(settingsCompaniesQueryKey, payload);
+    void queryClient.invalidateQueries({ queryKey: settingsUsersQueryKey });
+  };
+
+  const onError = (error: unknown) => {
+    if (isFieldLevel(error)) {
+      return;
+    }
+    toast.error(t('save_failed'), { description: messageOf(error, '') });
+  };
+
+  const create = useMutation({
+    mutationFn: (name: string) => createCompany(name),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_saved'));
+    },
+    onError,
+  });
+
+  const remove = useMutation({
+    mutationFn: (name: string) => deleteCompany(name),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_delete'));
+    },
+    onError,
+  });
+
+  return { create, remove };
 }
 
 /** `POST /settings/maintenance/migrate`; the dry run is the default action. */

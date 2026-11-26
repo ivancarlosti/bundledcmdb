@@ -258,6 +258,12 @@ Rules enforced by the server:
 * The last `superadmin` row cannot be demoted or deleted (`409 last_superadmin`).
 * An unknown body key is `422 errors.<key> = "unknown_field"`.
 
+> The `companies` registry and the "no company ⇒ superadmin" invariant are
+> **panel-only**. These endpoints keep accepting any `company` string (creation
+> is still the IdP/HR sync's job) and do not validate it against the registry;
+> the panel's scoped roster lives in `lib/panel/settings.php`. A global key
+> remains the way an integration grants `superadmin`.
+
 Audit: every write appends to `asset_events` with `entity = user`,
 `entity_id = <email>` and `actor = api:<key label>`, so roster changes appear in
 Settings → Logs next to device changes.

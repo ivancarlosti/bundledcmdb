@@ -253,6 +253,10 @@ function migrations(): array
             'description' => 'Reserve /settings for superadmin (drop role_capabilities grants for settings.* and permissions.manage)',
             'run' => 'migration_0022_settings_superadmin_only',
         ],
+        '2026_11_26_0023_companies' => [
+            'description' => 'Create companies (tenant registry), backfill from users/assets, index users.company',
+            'run' => 'migration_0023_companies',
+        ],
     ];
 }
 
@@ -1127,5 +1131,52 @@ function migration_0022_settings_superadmin_only(PDO $pdo): void
     );
     $stmt->execute();
     migrate_note('removed ' . $stmt->rowCount() . ' delegable settings capability row(s)');
+}
+
+/**
+ * Add the company (tenant) registry.
+ *
+ * Tenancy keeps living in the `company` string (no foreign keys), so the table
+ * is a list of names plus usage reporting. The backfill takes the names that
+ * already exist on `users` first and then on `assets`; `companies.name` is the
+ * primary key under `utf8mb4_unicode_ci`, so `INSERT IGNORE` also collapses
+ * case-only duplicates and the users spelling wins.
+ *
+ * `settings.users` is retired in favour of the delegable `users.manage`;
+ * deleting any leftover grant keeps the stored matrix consistent with the
+ * catalogue (`permission_capability_allowed()` ignores an unknown key anyway).
+ */
+function migration_0023_companies(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'companies')) {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS companies (
+                name VARCHAR(191) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(191) NULL,
+                PRIMARY KEY (name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        migrate_note('CREATE TABLE companies');
+    }
+
+    foreach (['users', 'assets'] as $table) {
+        if (!db_table_exists($pdo, $table)) {
+            migrate_note("skipped backfill from {$table}: table missing");
+            continue;
+        }
+        $inserted = $pdo->exec(
+            'INSERT IGNORE INTO companies (name) SELECT DISTINCT company FROM `' . $table . "` WHERE company IS NOT NULL AND company <> ''"
+        );
+        migrate_note("backfilled {$inserted} company name(s) from {$table}");
+    }
+
+    migrate_add_index($pdo, 'users', 'idx_users_company', '`company`');
+
+    if (db_table_exists($pdo, 'role_capabilities')) {
+        $stmt = $pdo->prepare("DELETE FROM role_capabilities WHERE capability = 'settings.users'");
+        $stmt->execute();
+        migrate_note('removed ' . $stmt->rowCount() . ' stale settings.users grant(s)');
+    }
 }
 
