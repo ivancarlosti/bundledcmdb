@@ -7,7 +7,8 @@ declare(strict_types=1);
  *   GET  /panel-api/v1/devices          list + filter + sort + paging
  *   GET  /panel-api/v1/devices/{id}     one device (+ custom values + files)
  *   GET  /panel-api/v1/devices/{id}/files
- *   GET  /panel-api/v1/devices/export   CSV with the same filters/sort
+ *   GET  /panel-api/v1/devices/export   CSV/XLSX: same filters/sort, all columns
+ *                                        except `CypherKey`/`Notes`
  *
  * All reads go through the same rules as `asset_list()` (lib/assets.php) but
  * fix the two regressions from `2279453`: the default order is
@@ -625,11 +626,91 @@ function panel_device_payload_keys(): array
 }
 
 /**
+ * Columns the CSV/XLSX export never writes, for every role and layout.
+ *
+ * `CypherKey` is the sync credential and `Notes` collects free-form text that
+ * tends to hold the same kind of secret; a spreadsheet on someone's desktop is
+ * the wrong place for either. They stay in the panel (the grid and the detail
+ * page can show them to the roles allowed to see them), they just never leave it
+ * in a file. Every other column is exported whether or not the grid shows it.
+ *
+ * @return list<string>
+ */
+function panel_devices_export_excluded_keys(): array
+{
+    return ['CypherKey', 'Notes'];
+}
+
+/**
+ * Export column set: every column `/meta` publishes, in the admin layout order,
+ * with `Id` first — minus `panel_devices_export_excluded_keys()`.
+ *
+ * `in_grid` is deliberately ignored — the export is the "everything about this
+ * asset" download, so a column an admin hid to keep the screen readable is still
+ * exported. `Id` is not part of the layout (see `grid_layout_ids()`), so
+ * `grid_layout_apply_order()` leaves it at the far right; the primary key belongs
+ * in the first cell instead.
+ *
+ * Filtering here (instead of in the row loop) keeps the header and the rows in
+ * lockstep by construction: both are built from the list this returns.
+ *
+ * Pure on purpose: a unit test can hand it a fake column list without a database.
+ *
+ * @param list<array<string, mixed>> $columns
+ * @return list<array<string, mixed>>
+ */
+function panel_devices_export_columns(array $columns): array
+{
+    $excluded = panel_devices_export_excluded_keys();
+    $ordered = [];
+    $id = null;
+    foreach ($columns as $column) {
+        $key = (string) ($column['key'] ?? '');
+        if (in_array($key, $excluded, true)) {
+            continue;
+        }
+        if ($key === 'Id') {
+            $id = $column;
+            continue;
+        }
+        $ordered[] = $column;
+    }
+
+    return $id === null ? $ordered : array_merge([$id], $ordered);
+}
+
+/**
+ * Translated header of the export, built once for CSV and XLSX.
+ *
+ * The built-in columns use their `col_*` catalogue key, the custom fields their
+ * per-locale label, so a translated header is never English-only by accident.
+ * Pure like `panel_devices_export_columns()`: testable without a database.
+ *
+ * @param list<array<string, mixed>> $columns
+ * @param list<array<string, mixed>> $customFields
+ * @return list<string>
+ */
+function panel_devices_export_header(array $columns, array $customFields, string $locale): array
+{
+    $header = [];
+    foreach ($columns as $column) {
+        $header[] = locale_translate((string) $column['label_key'], $locale);
+    }
+    foreach ($customFields as $def) {
+        $header[] = field_label($def, $locale);
+    }
+
+    return $header;
+}
+
+/**
  * Header + row generator shared by both export formats.
  *
- * Extracted so CSV and XLSX cannot drift: which columns are exported, the
- * translated header and the status/boolean rendering are decided once. `rows` is
- * a generator, so the Excel writer streams instead of holding the table.
+ * Extracted so CSV and XLSX cannot drift: which columns are exported (every
+ * column `/meta` publishes except `panel_devices_export_excluded_keys()`,
+ * `in_grid` ignored, plus every active custom field), the translated header and
+ * the status/boolean rendering are decided once. `rows` is a generator, so the
+ * Excel writer streams instead of holding the table.
  *
  * @param array{email: string, company: string, role: string} $user
  * @return array{slug: string, sheet: string, header: list<string>, rows: Generator<int, list<string>>}
@@ -643,28 +724,17 @@ function panel_devices_export_dataset(array $user): array
     $prefs = user_preferences_get($user['email']);
     $locale = $prefs['locale'] ?? locale_default();
 
-    $columns = [];
-    foreach (panel_columns_payload($user['role']) as $column) {
-        if (!empty($column['in_grid'])) {
-            $columns[] = $column;
-        }
-    }
-    $defs = field_defs($pdo);
-    $gridFields = array_values(array_filter(
-        $defs,
-        static fn (array $def): bool => (int) ($def['show_in_grid'] ?? 0) === 1
-    ));
+    // Every column `/meta` publishes (`in_grid` ignored — see
+    // `panel_devices_export_columns()`) except the credential/notes fields, plus
+    // every active custom field: the export is the "everything about this asset"
+    // download, so a column hidden from the screen must still be in the file.
+    $columns = panel_devices_export_columns(panel_columns_payload($user['role']));
+    $customFields = field_defs($pdo);
 
     $company = $user['company'] !== '' ? $user['company'] : 'all';
     $slug = preg_replace('/[^A-Za-z0-9_-]+/', '_', $company) ?: 'all';
 
-    $header = [];
-    foreach ($columns as $column) {
-        $header[] = locale_translate((string) $column['label_key'], $locale);
-    }
-    foreach ($gridFields as $def) {
-        $header[] = field_label($def, $locale);
-    }
+    $header = panel_devices_export_header($columns, $customFields, $locale);
 
     return [
         'slug'   => $slug,
@@ -672,14 +742,16 @@ function panel_devices_export_dataset(array $user): array
         // `xlsx_build()` enforces both again, this is just the readable default.
         'sheet'  => $company === 'all' ? 'Assets' : $company,
         'header' => $header,
-        'rows'   => panel_devices_export_rows($pdo, $user, $filters, $order, $columns, $gridFields, $defs, $locale),
+        'rows'   => panel_devices_export_rows($pdo, $user, $filters, $order, $columns, $customFields, $locale),
     ];
 }
 
 /**
- * `GET /devices/export?format=csv|xlsx` — the same filters, sort and visible
- * columns as `GET /devices`. Never returns: the response is written straight to
- * `php://output`, so a large export is not buffered in memory.
+ * `GET /devices/export?format=csv|xlsx` — the same filters and sort as
+ * `GET /devices`, but every column: built-ins and custom fields, whether or not
+ * the grid shows them, minus `panel_devices_export_excluded_keys()` (the sync
+ * credential and the free-text notes). Never returns: the response is written
+ * straight to `php://output`, so a large export is not buffered in memory.
  *
  * CSV keeps the legacy dialect (UTF-8 BOM, `;` separator) that spreadsheets in
  * the default locale expect; `format=xlsx` writes a real workbook (bold header,
@@ -732,12 +804,14 @@ function panel_devices_export(array $params = []): never
  * One export line per device, paged exactly like the grid so the two cannot
  * disagree about which rows the current filter selects.
  *
+ * Every line is as wide as the header `panel_devices_export_header()` builds for
+ * the same `$columns` + `$customFields` pair.
+ *
  * @param array{email: string, company: string, role: string} $user
  * @param array<string, mixed> $filters
  * @param array{sort: string, dir: string} $order
  * @param list<array<string, mixed>> $columns
- * @param list<array<string, mixed>> $gridFields
- * @param list<array<string, mixed>> $defs
+ * @param list<array<string, mixed>> $customFields
  * @return Generator<int, list<string>>
  */
 function panel_devices_export_rows(
@@ -746,8 +820,7 @@ function panel_devices_export_rows(
     array $filters,
     array $order,
     array $columns,
-    array $gridFields,
-    array $defs,
+    array $customFields,
     string $locale
 ): Generator {
     $statusKeys = [];
@@ -764,7 +837,7 @@ function panel_devices_export_rows(
         $fetch = panel_devices_fetch($pdo, $user, $filters, $order, $page, $perPage);
         $ids = array_map(static fn (array $row): int => (int) $row['Id'], $fetch['rows']);
         $counts = panel_devices_files_counts($pdo, $ids);
-        $custom = custom_values_load($pdo, $ids, $defs);
+        $custom = custom_values_load($pdo, $ids, $customFields);
 
         foreach ($fetch['rows'] as $row) {
             $id = (int) $row['Id'];
@@ -775,10 +848,13 @@ function panel_devices_export_rows(
                 $key = $payloadKeys[(string) $column['key']] ?? null;
                 $value = $key === null ? '' : ($payload[$key] ?? '');
                 if (is_array($value)) {
-                    // Structured columns (`physical_disks`) have no flat
-                    // representation: the CSV shows the manual text columns
-                    // (`HDs`, `HDsTypes`, `HDsSpacesGB`) when a view enables them.
-                    $value = '';
+                    // Structured columns (`physical_disks`) keep every field: a
+                    // JSON blob is the only lossless single-cell form, and both
+                    // writers escape the quotes. An empty list stays an empty
+                    // cell rather than "[]".
+                    $value = $value === []
+                        ? ''
+                        : (string) json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 }
 
                 if ($column['key'] === 'Status' && is_string($value) && $value !== '') {
@@ -789,7 +865,7 @@ function panel_devices_export_rows(
                 }
                 $line[] = $value === null ? '' : (string) $value;
             }
-            foreach ($gridFields as $def) {
+            foreach ($customFields as $def) {
                 $line[] = field_display_value($def, $custom[$id][(string) $def['field_key']] ?? null);
             }
             yield $line;

@@ -186,9 +186,13 @@ including the ones the code ships hidden (`CPUs`, `Agent GPU`, `Agent RAM in GB`
   not mention keeps its code position at the end, so a column shipped by a later
   release still appears.
 * **Visibility** — unticked columns stay in the list (and keep their slot) but
-  have `in_grid: false`, so the grid, the column picker and the CSV/XLSX export
-  all skip them. The last visible column cannot be unticked: an empty grid looks
-  like a bug, not a preference.
+  have `in_grid: false`, so the grid and the column picker skip them. The
+  CSV/XLSX download does **not** skip them: the export writes every column
+  `/meta` publishes plus every active custom field, with two exceptions that are
+  never exported for any role — `CypherKey` (the sync credential) and `Notes`
+  (free-form text that tends to hold the same kind of secret) — see
+  `docs/frontend.md`. The last visible column cannot be unticked: an empty grid
+  looks like a bug, not a preference.
 * **Lock** — with the lock on, the grid ignores the per-user layout
   (`user_preferences.grid_state`) for order *and* visibility and disables the
   column picker; `/meta` publishes `gridLayout.locked` so the SPA knows.

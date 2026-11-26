@@ -91,7 +91,8 @@ the file); change them before exposing the stack. The panel is published on
   `/panel-api/v1/*`. The classic PHP pages are gone (see the note above).
 * **Devices grid** — server-side sort/filter/paging, per-column visibility and
   order, bulk actions (status, soft delete, restore, purge, export), CSV and
-  native Excel (`.xlsx`) export, attachments and *save as…* named views.
+  native Excel (`.xlsx`) export of every column except `CypherKey`/`Notes` (the
+  grid layout only affects the screen), attachments and *save as…* named views.
 * **Device history** — every write lands in `asset_events` (`create`, `update`,
   `delete`, `restore`, `purge`, `file_add`, `file_remove`) and is shown as a
   timeline on the detail page.

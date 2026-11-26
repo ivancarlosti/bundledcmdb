@@ -557,6 +557,49 @@ check(
 );
 
 
+// --- export columns (no database needed) ------------------------------------
+// The CSV/XLSX download is the "everything about this asset" file: `in_grid`
+// only shapes the screen, so a column an admin hid (and a custom field taken off
+// the grid) must still be exported. `CypherKey` (the sync credential) and
+// `Notes` (free text that tends to hold the same kind of secret) are the
+// exception: they never leave the panel in a file. `Id` is not part of the
+// layout, so `grid_layout_apply_order()` used to leave it in the last cell; it
+// goes first.
+$columnsForExport = panel_devices_export_columns([
+    ['key' => 'SN',        'label_key' => 'col_sn',         'in_grid' => true],
+    ['key' => 'CypherKey', 'label_key' => 'col_cypher_key', 'in_grid' => false],
+    ['key' => 'Notes',     'label_key' => 'col_notes',      'in_grid' => false],
+    ['key' => 'AgentGPU',  'label_key' => 'col_agent_gpu',  'in_grid' => false],
+    ['key' => 'Id',        'label_key' => 'col_id',         'in_grid' => false],
+]);
+check(
+    array_column($columnsForExport, 'key') === ['Id', 'SN', 'AgentGPU'],
+    'export: hidden columns are kept, the id comes first, the credential and notes are dropped',
+    json_encode(array_column($columnsForExport, 'key'))
+);
+check(
+    panel_devices_export_excluded_keys() === ['CypherKey', 'Notes'],
+    'export: the never-exported columns are named once',
+    json_encode(panel_devices_export_excluded_keys())
+);
+$headerForExport = panel_devices_export_header(
+    $columnsForExport,
+    [['field_key' => 'asset_tag', 'label' => 'Asset tag']],
+    'en-US'
+);
+check(
+    $headerForExport === [
+        locale_translate('col_id', 'en-US'),
+        locale_translate('col_sn', 'en-US'),
+        locale_translate('col_agent_gpu', 'en-US'),
+        'Asset tag',
+    ],
+    'export: the header is translated and keeps the grid-hidden columns',
+    json_encode($headerForExport)
+);
+check(panel_devices_export_columns([]) === [], 'export: an empty column list stays empty');
+
+
 // --- audit retention (no database needed) -----------------------------------
 $fixed = new DateTimeImmutable('2026-11-05 12:00:00', new DateTimeZone('UTC'));
 check(LOGS_RETENTION_DEFAULT === 180, 'logs: the built-in default is 180 days');
@@ -2232,6 +2275,81 @@ try {
     check(($updatedDef['label'] ?? '') === 'Panel API test field (edited)', 'fields: label is updated');
     check((int) ($updatedDef['show_in_grid'] ?? 1) === 0, 'fields: flags are updated');
     check(($updatedField['data']['types'] ?? []) !== [], 'fields: type catalogue is included');
+
+    // The export is the "everything about this asset" download: the field above
+    // is now `show_in_grid = 0` and the built-in columns include ones the grid
+    // hides, yet all of them must be in the CSV/XLSX header and every row — except
+    // `CypherKey`/`Notes`, which never leave the panel in a file.
+    $exportUser = session_user() ?? ['email' => 'tester@example.com', 'company' => '', 'role' => 'superadmin'];
+    $exportLocale = user_preferences_get($exportUser['email'])['locale'] ?? locale_default();
+    $exportPublished = panel_columns_payload($exportUser['role']);
+    $exportDefs = field_defs($pdo);
+    $_GET = [];
+    $exportDataset = panel_devices_export_dataset($exportUser);
+    $exportHeader = $exportDataset['header'];
+    $exportExcluded = count(array_filter(
+        $exportPublished,
+        static fn (array $column): bool => in_array(
+            (string) $column['key'],
+            panel_devices_export_excluded_keys(),
+            true
+        )
+    ));
+    $exportWidth = count($exportPublished) - $exportExcluded + count($exportDefs);
+    $gridWidth = count(array_filter(
+        $exportPublished,
+        static fn (array $column): bool => !empty($column['in_grid'])
+    )) + count(array_filter(
+        $exportDefs,
+        static fn (array $def): bool => (int) ($def['show_in_grid'] ?? 0) === 1
+    ));
+    check(
+        $exportHeader[0] === locale_translate('col_id', $exportLocale),
+        'export: the id column comes first',
+        (string) ($exportHeader[0] ?? '')
+    );
+    check($exportExcluded === 2, 'export: both never-exported columns are published', (string) $exportExcluded);
+    check(
+        count($exportHeader) === $exportWidth,
+        'export: every published column minus the credential/notes, plus every custom field',
+        count($exportHeader) . ' vs ' . $exportWidth
+    );
+    check(count($exportHeader) > $gridWidth, 'export: the export is wider than the grid', $gridWidth . ' grid columns');
+    foreach (['col_cypher_key', 'col_notes'] as $exportKey) {
+        check(
+            !in_array(locale_translate($exportKey, $exportLocale), $exportHeader, true),
+            'export: the header never contains ' . $exportKey
+        );
+    }
+    check(
+        in_array(locale_translate('col_agent_gpu', $exportLocale), $exportHeader, true),
+        'export: the header still contains a column the grid hides (col_agent_gpu)'
+    );
+    $exportFieldDef = null;
+    foreach ($exportDefs as $exportDef) {
+        if ((int) $exportDef['id'] === $fieldId) {
+            $exportFieldDef = $exportDef;
+            break;
+        }
+    }
+    check(
+        $exportFieldDef !== null
+            && in_array(field_label($exportFieldDef, $exportLocale), $exportHeader, true),
+        'export: a custom field taken off the grid is still exported'
+    );
+    $exportWidths = [];
+    foreach ($exportDataset['rows'] as $exportRow) {
+        $exportWidths[] = count($exportRow);
+        if (count($exportWidths) === 3) {
+            break;
+        }
+    }
+    check(
+        array_filter($exportWidths, static fn (int $width): bool => $width !== count($exportHeader)) === [],
+        'export: every row is as wide as the header',
+        json_encode($exportWidths)
+    );
+    $_GET = [];
 
     $orderedIds = array_map(static fn (array $def): int => (int) $def['id'], field_defs($pdo, false, true));
     body(['ids' => array_reverse($orderedIds)]);

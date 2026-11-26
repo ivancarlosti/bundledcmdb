@@ -104,7 +104,7 @@ the server-side guard.
 | `POST /panel-api/v1/views` | save a view; the same name overwrites it (`201`, same id) |
 | `PATCH/DELETE /panel-api/v1/views/{id}` | rename/replace the state / delete (404 outside your own views) |
 | `GET /panel-api/v1/devices` | list with filters, server-side sort, paging |
-| `GET /panel-api/v1/devices/export` | CSV (`?format=csv`, default) or native `.xlsx` (`?format=xlsx`) with the same filters/sort |
+| `GET /panel-api/v1/devices/export` | CSV (`?format=csv`, default) or native `.xlsx` (`?format=xlsx`) with the same filters/sort but every column: the whole `/meta` catalogue (`Id` first) plus every active custom field, regardless of the grid layout (`in_grid`); `in_grid`/`show_in_grid` only shape the screen, so a hidden column is still exported and `physical_disks` is written as JSON. `CypherKey` and `Notes` are never exported, for any role or layout |
 | `GET /panel-api/v1/devices/{id}` | one device + custom values + attachments |
 | `POST /panel-api/v1/devices` | create (manager+), `201` + the created row |
 | `POST /panel-api/v1/devices/bulk` | one operation (`status`, `byod`, `delete`, `restore`) on up to 200 ids, per-row results; delete takes an optional `reason` |
