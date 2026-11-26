@@ -249,6 +249,10 @@ function migrations(): array
             'description' => 'Store Mobile/BYOD as the VARCHAR(16) the schema declares (legacy dumps kept tinyint(1))',
             'run' => 'migration_0021_boolean_column_types',
         ],
+        '2026_11_26_0022_settings_superadmin_only' => [
+            'description' => 'Reserve /settings for superadmin (drop role_capabilities grants for settings.* and permissions.manage)',
+            'run' => 'migration_0022_settings_superadmin_only',
+        ],
     ];
 }
 
@@ -1096,3 +1100,32 @@ function migration_0021_boolean_column_types(PDO $pdo): void
         migrate_note("UPDATE assets {$column}: spellings normalised to 'true'/'false'");
     }
 }
+
+/**
+ * Make `/settings` superadmin-only.
+ *
+ * Every `settings.*` capability and `permissions.manage` is flagged
+ * `superadmin_only` in `lib/permissions.php`, so the role matrix can no longer
+ * grant them and `permission_capability_allowed()` ignores a stored row.
+ *
+ * An older installation may still hold `role_capabilities` rows from when an
+ * admin could open the screen (or from a manual grant). Deleting them keeps the
+ * database consistent with the code and means a later re-delegation starts from
+ * the code defaults instead of resurrecting a historical choice.
+ */
+function migration_0022_settings_superadmin_only(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'role_capabilities')) {
+        migrate_note('skipped: role_capabilities does not exist');
+        return;
+    }
+
+    $stmt = $pdo->prepare(
+        "DELETE FROM role_capabilities
+          WHERE role <> 'superadmin'
+            AND (capability LIKE 'settings.%' OR capability = 'permissions.manage')"
+    );
+    $stmt->execute();
+    migrate_note('removed ' . $stmt->rowCount() . ' delegable settings capability row(s)');
+}
+

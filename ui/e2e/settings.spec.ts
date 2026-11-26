@@ -5,6 +5,11 @@ import { mockPanel, mockSettings } from './fixtures';
 /**
  * Settings screens (phase 7).
  *
+ * `/settings` is superadmin-only (`settings.*` and `permissions.manage` are
+ * flagged `superadmin_only` in `lib/permissions.php`), so every screen test
+ * signs in as a superadmin; `mockPanel` fills the capability map from
+ * `ROLE_PERMISSIONS.superadmin`.
+ *
  * The behaviours that only exist in the SPA and are easy to regress:
  *
  *  - a save must not resend an untouched secret (the API sends `""` for one);
@@ -12,13 +17,18 @@ import { mockPanel, mockSettings } from './fixtures';
  *    opaque banner;
  *  - cards follow the server groups (Storage is split into attachment and S3)
  *    and the user roster filters on the client;
- *  - the tab list follows `capabilities` (`can_admin` opens the screen, the user
- *    roster stays `can_superadmin`).
+ *  - the navigation link and the screen itself follow `can_superadmin`, not
+ *    `can_admin`.
  */
+const SUPERADMIN = {
+  user: { email: 'qa@example.com', company: '', role: 'superadmin' },
+  capabilities: { role: 'superadmin', rank: 4, can_write: true, can_admin: true, can_superadmin: true },
+};
+
 test.describe('settings', () => {
   test('saves the storage tab without resending the stored secret', async ({ page }) => {
     const saved: Record<string, unknown>[] = [];
-    await mockPanel(page);
+    await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page, { onSave: (body) => saved.push(body) });
 
     await page.goto('/app/settings?tab=storage');
@@ -41,7 +51,7 @@ test.describe('settings', () => {
   });
 
   test('splits storage into two cards and starts each with its booleans', async ({ page }) => {
-    await mockPanel(page);
+    await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page);
 
     await page.goto('/app/settings?tab=general');
@@ -60,12 +70,7 @@ test.describe('settings', () => {
   });
 
   test('filters the user roster by search and company', async ({ page }) => {
-    await mockPanel(page, {
-      session: {
-        user: { email: 'qa@example.com', company: '', role: 'superadmin' },
-        capabilities: { role: 'superadmin', rank: 4, can_write: true, can_admin: true, can_superadmin: true },
-      },
-    });
+    await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page);
 
     await page.goto('/app/settings?tab=users');
@@ -89,7 +94,7 @@ test.describe('settings', () => {
   });
 
   test('renders per-key validation errors from a 422', async ({ page }) => {
-    await mockPanel(page);
+    await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page, { invalid: { 's3.bucket': 'required' } });
 
     await page.goto('/app/settings?tab=storage');
@@ -101,7 +106,7 @@ test.describe('settings', () => {
   });
 
   test('inserts a prefix placeholder at the caret', async ({ page }) => {
-    await mockPanel(page);
+    await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page);
 
     await page.goto('/app/settings?tab=storage');
@@ -127,7 +132,7 @@ test.describe('settings', () => {
 
   test('resets a stored setting to its default without dropping the form', async ({ page }) => {
     const saved: Record<string, unknown>[] = [];
-    await mockPanel(page);
+    await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page, { onSave: (body) => saved.push(body) });
 
     await page.goto('/app/settings?tab=storage');
@@ -143,23 +148,32 @@ test.describe('settings', () => {
     expect((saved[0]?.values as Record<string, unknown>)['s3.bucket']).toBe('cmdb');
   });
 
-  test('shows the settings link to an admin and hides the user roster', async ({ page }) => {
+  test('hides the settings link and screen from an admin', async ({ page }) => {
     await mockPanel(page);
     await mockSettings(page);
 
     await page.goto('/app/devices');
-    await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings' })).toHaveCount(0);
 
+    // A bookmark still renders the forbidden state instead of the tab list.
+    await page.goto('/app/settings');
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.getByRole('tab')).toHaveCount(0);
+  });
+
+  test('opens every tab for a superadmin', async ({ page }) => {
+    await mockPanel(page, { session: SUPERADMIN });
+    await mockSettings(page);
+
+    await page.goto('/app/devices');
     await page.getByRole('link', { name: 'Settings' }).click();
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
-    const tabs = page.getByRole('tab');
-    // General, Columns, Storage, Sources, API, Fields, Logs, Maintenance: the
-    // admin defaults of `lib/permissions.php`. Permissions and Users are
-    // superadmin-only, so the roster tab is the one that must be missing.
-    await expect(tabs).toHaveCount(8);
-    await expect(page.getByRole('tab', { name: 'Logs' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Users' })).toHaveCount(0);
+    // General, Columns, Storage, Sources, API, Fields, Logs, Maintenance,
+    // Permissions, Users: the whole surface belongs to the recovery role.
+    await expect(page.getByRole('tab')).toHaveCount(10);
+    await expect(page.getByRole('tab', { name: 'Permissions' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Users' })).toBeVisible();
 
     // Source usage is shown, and a system source cannot be deleted.
     await page.getByRole('tab', { name: 'Sources' }).click();
@@ -168,12 +182,7 @@ test.describe('settings', () => {
   });
 
   test('opens the user roster for a superadmin and disables the own row', async ({ page }) => {
-    await mockPanel(page, {
-      session: {
-        user: { email: 'qa@example.com', company: '', role: 'superadmin' },
-        capabilities: { role: 'superadmin', rank: 4, can_write: true, can_admin: true, can_superadmin: true },
-      },
-    });
+    await mockPanel(page, { session: SUPERADMIN });
     await mockSettings(page);
 
     await page.goto('/app/settings?tab=users');
@@ -187,11 +196,11 @@ test.describe('settings', () => {
     await expect(other).toHaveValue('manager');
   });
 
-  test('keeps the caller out of the screen without can_admin', async ({ page }) => {
+  test('keeps a manager with can_admin out of the screen', async ({ page }) => {
     await mockPanel(page, {
       session: {
         user: { email: 'qa@example.com', company: '', role: 'manager' },
-        capabilities: { role: 'manager', rank: 2, can_write: true, can_admin: false, can_superadmin: false },
+        capabilities: { role: 'manager', rank: 2, can_write: true, can_admin: true, can_superadmin: false },
       },
     });
     await mockSettings(page);

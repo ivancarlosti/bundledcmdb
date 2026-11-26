@@ -4,29 +4,34 @@ declare(strict_types=1);
 /**
  * lib/panel/settings.php — administration endpoints for `/panel-api/v1/settings*`.
  *
- *   GET    /settings                       definitions + current values   (admin+)
- *   PATCH  /settings                       validate and store a subset   (admin+)
- *   GET    /settings/sources               provenance sources            (admin+)
- *   POST   /settings/sources                                             (admin+)
- *   POST   /settings/sources/move          drain a source                 (admin+)
- *   PATCH  /settings/sources/{slug}                                      (admin+)
- *   DELETE /settings/sources/{slug}        refused while in use          (admin+)
+ *   GET    /settings                       definitions + current values   (superadmin)
+ *   PATCH  /settings                       validate and store a subset   (superadmin)
+ *   GET    /settings/sources               provenance sources            (superadmin)
+ *   POST   /settings/sources                                             (superadmin)
+ *   POST   /settings/sources/move          drain a source                 (superadmin)
+ *   PATCH  /settings/sources/{slug}                                      (superadmin)
+ *   DELETE /settings/sources/{slug}        refused while in use          (superadmin)
  *   GET    /settings/permissions           role × capability/field map   (superadmin)
  *   PUT    /settings/permissions           persist the matrix            (superadmin)
- *   GET    /settings/fields                custom-field definitions      (admin+)
- *   POST   /settings/fields                                              (admin+)
- *   POST   /settings/fields/reorder        drag-and-drop order           (admin+)
- *   PATCH  /settings/fields/{id}                                         (admin+)
- *   DELETE /settings/fields/{id}           drops stored values too       (admin+)
- *   GET    /settings/api-keys              keys without their hash       (admin+)
- *   POST   /settings/api-keys              token returned once           (admin+)
- *   POST   /settings/api-keys/{id}/rotate  token returned once           (admin+)
- *   PATCH  /settings/api-keys/{id}                                       (admin+)
- *   DELETE /settings/api-keys/{id}                                       (admin+)
+ *   GET    /settings/fields                custom-field definitions      (superadmin)
+ *   POST   /settings/fields                                              (superadmin)
+ *   POST   /settings/fields/reorder        drag-and-drop order           (superadmin)
+ *   PATCH  /settings/fields/{id}                                         (superadmin)
+ *   DELETE /settings/fields/{id}           drops stored values too       (superadmin)
+ *   GET    /settings/api-keys              keys without their hash       (superadmin)
+ *   POST   /settings/api-keys              token returned once           (superadmin)
+ *   POST   /settings/api-keys/{id}/rotate  token returned once           (superadmin)
+ *   PATCH  /settings/api-keys/{id}                                       (superadmin)
+ *   DELETE /settings/api-keys/{id}                                       (superadmin)
  *   GET    /settings/users                 roles per e-mail              (superadmin)
  *   PATCH  /settings/users/{email}         change one role               (superadmin)
- *   GET    /settings/maintenance           schema state + diagnostics    (admin+)
- *   POST   /settings/maintenance/migrate   run (or dry-run) migrations   (admin+)
+ *   GET    /settings/maintenance           schema state + diagnostics    (superadmin)
+ *   POST   /settings/maintenance/migrate   run (or dry-run) migrations   (superadmin)
+ *
+ * The whole screen is superadmin-only: every `settings.*` capability and
+ * `permissions.manage` is flagged `superadmin_only` in `lib/permissions.php`
+ * (migration `0022` clears older grants), so the role matrix cannot delegate
+ * any of these areas and a company admin never reaches the handlers.
  *
  * The handlers are thin on purpose: every rule (validation, protection of system
  * sources, token hashing, migration ledger) already lives in the model helpers
@@ -39,20 +44,19 @@ declare(strict_types=1);
 /**
  * Capability allowed to open a settings area.
  *
- * `$superadminOnly` remains for the user-management call sites; every other
- * caller passes an explicit capability so source/field/key access can be
- * delegated independently.
+ * The named capability keeps each handler self-describing (and is the key the
+ * docs list), but all of them are `superadmin_only`, so
+ * `session_require_capability()` only ever lets the recovery role through.
  */
-function panel_settings_user(bool $superadminOnly = false, ?string $capability = null): array
+function panel_settings_user(string $capability = 'settings.manage'): array
 {
-    $capability ??= $superadminOnly ? 'settings.users' : 'settings.manage';
     return session_require_capability($capability);
 }
 
 /** Guard for a mutating handler: capability first, then the CSRF header. */
-function panel_settings_writer(bool $superadminOnly = false, ?string $capability = null): array
+function panel_settings_writer(string $capability = 'settings.manage'): array
 {
-    $user = panel_settings_user($superadminOnly, $capability);
+    $user = panel_settings_user($capability);
     session_csrf_require();
     return $user;
 }
@@ -417,14 +421,14 @@ function panel_settings_sources_payload(PDO $pdo): array
 /** GET /settings/sources */
 function panel_settings_sources_index(array $params = []): array
 {
-    panel_settings_user(false, 'settings.sources');
+    panel_settings_user('settings.sources');
     return ['data' => panel_settings_sources_payload(db())];
 }
 
 /** POST /settings/sources */
 function panel_settings_sources_store(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.sources');
+    $user = panel_settings_writer('settings.sources');
     $pdo = db();
     $body = panel_settings_body();
 
@@ -463,7 +467,7 @@ function panel_settings_sources_store(array $params = []): array
 /** PATCH /settings/sources/{slug} */
 function panel_settings_sources_update(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.sources');
+    $user = panel_settings_writer('settings.sources');
     $pdo = db();
     $slug = (string) ($params['slug'] ?? '');
     $source = source_get($pdo, $slug);
@@ -502,7 +506,7 @@ function panel_settings_sources_update(array $params = []): array
 /** DELETE /settings/sources/{slug} */
 function panel_settings_sources_delete(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.sources');
+    $user = panel_settings_writer('settings.sources');
     $pdo = db();
     $slug = (string) ($params['slug'] ?? '');
     $source = source_get($pdo, $slug);
@@ -651,14 +655,14 @@ function panel_settings_field_apply(array $input, array $body): array
 /** GET /settings/fields */
 function panel_settings_fields_index(array $params = []): array
 {
-    panel_settings_user(false, 'settings.fields');
+    panel_settings_user('settings.fields');
     return ['data' => panel_settings_fields_payload(db())];
 }
 
 /** POST /settings/fields */
 function panel_settings_fields_store(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.fields');
+    $user = panel_settings_writer('settings.fields');
     $pdo = db();
     $input = panel_settings_field_apply(panel_settings_field_input([]), panel_settings_body());
     $payload = field_normalize_payload($input);
@@ -682,7 +686,7 @@ function panel_settings_fields_store(array $params = []): array
 /** PATCH /settings/fields/{id} */
 function panel_settings_fields_update(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.fields');
+    $user = panel_settings_writer('settings.fields');
     $pdo = db();
     $id = panel_settings_id($params);
     $existing = field_def_by_id($pdo, $id);
@@ -722,7 +726,7 @@ function panel_settings_fields_update(array $params = []): array
 /** DELETE /settings/fields/{id} — also drops every stored value. */
 function panel_settings_fields_delete(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.fields');
+    $user = panel_settings_writer('settings.fields');
     $pdo = db();
     $id = panel_settings_id($params);
     $existing = field_def_by_id($pdo, $id);
@@ -748,7 +752,7 @@ function panel_settings_fields_delete(array $params = []): array
 /** POST /settings/fields/reorder — body `{"ids": [3, 1, 2]}`. */
 function panel_settings_fields_reorder(array $params = []): array
 {
-    panel_settings_writer(false, 'settings.fields');
+    panel_settings_writer('settings.fields');
     $pdo = db();
     $ids = panel_settings_body()['ids'] ?? null;
     if (!is_array($ids) || $ids === []) {
@@ -836,14 +840,14 @@ function panel_settings_key_input(array $row): array
 /** GET /settings/api-keys */
 function panel_settings_keys_index(array $params = []): array
 {
-    panel_settings_user(false, 'settings.api_keys');
+    panel_settings_user('settings.api_keys');
     return ['data' => panel_settings_keys_payload(db())];
 }
 
 /** POST /settings/api-keys — the token is returned exactly once. */
 function panel_settings_keys_store(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.api_keys');
+    $user = panel_settings_writer('settings.api_keys');
     $pdo = db();
     $payload = api_key_normalize_payload(panel_settings_body());
 
@@ -883,7 +887,7 @@ function panel_settings_keys_store(array $params = []): array
 /** PATCH /settings/api-keys/{id} — scopes only, the token is untouched. */
 function panel_settings_keys_update(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.api_keys');
+    $user = panel_settings_writer('settings.api_keys');
     $pdo = db();
     $id = panel_settings_id($params);
     $existing = api_key_get($pdo, $id);
@@ -934,7 +938,7 @@ function panel_settings_keys_update(array $params = []): array
 /** POST /settings/api-keys/{id}/rotate — new token, same scopes. */
 function panel_settings_keys_rotate(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.api_keys');
+    $user = panel_settings_writer('settings.api_keys');
     $pdo = db();
     $id = panel_settings_id($params);
     $existing = api_key_get($pdo, $id);
@@ -961,7 +965,7 @@ function panel_settings_keys_rotate(array $params = []): array
 /** DELETE /settings/api-keys/{id} */
 function panel_settings_keys_delete(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.api_keys');
+    $user = panel_settings_writer('settings.api_keys');
     $pdo = db();
     $id = panel_settings_id($params);
     $existing = api_key_get($pdo, $id);
@@ -1027,14 +1031,14 @@ function panel_settings_users_payload(PDO $pdo): array
 /** GET /settings/users */
 function panel_settings_users_index(array $params = []): array
 {
-    panel_settings_user(true);
+    panel_settings_user('settings.users');
     return ['data' => panel_settings_users_payload(db())];
 }
 
 /** PATCH /settings/users/{email} — body `{"role": "manager"}`. */
 function panel_settings_users_update(array $params = []): array
 {
-    $user = panel_settings_writer(true);
+    $user = panel_settings_writer('settings.users');
     $pdo = db();
     $email = trim(rawurldecode((string) ($params['email'] ?? '')));
     if ($email === '') {
@@ -1083,7 +1087,7 @@ function panel_settings_users_update(array $params = []): array
 /** GET /settings/permissions */
 function panel_settings_permissions_index(array $params = []): array
 {
-    panel_settings_user(false, 'permissions.manage');
+    panel_settings_user('permissions.manage');
     return ['data' => permission_matrix_payload(db())];
 }
 
@@ -1096,7 +1100,7 @@ function panel_settings_permissions_index(array $params = []): array
  */
 function panel_settings_permissions_update(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'permissions.manage');
+    $user = panel_settings_writer('permissions.manage');
     $pdo = db();
     $result = permission_matrix_save($pdo, panel_settings_body(), (string) $user['email']);
     if ($result['errors'] !== []) {
@@ -1132,7 +1136,7 @@ function panel_settings_permissions_update(array $params = []): array
  */
 function panel_settings_sources_move(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.sources');
+    $user = panel_settings_writer('settings.sources');
     $pdo = db();
     $body = panel_settings_body();
     $from = trim((string) ($body['from'] ?? ''));
@@ -1222,7 +1226,7 @@ function panel_settings_maintenance_payload(): array
 /** GET /settings/maintenance */
 function panel_settings_maintenance_show(array $params = []): array
 {
-    panel_settings_user(false, 'settings.maintenance');
+    panel_settings_user('settings.maintenance');
     return ['data' => panel_settings_maintenance_payload()];
 }
 
@@ -1233,7 +1237,7 @@ function panel_settings_maintenance_show(array $params = []): array
  */
 function panel_settings_maintenance_migrate(array $params = []): array
 {
-    $user = panel_settings_writer(false, 'settings.maintenance');
+    $user = panel_settings_writer('settings.maintenance');
     $pdo = db();
     $dryRun = !empty(panel_settings_body()['dry_run']);
 

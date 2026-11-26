@@ -1,7 +1,15 @@
 # Settings, sources and custom fields
 
-Everything on **Settings** (admin/superadmin only) is stored in the database,
+Everything on **Settings** (superadmin only) is stored in the database,
 so an installation can move away from `.env` without code changes.
+
+`/settings` is reserved for `superadmin`. Every `settings.*` capability and
+`permissions.manage` is flagged `superadmin_only` in `lib/permissions.php`, so
+the role matrix lists them but cannot grant them, a stored `role_capabilities`
+row is ignored, and migration `0022_settings_superadmin_only` deletes the grants
+an older installation may have written. An admin keeps the rest of the role
+(devices, logs, `can_admin`) but neither the navigation entry nor the screen: a
+bookmarked `/app/settings` renders the forbidden state.
 
 ## Precedence (DB → ENV → default)
 
@@ -41,7 +49,8 @@ environment-only: they are needed *before* the settings table can be read.
 
 ### Columns
 The installation-wide device-grid layout (order, visibility, lock). See
-[Columns](#columns) below for the rules; the tab is `settings.manage`.
+[Columns](#columns) below for the rules; the tab is `settings.manage`
+(superadmin-only, like the whole screen).
 
 ### Attachment storage
 The Storage tab has two cards: **Attachment storage** (`storage.*`) and **S3
@@ -167,8 +176,8 @@ update.
 ### Columns
 `/settings?tab=columns` is the installation-wide device-grid layout
 (`app_settings["grid.columns"]`, `lib/grid_layout.php`) and needs
-`settings.manage`. It offers every column `/meta` can publish — including the
-ones the code ships hidden (`CPUs`, `Agent GPU`, `Agent RAM in GB`,
+`settings.manage` (superadmin-only). It offers every column `/meta` can publish —
+including the ones the code ships hidden (`CPUs`, `Agent GPU`, `Agent RAM in GB`,
 `Physical Disks`) and the grid-visible custom fields:
 
 * **Order** — the list is the order the grid renders. A column the layout does
@@ -195,7 +204,8 @@ Custom fields keep one switch: this tab now owns their grid presence (the
 ### Permissions
 `/settings?tab=permissions` is the persisted role × capability and role × field
 matrix (`role_capabilities`, `role_field_permissions`). It requires
-`permissions.manage`, which only superadmin has by default.
+`permissions.manage`, which is `superadmin_only` along with the rest of the
+screen.
 
 * Capabilities gate every panel endpoint through `session_require_capability()`;
   the historical role lists are only the defaults.
@@ -204,6 +214,9 @@ matrix (`role_capabilities`, `role_field_permissions`). It requires
 * Superadmin is immutable and always allowed, both in the matrix and in
   `session_require_capability()`; a row equal to the code default is deleted
   instead of stored, so a new capability inherits its intended default.
+* `settings.*` and `permissions.manage` are shown but locked: the checkbox is
+  disabled for every role and a `PUT` that tries to grant one is dropped (it
+  never reaches `role_capabilities`), so `/settings` cannot be delegated.
 * Custom fields still keep `asset_field_defs.editable_roles` authoritative; the
   matrix and the Fields tab both update that column.
 
@@ -268,6 +281,11 @@ catalogue.
 The SPA renders the same tabs against these endpoints; the handlers are thin
 wrappers over `lib/settings.php`, so `/app/settings` and `bin/test-panel-api.php`
 cannot disagree about validation, defaults or protection rules.
+
+Every endpoint below is **superadmin-only**: the capability column names the
+area, but `settings.*` and `permissions.manage` are flagged `superadmin_only`, so
+an admin is refused by the handler itself (the SPA only hides the entry — see
+[frontend.md](frontend.md) for the gating).
 
 | Method + path | Capability | Notes |
 |---|---|---|

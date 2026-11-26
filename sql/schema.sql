@@ -313,5 +313,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_05_0018_asset_agent_inventory'),
     ('2026_11_05_0019_retire_agent_only_columns'),
     ('2026_11_05_0020_retire_logged_username'),
-    ('2026_11_06_0021_boolean_column_types');
+    ('2026_11_06_0021_boolean_column_types'),
+    ('2026_11_26_0022_settings_superadmin_only');
 

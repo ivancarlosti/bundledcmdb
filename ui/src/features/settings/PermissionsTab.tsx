@@ -1,10 +1,13 @@
 /**
  * Permissions tab — the persisted role × capability and role × field matrix.
  *
- * Superadmin is shown but never editable: it is the recovery role. A save sends
- * the complete matrix, so clearing a checkbox is an explicit revocation rather
- * than "leave whatever was stored". The backend deletes rows that match the
- * built-in defaults, so future capabilities inherit their intended default.
+ * Superadmin is shown but never editable: it is the recovery role. Capabilities
+ * flagged `superadmin_only` (the whole `/settings` surface, the roster and the
+ * matrix itself) are disabled for every role, so the table shows the lock-down
+ * instead of pretending the grant could be saved. A save sends the complete
+ * matrix, so clearing a checkbox is an explicit revocation rather than "leave
+ * whatever was stored". The backend deletes rows that match the built-in
+ * defaults, so future capabilities inherit their intended default.
  */
 
 import { useEffect, useState } from 'react';
@@ -196,7 +199,7 @@ export function PermissionsTab({ labelledBy }: { labelledBy: string }) {
                           label=""
                           aria-label={`${t(capability.label_key)}: ${t(`role_${role}`)}`}
                           checked={matrix.capabilities[role]?.[capability.key] === true}
-                          disabled={role === 'superadmin'}
+                          disabled={role === 'superadmin' || capability.superadmin_only}
                           onChange={(event) => setCapability(role, capability.key, event.target.checked)}
                         />
                       </td>

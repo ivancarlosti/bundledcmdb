@@ -243,11 +243,8 @@ export const ROLE_PERMISSIONS: Record<'user' | 'manager' | 'admin' | 'superadmin
     'devices.restore': true,
     'devices.files.delete': true,
     'logs.view': true,
-    'settings.manage': true,
-    'settings.sources': true,
-    'settings.fields': true,
-    'settings.api_keys': true,
-    'settings.maintenance': true,
+    // `/settings` is superadmin-only (`settings.*` and `permissions.manage` are
+    // flagged `superadmin_only`); an admin deliberately has none of them.
   },
   superadmin: {
     ...VIEWER,

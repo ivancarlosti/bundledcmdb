@@ -1,10 +1,11 @@
 /**
- * `/app/settings` — the admin surface.
+ * `/app/settings` — the superadmin surface.
  *
  * One screen, tabs as a `?tab=` parameter (the same "URL is the state" rule the
- * grid follows, so a tab can be bookmarked and survives a reload). Which tabs
- * exist is decided by the session capabilities: `admin`/`superadmin` see the
- * settings, only `superadmin` sees the user roster.
+ * grid follows, so a tab can be bookmarked and survives a reload). The screen is
+ * reserved for `superadmin`: every `settings.*` and `permissions.manage`
+ * capability is `superadmin_only` (see `lib/permissions.php`), so the tab list
+ * still filters on the capability map but an admin/manager never gets a tab.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -95,7 +96,7 @@ export function SettingsPage() {
   const ids = useMemo(() => allowed.map((item) => item.id), [allowed]);
   const [tab, select] = useTab(ids);
 
-  if (allowed.length === 0) {
+  if (!session.capabilities.can_superadmin || allowed.length === 0) {
     return <Alert title={t('ui_err_forbidden')}>{t('set_title')}</Alert>;
   }
 

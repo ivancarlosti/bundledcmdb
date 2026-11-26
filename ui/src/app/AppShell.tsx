@@ -64,9 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {t('logs_title')}
               </Link>
             ) : null}
-            {Object.entries(session.capabilities.permissions).some(
-              ([key, allowed]) => allowed && key.startsWith('settings.'),
-            ) || session.capabilities.permissions['permissions.manage'] ? (
+            {session.capabilities.can_superadmin ? (
               <Link
                 to="/settings"
                 className={NAV_LINK}

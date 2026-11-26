@@ -1711,17 +1711,28 @@ try {
     $createdIds = array_values(array_diff($createdIds, [$id]));
 
     // --- settings: role gate ----------------------------------------------
-    as_role('manager', $companyA);
-    check_error('settings: manager cannot read → 403', fn () => panel_settings_show(), 'forbidden', 403);
-    check_error('settings: manager cannot write → 403', function (): void {
-        body(['values' => ['general.per_page' => 30]]);
-        panel_settings_update();
-    }, 'forbidden', 403);
-    check_error('settings: manager cannot list users → 403', fn () => panel_settings_users_index(), 'forbidden', 403);
+    // `/settings` is superadmin-only: every `settings.*` capability and
+    // `permissions.manage` is flagged `superadmin_only`, so an admin cannot even
+    // read the screen and no grant can reopen it.
+    foreach (['admin', 'manager'] as $deniedRole) {
+        as_role($deniedRole, $companyA);
+        check_error("settings: {$deniedRole} cannot read → 403", fn () => panel_settings_show(), 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot write → 403", function (): void {
+            body(['values' => ['general.per_page' => 30]]);
+            panel_settings_update();
+        }, 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot list sources → 403", fn () => panel_settings_sources_index(), 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot list fields → 403", fn () => panel_settings_fields_index(), 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot list API keys → 403", fn () => panel_settings_keys_index(), 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot read maintenance → 403", fn () => panel_settings_maintenance_show(), 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot read the columns → 403", fn () => panel_settings_columns_index(), 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot read the matrix → 403", fn () => panel_settings_permissions_index(), 'forbidden', 403);
+        check_error("settings: {$deniedRole} cannot list users → 403", fn () => panel_settings_users_index(), 'forbidden', 403);
+    }
 
-    as_role('admin', $companyA);
+    as_role('superadmin', '');
     $settingsPayload = panel_settings_show()['data'] ?? [];
-    check(($settingsPayload['groups'] ?? []) !== [], 'settings: admin reads the groups');
+    check(($settingsPayload['groups'] ?? []) !== [], 'settings: superadmin reads the groups');
     $settingsGroupIds = array_column($settingsPayload['groups'], 'id');
     check(
         $settingsGroupIds === ['general', 'assets', 'logs', 'api', 'storage', 's3'],
@@ -1884,7 +1895,7 @@ try {
     }
 
     // --- settings: grid columns -------------------------------------------
-    as_role('admin', $companyA);
+    as_role('superadmin', '');
     $layoutBefore = (string) settings_get(GRID_LAYOUT_SETTING, '');
     $columnsPayload = panel_settings_columns_index()['data'];
     $columnIds = array_column($columnsPayload['columns'], 'id');
@@ -2050,6 +2061,53 @@ try {
         $superMatrix !== [] && !in_array(false, $superMatrix, true),
         'permissions: superadmin cannot be revoked'
     );
+
+    // `/settings` (and the matrix itself) is locked to superadmin: the catalogue
+    // advertises the flag, a save cannot delegate it and a stored row is inert.
+    $settingsCaps = array_values(array_filter(
+        $permissions['capabilities'],
+        static fn (array $cap): bool => str_starts_with((string) $cap['key'], 'settings.')
+            || $cap['key'] === 'permissions.manage'
+    ));
+    $devicesView = array_values(array_filter(
+        $permissions['capabilities'],
+        static fn (array $cap): bool => $cap['key'] === 'devices.view'
+    ))[0] ?? [];
+    check($settingsCaps !== [], 'permissions: the settings capabilities are listed');
+    check(
+        !in_array(false, array_column($settingsCaps, 'superadmin_only'), true),
+        'permissions: every settings capability is superadmin-only'
+    );
+    check(
+        ($devicesView['superadmin_only'] ?? true) === false,
+        'permissions: an ordinary capability is delegable'
+    );
+
+    body(['capabilities' => ['admin' => ['settings.manage' => true]]]);
+    $locked = panel_settings_permissions_update();
+    check(
+        ($locked['data']['matrix']['capabilities']['admin']['settings.manage'] ?? true) === false,
+        'permissions: the matrix refuses to grant settings.manage to an admin'
+    );
+    check(
+        !permission_capability_allowed('admin', 'settings.manage', $pdo),
+        'permissions: the refused grant was not stored'
+    );
+
+    // A row written before the lock-down (or by hand) must not reopen the screen:
+    // `permission_capability_allowed()` checks the definition before the table.
+    $pdo->prepare(
+        'INSERT INTO role_capabilities (role, capability, is_allowed) VALUES (?, ?, 1)
+         ON DUPLICATE KEY UPDATE is_allowed = 1'
+    )->execute(['admin', 'settings.manage']);
+    permission_capability_overrides($pdo, true);
+    check(
+        !permission_capability_allowed('admin', 'settings.manage', $pdo),
+        'permissions: a stored grant cannot reopen /settings'
+    );
+    $pdo->prepare('DELETE FROM role_capabilities WHERE role = ? AND capability = ?')
+        ->execute(['admin', 'settings.manage']);
+    permission_capability_overrides($pdo, true);
 
     body(['capabilities' => ['manager' => ['devices.delete' => true]]]);
     $granted = panel_settings_permissions_update();
@@ -2237,7 +2295,7 @@ try {
     }
 
     // --- settings: maintenance --------------------------------------------
-    as_role('admin', $companyA);
+    as_role('superadmin', '');
     $maintenance = panel_settings_maintenance_show()['data'] ?? [];
     check(array_key_exists('ready', $maintenance['migrations'] ?? []), 'maintenance: migration status is included');
     check(($maintenance['diagnostics']['php_version'] ?? '') === PHP_VERSION, 'maintenance: diagnostics include PHP');

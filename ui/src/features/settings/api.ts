@@ -169,6 +169,8 @@ export type PermissionCapability = {
   group: 'devices' | 'logs' | 'settings';
   label_key: string;
   default_roles: string[];
+  /** Locked to superadmin: the matrix shows it, but no other role can hold it. */
+  superadmin_only: boolean;
 };
 
 export type PermissionField = {

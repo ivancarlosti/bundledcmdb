@@ -103,10 +103,10 @@ the file); change them before exposing the stack. The panel is published on
   purge by date from the screen.
 * **Per-user preferences** — locale, theme and page size live in
   `user_preferences`, so they follow the user across browsers.
-* **Settings tabs** (`/app/settings`) — general, storage (secret encrypted with
-  `APP_ENCRYPTION_KEY`), sources, API keys, custom fields, log retention and
-  schema maintenance. Values are stored in the database with `DB → ENV → default`
-  precedence; see [docs/settings.md](docs/settings.md).
+* **Settings tabs** (`/app/settings`, superadmin only) — general, storage (secret
+  encrypted with `APP_ENCRYPTION_KEY`), sources, API keys, custom fields, log
+  retention and schema maintenance. Values are stored in the database with
+  `DB → ENV → default` precedence; see [docs/settings.md](docs/settings.md).
 * **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert, bulk
   and delete-by-`uuid`/`sn`, per-key company/source scopes, IP allowlists, token
   rotation. See [docs/api.md](docs/api.md).

@@ -26,7 +26,13 @@ function permission_roles(): array
  * `label_key` is resolved through `public/lang/*.php`; the key name is also the
  * stable API identifier used by the matrix UI.
  *
- * @return array<string, array{group: string, label_key: string, default_roles: list<string>}>
+ * `superadmin_only` marks a capability the matrix may show but never delegate:
+ * `/settings` (general, storage, sources, fields, API keys, columns,
+ * maintenance), the user roster and the matrix itself belong to the recovery
+ * role. A stored override is ignored for those keys, so an older grant (or a
+ * manual INSERT) cannot reopen the screen.
+ *
+ * @return array<string, array{group: string, label_key: string, default_roles: list<string>, superadmin_only?: bool}>
  */
 function permission_capability_defs(): array
 {
@@ -45,13 +51,15 @@ function permission_capability_defs(): array
         'devices.files.delete' => ['group' => 'devices',  'label_key' => 'perm_cap_devices_files_delete', 'default_roles' => ['admin', 'superadmin']],
         'logs.view'            => ['group' => 'logs',      'label_key' => 'perm_cap_logs_view',            'default_roles' => ['admin', 'superadmin']],
         'logs.purge'           => ['group' => 'logs',      'label_key' => 'perm_cap_logs_purge',           'default_roles' => ['superadmin']],
-        'settings.manage'      => ['group' => 'settings',  'label_key' => 'perm_cap_settings_manage',      'default_roles' => ['admin', 'superadmin']],
-        'settings.sources'     => ['group' => 'settings',  'label_key' => 'perm_cap_settings_sources',     'default_roles' => ['admin', 'superadmin']],
-        'settings.fields'      => ['group' => 'settings',  'label_key' => 'perm_cap_settings_fields',      'default_roles' => ['admin', 'superadmin']],
-        'settings.api_keys'    => ['group' => 'settings',  'label_key' => 'perm_cap_settings_api_keys',    'default_roles' => ['admin', 'superadmin']],
-        'settings.maintenance' => ['group' => 'settings',  'label_key' => 'perm_cap_settings_maintenance', 'default_roles' => ['admin', 'superadmin']],
-        'settings.users'       => ['group' => 'settings',  'label_key' => 'perm_cap_settings_users',       'default_roles' => ['superadmin']],
-        'permissions.manage'   => ['group' => 'settings',  'label_key' => 'perm_cap_permissions_manage',   'default_roles' => ['superadmin']],
+        // `/settings` is superadmin-only; migration `0022` clears the rows an
+        // older matrix wrote for the roles below.
+        'settings.manage'      => ['group' => 'settings',  'label_key' => 'perm_cap_settings_manage',      'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'settings.sources'     => ['group' => 'settings',  'label_key' => 'perm_cap_settings_sources',     'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'settings.fields'      => ['group' => 'settings',  'label_key' => 'perm_cap_settings_fields',      'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'settings.api_keys'    => ['group' => 'settings',  'label_key' => 'perm_cap_settings_api_keys',    'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'settings.maintenance' => ['group' => 'settings',  'label_key' => 'perm_cap_settings_maintenance', 'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'settings.users'       => ['group' => 'settings',  'label_key' => 'perm_cap_settings_users',       'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'permissions.manage'   => ['group' => 'settings',  'label_key' => 'perm_cap_permissions_manage',   'default_roles' => ['superadmin'], 'superadmin_only' => true],
     ];
 }
 
@@ -97,7 +105,13 @@ function permission_capability_allowed(string $role, string $capability, ?PDO $p
     if ($role === 'superadmin') {
         return true;
     }
-    if (!isset(permission_capability_defs()[$capability])) {
+    $def = permission_capability_defs()[$capability] ?? null;
+    if ($def === null) {
+        return false;
+    }
+    // Checked before the override table: a lock-down is not something the data
+    // can undo, so an old grant cannot keep an admin in `/settings`.
+    if (!empty($def['superadmin_only'])) {
         return false;
     }
 
@@ -273,10 +287,11 @@ function permission_matrix_payload(PDO $pdo): array
     $matrixCaps = [];
     foreach (permission_capability_defs() as $key => $def) {
         $capabilities[] = [
-            'key'           => $key,
-            'group'         => $def['group'],
-            'label_key'     => $def['label_key'],
-            'default_roles' => $def['default_roles'],
+            'key'             => $key,
+            'group'           => $def['group'],
+            'label_key'       => $def['label_key'],
+            'default_roles'   => $def['default_roles'],
+            'superadmin_only' => !empty($def['superadmin_only']),
         ];
         foreach (permission_roles() as $role) {
             $matrixCaps[$role][$key] = permission_capability_allowed($role, $key, $pdo);
@@ -328,8 +343,14 @@ function permission_matrix_normalize(PDO $pdo, array $payload): array
         }
         foreach ($values as $capability => $value) {
             $capability = (string) $capability;
-            if (!isset(permission_capability_defs()[$capability])) {
+            $def = permission_capability_defs()[$capability] ?? null;
+            if ($def === null) {
                 $errors['capabilities'] = 'unknown_capability';
+                continue;
+            }
+            // Locked to superadmin: dropped instead of failing the save, because
+            // the SPA sends every row of the complete matrix back.
+            if (!empty($def['superadmin_only'])) {
                 continue;
             }
             if (!is_bool($value)) {

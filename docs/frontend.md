@@ -115,9 +115,9 @@ the server-side guard.
 | `POST /panel-api/v1/devices/{id}/files` | multipart upload through `lib/storage.php`, **or** (JSON body) the registration of a direct upload (`key` must live under `assets/<id>/` and exist) |
 | `GET /panel-api/v1/devices/{id}/files/{fileId}/download` | `302` to a presigned S3 URL, or the file streamed for `storage.driver = local` |
 | `DELETE /panel-api/v1/devices/{id}/files/{fileId}` | remove object + row (admin+) |
-| `GET /panel-api/v1/settings` | every general/asset/API/storage setting, grouped, with locales/timezones and a `source` (`db`/`env`/`default`) per key |
+| `GET /panel-api/v1/settings` | superadmin only: every general/asset/API/storage setting, grouped, with locales/timezones and a `source` (`db`/`env`/`default`) per key |
 | `PATCH /panel-api/v1/settings` | `{"values": {"general.per_page": 50}}`; `422 validation_failed` carries a code per key |
-| `GET/POST /panel-api/v1/settings/sources` | source list (admin+) / create (`slug`, `label`) |
+| `GET/POST /panel-api/v1/settings/sources` | source list / create (`slug`, `label`) |
 | `PATCH/DELETE /panel-api/v1/settings/sources/{slug}` | rename / delete (`409 system_source`, `409 in_use` when assets still reference it) |
 | `GET/POST /panel-api/v1/settings/fields` | custom-field definitions + the type catalogue / create |
 | `POST /panel-api/v1/settings/fields/reorder` | `{"ids": [3, 1, 2]}` → new display order |
@@ -179,10 +179,13 @@ means "unchanged", and a deliberate wipe is `{"clear": ["s3.secret_key"]}`.
 
 `/app/settings` is one screen with tabs, and the tab lives in the URL
 (`?tab=general|storage|sources|api|fields|maintenance|users`) so it can be
-bookmarked and survives a reload. The link in the header and the `users` tab are
-gated by the capabilities `GET /session` publishes (`can_admin` opens the screen,
-`can_superadmin` adds the roster) — and the server enforces the same matrix, so a
-hidden tab is never a security boundary on its own.
+bookmarked and survives a reload. The screen is **superadmin-only**: the header
+link and the route both require `can_superadmin`, the tab strip is not rendered
+for anyone else, and a bookmarked `/app/settings` shows the forbidden state. The
+server enforces the same rule — `settings.*` and `permissions.manage` are
+`superadmin_only` capabilities, so an admin is refused even with a stored grant
+(see [settings.md](settings.md)). A hidden tab is never a security boundary on
+its own.
 
 The five behaviours worth knowing when you touch this screen:
 
