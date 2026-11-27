@@ -342,6 +342,48 @@ CREATE TABLE IF NOT EXISTS collector_tokens (
 INSERT IGNORE INTO asset_sources (slug, label, color, is_system, is_default) VALUES
     ('collector', 'Collector', '#b7791f', 1, 0);
 
+-- 0025 adds the Assets and Systems catalogues (tabs after Devices). `assets`
+-- already means *device*, so both live here, told apart by `kind`. An item is
+-- assigned to any number of people through `inventory_item_users`; the
+-- `common_usage` flag marks an item the whole company shares, and the write path
+-- then keeps the join table empty for that row.
+CREATE TABLE IF NOT EXISTS inventory_items (
+    id INT NOT NULL AUTO_INCREMENT,
+    kind VARCHAR(16) NOT NULL,
+    name VARCHAR(191) NOT NULL,
+    brand VARCHAR(191) NULL,
+    category VARCHAR(64) NULL,
+    model VARCHAR(191) NULL,
+    version VARCHAR(64) NULL,
+    serial VARCHAR(191) NULL,
+    location VARCHAR(191) NULL,
+    status VARCHAR(64) NOT NULL DEFAULT 'In Use',
+    purchase_date DATE NULL,
+    warranty_end DATE NULL,
+    license_expiry DATE NULL,
+    common_usage TINYINT(1) NOT NULL DEFAULT 0,
+    notes TEXT NULL,
+    company VARCHAR(191) NULL,
+    created_at DATETIME NOT NULL,
+    created_by VARCHAR(191) NULL,
+    updated_at DATETIME NOT NULL,
+    updated_by VARCHAR(191) NULL,
+    PRIMARY KEY (id),
+    KEY idx_inventory_kind_company (kind, company),
+    KEY idx_inventory_kind_status (kind, status),
+    KEY idx_inventory_kind_name (kind, name),
+    KEY idx_inventory_kind_updated (kind, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS inventory_item_users (
+    item_id INT NOT NULL,
+    email VARCHAR(191) NOT NULL,
+    assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_by VARCHAR(191) NULL,
+    PRIMARY KEY (item_id, email),
+    KEY idx_inventory_item_users_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -366,5 +408,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_06_0021_boolean_column_types'),
     ('2026_11_26_0022_settings_superadmin_only'),
     ('2026_11_26_0023_companies'),
-    ('2026_11_26_0024_collector_tokens');
+    ('2026_11_26_0024_collector_tokens'),
+    ('2026_11_26_0025_inventory_items');
 

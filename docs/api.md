@@ -11,6 +11,13 @@ that decides who may sign in to the panel.
 * Content type: `application/json` for requests and responses
 * Auth: `Authorization: Bearer bcmdb_<prefix>_<secret>` (alias `X-API-Key`)
 
+> **Assets and Systems are panel-only.** The `/assets` and `/systems` tabs
+> (`lib/inventory.php`, multi-user assignment and the common-usage flag) are served
+> by `/panel-api/v1` and are deliberately **not** part of this Bearer API for now:
+> nothing in the source systems above writes them, and adding a second write path
+> would mean maintaining the assignment rules twice. See
+> [inventory.md](inventory.md).
+
 ## Keys
 
 Create keys in **Settings → API → Create API key**. Each key can be limited to

@@ -23,6 +23,7 @@
 | `ui/src/app/*` | `SessionGate` (boot/failure/login/app), `AppShell`, router |
 | `ui/src/features/grid/*` | Grid state machine, URL binding, TanStack Table renderer |
 | `ui/src/features/devices/*` | Device list/detail screens, column model built from `/meta` |
+| `ui/src/features/inventory/*` | `/assets` and `/systems` — one catalogue keyed by `kind`, multi-user assignment and the common-usage flag (see [inventory.md](inventory.md)) |
 | `ui/src/features/settings/*` | `/app/settings` screens (one tab per settings group, sources, custom fields, API keys, users, maintenance) |
 | `ui/src/features/collect/*` | `/app/collect` — the experimental "Collect data" download (see [collect.md](collect.md)) |
 
@@ -138,6 +139,11 @@ the server-side guard.
 | `GET /panel-api/v1/logs` | audit rows (admin+), filters `q`/`action`/`entity`/`actor`/`company`/`from`/`to`/`page`/`per_page`; `meta` carries the filter options, retention and last purge |
 | `POST /panel-api/v1/logs/purge` | superadmin: `{"before": "YYYY-MM-DD", "dry_run": true}` deletes (or counts) everything older than that day |
 | `GET /panel-api/v1/users` | directory for the device form's company-filtered e-mail dropdown (manager+; a company-bound caller always sees its own company) |
+| `GET /panel-api/v1/assets` · `/systems` | inventory list (`assets.view`/`systems.view`): filters `q`/`status`/`category`/`common_usage`/`company`, server-side sort and paging; rows carry `users[]` |
+| `POST /panel-api/v1/assets` · `/systems` | create (`.create`), `201` + the row; `users` sets the assignment list, `common_usage: true` clears it |
+| `GET /panel-api/v1/assets/{id}` · `/systems/{id}` | one item + its assignments (`404` outside the caller's company) |
+| `PATCH /panel-api/v1/assets/{id}` · `/systems/{id}` | partial update (`.update`); `users` replaces the assignment set, `expected_updated_at` → `409 stale_record` |
+| `DELETE /panel-api/v1/assets/{id}` · `/systems/{id}` | hard delete (`.delete`, admin+) including the assignment rows |
 | `GET /panel-api/v1/collect` | experimental collector state: `enabled`, `ttl_minutes`, `endpoint`, `can_collect` and the caller's active token (metadata only) |
 | `POST /panel-api/v1/collect/file` | issue a download (`{format: "bat"\|"ps1"}`); `201` with the script text, revokes the caller's previous file |
 | `DELETE /panel-api/v1/collect/file` | revoke the active download (`{revoked: n}`) |

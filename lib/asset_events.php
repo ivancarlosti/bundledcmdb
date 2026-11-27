@@ -38,6 +38,11 @@ const ASSET_EVENT_ACTIONS = [
 /** Entity types the Logs screen can filter on (a VARCHAR(32) in the table). */
 const ASSET_EVENT_ENTITIES = [
     'device',
+    // The Assets and Systems tabs (lib/inventory.php). `asset` is the physical
+    // non-IT inventory, `system` the software/service catalogue; device rows stay
+    // `device` so the two histories never mix.
+    'asset',
+    'system',
     'setting',
     'source',
     'field',

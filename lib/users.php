@@ -373,6 +373,14 @@ function user_delete(PDO $pdo, string $email, string $actor): array
     user_guard_last_superadmin($pdo, $existing);
     $pdo->prepare('DELETE FROM users WHERE email = ?')->execute([$existing['email']]);
 
+    // An inventory item keeps its assignment rows denormalised (e-mail strings),
+    // so a removed account would otherwise linger on the Assets/Systems screens
+    // forever. Guarded: a database that has not run migration 0025 has no table.
+    if (db_table_exists($pdo, 'inventory_item_users')) {
+        $pdo->prepare('DELETE FROM inventory_item_users WHERE LOWER(email) = ?')
+            ->execute([mb_strtolower((string) $existing['email'])]);
+    }
+
     user_audit($pdo, 'delete', $actor, $existing['email'], [], $existing['company'] === '' ? null : $existing['company']);
 
     return ['email' => $existing['email'], 'role' => $existing['role'], 'deleted' => true];

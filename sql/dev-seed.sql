@@ -39,6 +39,36 @@ INSERT INTO assets (UUID, SN, OS, OSVersion, Hostname, Mobile, Manufacturer, Las
 SET @acme_laptop_1 = (SELECT MIN(Id) FROM assets WHERE SN = 'SN-0001');
 SET @acme_desktop_2 = (SELECT MIN(Id) FROM assets WHERE SN = 'SN-0002');
 
+-- Assets and Systems (migration 0025, lib/inventory.php). Both kinds live in
+-- `inventory_items`, told apart by `kind`. The TV and the identity provider are
+-- `common_usage` rows on purpose: they demonstrate that a shared item has no
+-- assignment rows, while the monitor and Acrobat Pro show the multi-user list.
+INSERT INTO inventory_items (kind, name, brand, category, model, version, serial, location, status, purchase_date, warranty_end, license_expiry, common_usage, notes, company, created_at, created_by, updated_at, updated_by) VALUES
+    ('asset', 'Meeting room TV', 'Samsung', 'Display', 'QE55', NULL, 'INV-TV-001', 'Room 2', 'In Use', '2025-04-01', '2027-04-01', NULL, 1, 'Wall mounted above the table', 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com'),
+    ('asset', 'Second monitor', 'Dell', 'Monitor', 'P2419H', NULL, 'INV-MON-014', 'Desk 14', 'In Use', '2024-02-10', '2027-02-10', NULL, 0, NULL, 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com'),
+    ('asset', 'Meeting room desk', NULL, 'Furniture', NULL, NULL, NULL, 'Room 2', 'In Stock', '2023-09-01', NULL, NULL, 1, 'Shared by the whole floor', 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com'),
+    ('system', 'Adobe Acrobat Pro', 'Adobe', 'Software', NULL, '2024', NULL, NULL, 'In Use', '2026-01-05', NULL, '2027-01-04', 0, 'Two seats', 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com'),
+    ('system', 'Google Workspace', 'Google', 'Identity provider', NULL, NULL, NULL, NULL, 'In Use', NULL, NULL, NULL, 1, 'SSO for every employee', 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com'),
+    ('system', 'Visual Studio Code', 'Microsoft', 'Developer tool', NULL, '1.95', NULL, NULL, 'In Use', NULL, NULL, NULL, 0, NULL, 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com');
+
+-- Assignment rows. The two `common_usage` items above are deliberately absent:
+-- `inventory_assignments_sync()` would have deleted them.
+SET @inv_monitor = (SELECT MIN(id) FROM inventory_items WHERE kind = 'asset' AND name = 'Second monitor');
+SET @inv_acrobat = (SELECT MIN(id) FROM inventory_items WHERE kind = 'system' AND name = 'Adobe Acrobat Pro');
+SET @inv_vscode = (SELECT MIN(id) FROM inventory_items WHERE kind = 'system' AND name = 'Visual Studio Code');
+SET @inv_tv = (SELECT MIN(id) FROM inventory_items WHERE kind = 'asset' AND name = 'Meeting room TV');
+
+INSERT INTO inventory_item_users (item_id, email, assigned_by) VALUES
+    (@inv_monitor, 'user@example.com', 'admin@example.com'),
+    (@inv_monitor, 'manager@example.com', 'admin@example.com'),
+    (@inv_acrobat, 'user@example.com', 'admin@example.com'),
+    (@inv_vscode, 'user@example.com', 'admin@example.com');
+
+-- One audit row per tab, so the Logs screen can filter on the two new entities.
+INSERT INTO asset_events (asset_id, action, actor, changes, note, created_at, company, entity, entity_id, entity_label) VALUES
+    (NULL, 'create', 'admin@example.com', '{"common_usage": [null, "1"]}', 'Shared with the company', '2026-11-20 09:00:00', 'Acme', 'asset', CAST(@inv_tv AS CHAR), 'Meeting room TV'),
+    (NULL, 'create', 'admin@example.com', '{"version": [null, "2024"]}', NULL, '2026-11-20 09:05:00', 'Acme', 'system', CAST(@inv_acrobat AS CHAR), 'Adobe Acrobat Pro');
+
 INSERT INTO asset_events (asset_id, action, actor, changes, note, created_at, company, entity, entity_id, entity_label) VALUES
     (@acme_laptop_1, 'create', 'admin@example.com', NULL, 'Imported from the inventory agent', '2026-10-20 09:12:00', 'Acme', 'device', CAST(@acme_laptop_1 AS CHAR), 'SN-0001'),
     (@acme_desktop_2, 'update', 'manager@example.com', '{"Status": ["In Stock", "In Use"], "UserEmail": ["manager@example.com", "user@example.com"]}', NULL, '2026-10-24 14:03:00', 'Acme', 'device', CAST(@acme_desktop_2 AS CHAR), 'SN-0002'),

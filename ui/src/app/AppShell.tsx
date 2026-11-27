@@ -55,6 +55,24 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               {t('ui_devices')}
             </Link>
+            {session.capabilities.permissions['assets.view'] === true ? (
+              <Link
+                to="/assets"
+                className={NAV_LINK}
+                activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
+              >
+                {t('ui_assets')}
+              </Link>
+            ) : null}
+            {session.capabilities.permissions['systems.view'] === true ? (
+              <Link
+                to="/systems"
+                className={NAV_LINK}
+                activeProps={{ className: `${NAV_LINK} bg-[var(--color-surface-3)]` }}
+              >
+                {t('ui_systems')}
+              </Link>
+            ) : null}
             {session.features.collect && session.capabilities.permissions['devices.collect'] ? (
               <Link
                 to="/collect"

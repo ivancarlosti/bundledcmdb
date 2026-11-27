@@ -32,6 +32,7 @@ require_once __DIR__ . '/../lib/panel/session.php';
 require_once __DIR__ . '/../lib/panel/meta.php';
 require_once __DIR__ . '/../lib/panel/devices.php';
 require_once __DIR__ . '/../lib/panel/device_writes.php';
+require_once __DIR__ . '/../lib/panel/inventory.php';
 require_once __DIR__ . '/../lib/panel/settings.php';
 require_once __DIR__ . '/../lib/panel/logs.php';
 require_once __DIR__ . '/../lib/panel/users.php';
@@ -111,6 +112,15 @@ foreach ([
     ['POST',  '/collect/file',                      'panel_collect_store'],
     ['DELETE', '/collect/file',                     'panel_collect_revoke'],
     ['GET',   '/users',                             'panel_users_index'],
+    // Assets and Systems: two kinds of one resource (lib/panel/inventory.php).
+    ['GET',   '/assets',                            'panel_assets_index'],
+    ['POST',  '/assets',                            'panel_assets_create'],
+    ['PATCH', '/assets/12',                         'panel_assets_update'],
+    ['DELETE', '/assets/12',                        'panel_assets_delete'],
+    ['GET',   '/systems',                           'panel_systems_index'],
+    ['POST',  '/systems',                           'panel_systems_create'],
+    ['PATCH', '/systems/12',                        'panel_systems_update'],
+    ['DELETE', '/systems/12',                       'panel_systems_delete'],
     // Pre-existing literals, kept here so the ordering rule has one home.
     ['GET',   '/devices/export',                    'panel_devices_export'],
     ['POST',  '/devices/bulk',                      'panel_devices_bulk'],
@@ -749,6 +759,24 @@ function as_role(string $role, string $company, string $email = 'tester@example.
     $_SESSION[SESSION_ROLE] = $role;
 }
 
+/**
+ * Like `as_role()`, but always rewrites the roster row's company and role.
+ *
+ * `as_role()` leaves a pre-existing row alone (it may belong to another test); the
+ * Assets/Systems block needs a known company on every run, including a database
+ * where an earlier aborted run left the row behind with another tenant.
+ */
+function as_inventory_role(string $role, string $company, string $email): void
+{
+    as_role($role, $company, $email);
+    $pdo = db_try();
+    if ($pdo !== null && db_table_exists($pdo, 'users')) {
+        $pdo->prepare('UPDATE users SET company = ?, role = ? WHERE email = ?')
+            ->execute([$company, session_role_normalize($role), $email]);
+    }
+    $GLOBALS['test_roster_emails'][] = $email;
+}
+
 $csrf = bin2hex(random_bytes(16));
 $_SESSION['csrf_token'] = $csrf;
 $_SERVER['HTTP_X_CSRF_TOKEN'] = $csrf;
@@ -784,6 +812,9 @@ $keyId = 0;
 $restoreSetting = null;
 // Registry rows created by the tenant tests (removed in `finally`).
 $testCompanies = [];
+// Inventory rows created by the Assets/Systems tests (removed in `finally`, in
+// case an assertion throws before the test deletes them itself).
+$inventoryIds = ['asset' => [], 'system' => []];
 
 try {
     // --- /meta role matrix -------------------------------------------------
@@ -2745,6 +2776,105 @@ try {
 
 
 
+    // --- assets and systems (lib/panel/inventory.php) ----------------------
+    // One catalogue, two kinds: the tab is a `kind` column, so the two lists must
+    // never see each other's rows, and `common_usage` must keep the assignment
+    // table empty for a shared item.
+    as_inventory_role('user', $writeCompany, 'inv-assignee@example.com');
+    as_inventory_role('manager', $writeCompany, 'inv-manager@example.com');
+    unset($_GET);
+    body([
+        'name'          => 'INV TV',
+        'brand'         => 'Samsung',
+        'category'      => 'Display',
+        'serial'        => 'INV-' . $sn,
+        'location'      => 'Room 1',
+        'status'        => $statusA,
+        'purchase_date' => '2025-04-01',
+        'users'         => ['inv-assignee@example.com'],
+    ]);
+    $asset = panel_assets_create();
+    $assetId = (int) $asset['data']['id'];
+    $inventoryIds['asset'][] = $assetId;
+    check(($asset['status'] ?? 0) === 201, 'inventory: asset created');
+    check($asset['data']['kind'] === 'asset', 'inventory: kind is asset');
+    check(
+        $asset['data']['users'] === ['inv-assignee@example.com'],
+        'inventory: assignment stored',
+        json_encode($asset['data']['users'])
+    );
+    check($asset['data']['company'] === $writeCompany, 'inventory: company scoped to the caller');
+
+    body(['name' => 'x', 'version' => '1.0']);
+    check_error('inventory: system field on an asset → 422', fn () => panel_assets_create(), 'validation_failed', 422, [
+        'version' => 'not_applicable',
+    ]);
+
+    body(['name' => 'x', 'common_usage' => true, 'users' => ['inv-assignee@example.com']]);
+    check_error('inventory: common usage with users → 422', fn () => panel_assets_create(), 'validation_failed', 422, [
+        'users' => 'common_usage_conflict',
+    ]);
+
+    body(['name' => 'x', 'users' => ['stranger@example.com']]);
+    check_error('inventory: assignment outside the roster → 422', fn () => panel_assets_create(), 'validation_failed', 422, [
+        'users' => 'unknown_user',
+    ]);
+
+    body(['common_usage' => true]);
+    $shared = panel_assets_update(['id' => (string) $assetId]);
+    check($shared['data']['common_usage'] === true, 'inventory: common usage set');
+    check($shared['data']['users'] === [], 'inventory: common usage clears assignments');
+    check(inventory_user_emails($pdo, $assetId) === [], 'inventory: join rows deleted');
+
+    unset($_GET);
+    body(['name' => 'INV Acrobat', 'version' => '2024', 'license_expiry' => '2027-01-31']);
+    $system = panel_systems_create();
+    $systemId = (int) $system['data']['id'];
+    $inventoryIds['system'][] = $systemId;
+    check(($system['status'] ?? 0) === 201, 'inventory: system created');
+    $assetRows = array_map(static fn (array $row): int => (int) $row['id'], panel_assets_index([])['data']['rows']);
+    $systemRows = array_map(static fn (array $row): int => (int) $row['id'], panel_systems_index([])['data']['rows']);
+    check(in_array($assetId, $assetRows, true), 'inventory: asset list has the asset');
+    check(in_array($systemId, $systemRows, true), 'inventory: system list has the system');
+    check(!in_array($systemId, $assetRows, true), 'inventory: kinds never mix');
+
+    $_GET = ['sort' => 'not_a_column'];
+    check_error('inventory: unknown sort → 400', fn () => panel_assets_index([]), 'invalid_sort', 400, [
+        'sort' => 'unknown_column',
+    ]);
+    $_GET = ['status' => 'Exploded'];
+    check_error('inventory: unknown status filter → 400', fn () => panel_assets_index([]), 'invalid_filter', 400, [
+        'status' => 'invalid_option',
+    ]);
+    unset($_GET);
+
+    // Optimistic lock: the timestamp the form rendered must still match.
+    body(['name' => 'Renamed', 'expected_updated_at' => '2000-01-01T00:00:00Z']);
+    check_error('inventory: stale write → 409', fn () => panel_assets_update(['id' => (string) $assetId]), 'stale_record', 409, [
+        'expected_updated_at' => 'stale',
+    ]);
+
+    // Tenant isolation: another company cannot read or write the row.
+    as_inventory_role('manager', $writeCompany . '-B', 'inv-other@example.com');
+    unset($_GET);
+    check_error('inventory: other company cannot read → 404', fn () => panel_assets_show(['id' => (string) $assetId]), 'not_found', 404);
+    check(panel_assets_index([])['data']['total'] === 0, 'inventory: list scoped to the caller company');
+
+    // Permissions: reading is every role, writing is manager+, deleting admin+.
+    as_inventory_role('user', $writeCompany, 'inv-assignee@example.com');
+    body(['name' => 'Nope']);
+    check_error('inventory: user cannot create → 403', fn () => panel_assets_create(), 'forbidden', 403);
+    check(!permission_capability_allowed('manager', 'assets.delete'), 'inventory: managers cannot delete');
+    check(permission_capability_allowed('user', 'systems.view'), 'inventory: users may view systems');
+
+    // Delete through the route; the rest is removed in `finally`.
+    as_inventory_role('admin', $writeCompany, 'inv-admin@example.com');
+    body([]);
+    check(panel_assets_delete(['id' => (string) $assetId])['data']['deleted'] === true, 'inventory: delete removes the item');
+    check(inventory_get($pdo, $assetId, 'asset', $writeCompany) === null, 'inventory: deleted row is gone');
+    $inventoryIds['asset'] = array_values(array_diff($inventoryIds['asset'], [$assetId]));
+
+    as_role('superadmin', '');
 } catch (Throwable $e) {
     check(false, 'unexpected exception', get_class($e) . ': ' . $e->getMessage());
 } finally {
@@ -2784,6 +2914,21 @@ try {
             api_key_delete($pdo, $keyId);
         } catch (Throwable $e) {
             fwrite(STDERR, "api key cleanup failed (#{$keyId}): " . $e->getMessage() . "\n");
+        }
+    }
+    foreach ($inventoryIds as $kindIds) {
+        foreach ($kindIds as $inventoryId) {
+            foreach (['inventory_item_users', 'inventory_items'] as $inventoryTable) {
+                try {
+                    if (!db_table_exists($pdo, $inventoryTable)) {
+                        continue;
+                    }
+                    $column = $inventoryTable === 'inventory_items' ? 'id' : 'item_id';
+                    $pdo->prepare("DELETE FROM {$inventoryTable} WHERE {$column} = ?")->execute([(int) $inventoryId]);
+                } catch (Throwable $e) {
+                    fwrite(STDERR, "inventory cleanup failed for #{$inventoryId}: " . $e->getMessage() . "\n");
+                }
+            }
         }
     }
     foreach ($createdIds as $createdId) {

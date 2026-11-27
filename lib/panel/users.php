@@ -59,7 +59,9 @@ function panel_users_rows(PDO $pdo, string $company): array
  */
 function panel_users_index(array $params = []): array
 {
-    $user = session_require_capability('devices.update');
+    // The roster feeds every e-mail picker in the panel: the device form and the
+    // Assets/Systems assignment picker. Any of those write capabilities opens it.
+    $user = session_require_any_capability(['devices.update', 'assets.update', 'systems.update']);
     $pdo = db();
 
     $bound = trim((string) ($user['company'] ?? ''));

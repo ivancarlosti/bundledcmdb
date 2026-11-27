@@ -35,6 +35,9 @@ const ENTITY_LABEL_KEYS: Record<string, string> = {
   logs: 'logs_entity_logs',
   permission: 'logs_entity_permission',
   system: 'logs_entity_system',
+  // Assets and Systems tabs (lib/inventory.php): `asset` is the physical
+  // inventory, `system` the software/service catalogue.
+  asset: 'logs_entity_asset',
 };
 
 type FilterState = {

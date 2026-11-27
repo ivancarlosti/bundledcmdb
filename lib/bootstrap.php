@@ -27,6 +27,7 @@ require_once __DIR__ . '/asset_events.php';
 require_once __DIR__ . '/logs.php';
 require_once __DIR__ . '/disks.php';
 require_once __DIR__ . '/assets.php';
+require_once __DIR__ . '/inventory.php';
 require_once __DIR__ . '/grid_layout.php';
 require_once __DIR__ . '/permissions.php';
 require_once __DIR__ . '/users.php';

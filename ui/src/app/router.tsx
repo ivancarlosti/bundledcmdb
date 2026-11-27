@@ -6,6 +6,14 @@ import { CollectPage } from '@/features/collect/CollectPage';
 import { DeviceDetailPage } from '@/features/devices/DeviceDetailPage';
 import { DeviceFormPage } from '@/features/devices/DeviceFormPage';
 import { DeviceGridPage } from '@/features/devices/DeviceGridPage';
+import {
+  AssetDetailPage,
+  AssetFormPage,
+  AssetsPage,
+  SystemDetailPage,
+  SystemFormPage,
+  SystemsPage,
+} from '@/features/inventory/InventoryPages';
 import { LogsPage } from '@/features/logs/LogsPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 
@@ -94,6 +102,49 @@ const routeTree = rootRoute.addChildren([
   newDeviceRoute,
   editDeviceRoute,
   deviceRoute,
+  // Assets and Systems sit right after Devices in the navigation. Literal
+  // segments (`new`) are registered before `$itemId`, and both before the bare
+  // id route, exactly like the device tree above.
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/assets',
+    component: AssetsPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/assets/new',
+    component: AssetFormPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/assets/$itemId/edit',
+    component: AssetFormPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/assets/$itemId',
+    component: AssetDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/systems',
+    component: SystemsPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/systems/new',
+    component: SystemFormPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/systems/$itemId/edit',
+    component: SystemFormPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/systems/$itemId',
+    component: SystemDetailPage,
+  }),
   // The audit log is its own screen: it is not a device view and it has filters
   // (action, entity, date range) the grid's query string cannot express.
   createRoute({

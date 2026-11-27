@@ -261,6 +261,10 @@ function migrations(): array
             'description' => 'Create collector_tokens (experimental data-collector downloads) + seed the collector source',
             'run' => 'migration_0024_collector_tokens',
         ],
+        '2026_11_26_0025_inventory_items' => [
+            'description' => 'Create inventory_items + inventory_item_users (Assets and Systems tabs)',
+            'run' => 'migration_0025_inventory_items',
+        ],
     ];
 }
 
@@ -1181,6 +1185,69 @@ function migration_0023_companies(PDO $pdo): void
         $stmt = $pdo->prepare("DELETE FROM role_capabilities WHERE capability = 'settings.users'");
         $stmt->execute();
         migrate_note('removed ' . $stmt->rowCount() . ' stale settings.users grant(s)');
+    }
+}
+
+/**
+ * Migration 0025 — the Assets and Systems catalogues.
+ *
+ * `assets` already means *device*, so the physical non-IT inventory (a TV, a
+ * monitor, a desk) and the software/service catalogue (Acrobat Pro, the identity
+ * provider) live in their own table, told apart by `kind`. Both tabs assign an
+ * item to any number of people, which is the join table; `common_usage` marks an
+ * item the whole company shares, and the write path then keeps the join table
+ * empty (see `inventory_assignments_sync()` in lib/inventory.php).
+ *
+ * No foreign keys on purpose: the rest of the schema does not use them either, so
+ * a DBA-managed installation and `sql/legacy.sql` stay importable.
+ */
+function migration_0025_inventory_items(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'inventory_items')) {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS inventory_items (
+                id INT NOT NULL AUTO_INCREMENT,
+                kind VARCHAR(16) NOT NULL,
+                name VARCHAR(191) NOT NULL,
+                brand VARCHAR(191) NULL,
+                category VARCHAR(64) NULL,
+                model VARCHAR(191) NULL,
+                version VARCHAR(64) NULL,
+                serial VARCHAR(191) NULL,
+                location VARCHAR(191) NULL,
+                status VARCHAR(64) NOT NULL DEFAULT \'In Use\',
+                purchase_date DATE NULL,
+                warranty_end DATE NULL,
+                license_expiry DATE NULL,
+                common_usage TINYINT(1) NOT NULL DEFAULT 0,
+                notes TEXT NULL,
+                company VARCHAR(191) NULL,
+                created_at DATETIME NOT NULL,
+                created_by VARCHAR(191) NULL,
+                updated_at DATETIME NOT NULL,
+                updated_by VARCHAR(191) NULL,
+                PRIMARY KEY (id),
+                KEY idx_inventory_kind_company (kind, company),
+                KEY idx_inventory_kind_status (kind, status),
+                KEY idx_inventory_kind_name (kind, name),
+                KEY idx_inventory_kind_updated (kind, updated_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        migrate_note('CREATE TABLE inventory_items');
+    }
+
+    if (!db_table_exists($pdo, 'inventory_item_users')) {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS inventory_item_users (
+                item_id INT NOT NULL,
+                email VARCHAR(191) NOT NULL,
+                assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                assigned_by VARCHAR(191) NULL,
+                PRIMARY KEY (item_id, email),
+                KEY idx_inventory_item_users_email (email)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        migrate_note('CREATE TABLE inventory_item_users');
     }
 }
 

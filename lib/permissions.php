@@ -58,6 +58,18 @@ function permission_capability_defs(): array
         // gets it by default: the collector only ever writes devices for the
         // signed-in user's own e-mail inside their own company.
         'devices.collect'      => ['group' => 'devices',  'label_key' => 'perm_cap_devices_collect',      'default_roles' => ['user', 'manager', 'admin', 'superadmin']],
+        // Assets and Systems (lib/inventory.php): two catalogues that behave the
+        // same way, so both get the same four capabilities. `view` is for every
+        // role (reading the company's inventory is not sensitive), writing is
+        // manager+, deleting is admin+ — exactly the device ladder.
+        'assets.view'          => ['group' => 'assets',    'label_key' => 'perm_cap_assets_view',          'default_roles' => ['user', 'manager', 'admin', 'superadmin']],
+        'assets.create'        => ['group' => 'assets',    'label_key' => 'perm_cap_assets_create',        'default_roles' => ['manager', 'admin', 'superadmin']],
+        'assets.update'        => ['group' => 'assets',    'label_key' => 'perm_cap_assets_update',        'default_roles' => ['manager', 'admin', 'superadmin']],
+        'assets.delete'        => ['group' => 'assets',    'label_key' => 'perm_cap_assets_delete',        'default_roles' => ['admin', 'superadmin']],
+        'systems.view'         => ['group' => 'systems',   'label_key' => 'perm_cap_systems_view',         'default_roles' => ['user', 'manager', 'admin', 'superadmin']],
+        'systems.create'       => ['group' => 'systems',   'label_key' => 'perm_cap_systems_create',       'default_roles' => ['manager', 'admin', 'superadmin']],
+        'systems.update'       => ['group' => 'systems',   'label_key' => 'perm_cap_systems_update',       'default_roles' => ['manager', 'admin', 'superadmin']],
+        'systems.delete'       => ['group' => 'systems',   'label_key' => 'perm_cap_systems_delete',       'default_roles' => ['admin', 'superadmin']],
         'logs.view'            => ['group' => 'logs',      'label_key' => 'perm_cap_logs_view',            'default_roles' => ['admin', 'superadmin']],
         'logs.purge'           => ['group' => 'logs',      'label_key' => 'perm_cap_logs_purge',           'default_roles' => ['superadmin']],
         // `/settings` is superadmin-only; migration `0022` clears the rows an
@@ -519,4 +531,25 @@ function session_require_capability(string $capability): array
         throw new ApiError('forbidden', 'Your role cannot perform this action.', 403);
     }
     return $user;
+}
+
+/**
+ * Require *one of* several capabilities.
+ *
+ * Used by shared read-only endpoints whose audience is wider than one screen —
+ * `GET /users` feeds the device form's e-mail picker and the Assets/Systems
+ * assignment picker, so a manager with only `assets.update` must still be able to
+ * read the roster.
+ *
+ * @param list<string> $capabilities
+ */
+function session_require_any_capability(array $capabilities): array
+{
+    $user = session_require();
+    foreach ($capabilities as $capability) {
+        if (permission_capability_allowed($user['role'], $capability)) {
+            return $user;
+        }
+    }
+    throw new ApiError('forbidden', 'Your role cannot perform this action.', 403);
 }

@@ -47,6 +47,19 @@ function panel_routes(): array
         ['PATCH', '/devices/{id}',        'panel_devices_update'],
         ['PUT',   '/devices/{id}',        'panel_devices_replace'],
         ['DELETE', '/devices/{id}',       'panel_devices_delete'],
+        // Assets and Systems (lib/inventory.php): same shape as the device routes,
+        // two kinds of one resource. Literal paths before `{id}` for the same
+        // reason as /devices/export.
+        ['GET',   '/assets',              'panel_assets_index'],
+        ['POST',  '/assets',              'panel_assets_create'],
+        ['GET',   '/assets/{id}',         'panel_assets_show'],
+        ['PATCH', '/assets/{id}',         'panel_assets_update'],
+        ['DELETE', '/assets/{id}',        'panel_assets_delete'],
+        ['GET',   '/systems',             'panel_systems_index'],
+        ['POST',  '/systems',             'panel_systems_create'],
+        ['GET',   '/systems/{id}',        'panel_systems_show'],
+        ['PATCH', '/systems/{id}',        'panel_systems_update'],
+        ['DELETE', '/systems/{id}',       'panel_systems_delete'],
         // Settings: literal paths before the `{slug}` / `{id}` ones so
         // /settings/fields/reorder is not read as a field id.
         ['GET',   '/settings',            'panel_settings_show'],

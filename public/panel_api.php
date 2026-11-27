@@ -31,6 +31,7 @@ require_once __DIR__ . '/../lib/panel/meta.php';
 require_once __DIR__ . '/../lib/panel/i18n.php';
 require_once __DIR__ . '/../lib/panel/devices.php';
 require_once __DIR__ . '/../lib/panel/device_writes.php';
+require_once __DIR__ . '/../lib/panel/inventory.php';
 require_once __DIR__ . '/../lib/panel/settings.php';
 require_once __DIR__ . '/../lib/panel/logs.php';
 require_once __DIR__ . '/../lib/panel/users.php';

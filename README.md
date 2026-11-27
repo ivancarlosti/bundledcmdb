@@ -93,6 +93,11 @@ the file); change them before exposing the stack. The panel is published on
   order, bulk actions (status, soft delete, restore, purge, export), CSV and
   native Excel (`.xlsx`) export of every column except `CypherKey`/`Notes` (the
   grid layout only affects the screen), attachments and *save as…* named views.
+* **Assets and Systems** — two tabs after Devices inventory what is not a
+  computer: physical assets (a TV, a monitor, a desk) and systems (software and
+  services). An item is assigned to any number of people, or marked **common
+  usage** (shared by the whole company) and then assigned to nobody. See
+  [docs/inventory.md](docs/inventory.md).
 * **Device history** — every write lands in `asset_events` (`create`, `update`,
   `delete`, `restore`, `purge`, `file_add`, `file_remove`) and is shown as a
   timeline on the detail page.
