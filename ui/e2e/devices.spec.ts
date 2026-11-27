@@ -25,7 +25,7 @@ test.describe('device writes', () => {
 
     await page.locator('#field-sn').fill('SN-E2E-1');
     await page.locator('#field-hostname').fill('e2e-host');
-    await page.getByRole('button', { name: 'Create asset' }).click();
+    await page.getByRole('button', { name: 'Create device' }).click();
 
     await expect.poll(() => posted).toBeDefined();
     expect(posted).toMatchObject({ sn: 'SN-E2E-1', hostname: 'e2e-host' });
@@ -52,7 +52,7 @@ test.describe('device writes', () => {
     await email.selectOption('manager@example.com');
 
     await page.locator('#field-sn').fill('SN-E2E-2');
-    await page.getByRole('button', { name: 'Create asset' }).click();
+    await page.getByRole('button', { name: 'Create device' }).click();
 
     await expect.poll(() => posted).toBeDefined();
     expect(posted).toMatchObject({ user_email: 'manager@example.com' });

@@ -22,6 +22,7 @@ import { Alert, Button, Checkbox, Field, Input, Select, Spinner, Textarea } from
 import { useCurrentSession } from '@/features/auth/SessionContext';
 
 import {
+  inventoryCreateKey,
   inventoryEditKey,
   inventoryErrorKey,
   inventoryNewKey,
@@ -485,7 +486,7 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="primary" disabled={busy} onClick={submit}>
           {busy ? <Spinner className="size-4" /> : null}
-          {t(isEdit ? 'save_changes' : 'ui_create')}
+          {t(isEdit ? 'save_changes' : inventoryCreateKey(kind))}
         </Button>
         <Link to={listPath} className="text-sm text-[var(--color-accent)]">
           {t('cancel')}

@@ -100,4 +100,38 @@ describe('i18n catalogues', () => {
       expect(missing, `${locale} is missing panel keys: ${missing.join(', ')}`).toEqual([]);
     },
   );
+
+  /**
+   * The inventory, audit-log and access-control screens are the second group
+   * whose labels the server builds from data (entity names, capabilities), and
+   * the ones that were still falling back to en-US: a manager who picked a
+   * locale saw "Create assets" next to translated device labels. `set_category_*`
+   * is the settings vocabulary behind the required category field, and
+   * `ui_inventory`/`ui_select_category` are the item form and grid.
+   */
+  it.each(['pt-BR', 'es-MX', 'fr-FR', 'zh-CN', 'hi-IN', 'ar-SA'])(
+    'translates the inventory and access-control families in %s',
+    (locale) => {
+      const catalogue = readCatalog(locale);
+      const required = [...enUS.keys()].filter((key) =>
+        [
+          'asset_',
+          'inventory_',
+          'perm_',
+          'logs_',
+          'set_category_',
+          'ui_inventory',
+          'ui_create_asset',
+          'ui_create_system',
+          'ui_edit_asset',
+          'ui_edit_system',
+          'ui_new_asset',
+          'ui_new_system',
+          'ui_select_category',
+        ].some((family) => key.startsWith(family)),
+      );
+      const missing = required.filter((key) => !catalogue.has(key)).sort();
+      expect(missing, `${locale} is missing inventory/access keys: ${missing.join(', ')}`).toEqual([]);
+    },
+  );
 });

@@ -310,6 +310,9 @@ The controlled vocabulary behind the (required) `category` field of the Assets a
 Systems tabs, one list per kind (see [inventory.md](inventory.md#categories) for
 the model and the rules). `inventory_categories` stores the *name* and the tab
 groups the rows per kind, so the same word cannot mean two things in one tab.
+Migrations `2026_11_26_0026` and `2026_11_27_0027` ship the defaults (8 asset
+names, 11 system names, `Other` last on both); the list is editable, so this screen
+is the source of truth after the first rename.
 
 | Operation | Request | Answer |
 |---|---|---|
@@ -471,8 +474,9 @@ that nothing references any more:
 php bin/check-i18n.php
 ```
 
-Current coverage: en-US 100 %, pt-BR 93 %, es-MX 89 %, fr-FR/zh-CN/hi-IN/ar-SA
-53 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
-`role_*` string). The remaining `set_*` keys are the settings screens, which fall
-back to en-US in those four locales; `ui/src/i18n/coverage.test.ts` keeps the
-panel families complete so a new `col_*` or `ui_*` key cannot ship untranslated.
+Current coverage: en-US, pt-BR and es-MX 100 %, fr-FR/zh-CN/hi-IN/ar-SA 70 % (the
+whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and `role_*`
+string — plus the inventory screens, the audit log, the permission matrix and the
+category vocabulary). The remaining `set_*` keys are the settings screens, which
+fall back to en-US in those four locales; `ui/src/i18n/coverage.test.ts` keeps
+both groups complete so a new `col_*` or `logs_*` key cannot ship untranslated.

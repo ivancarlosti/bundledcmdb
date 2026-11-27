@@ -269,6 +269,10 @@ function migrations(): array
             'description' => 'Create inventory_categories (per-kind vocabulary), seed defaults, backfill stored categories',
             'run' => 'migration_0026_inventory_categories',
         ],
+        '2026_11_27_0027_inventory_category_defaults' => [
+            'description' => 'Seed the shipped Assets/Systems category vocabulary (printers, servers, operating systems, …)',
+            'run' => 'migration_0027_inventory_category_defaults',
+        ],
     ];
 }
 
@@ -1374,5 +1378,63 @@ function migration_0026_inventory_categories(PDO $pdo): void
         "UPDATE inventory_items SET category = 'Other' WHERE category IS NULL OR category = ''"
     );
     migrate_note('set ' . $rewritten . ' empty category value(s) to Other');
+}
+
+/**
+ * Migration 0027 — the shipped category vocabulary, expanded.
+ *
+ * 0026 seeded a short list per kind; this one adds the names a real catalogue
+ * needs (printers, servers, storage; operating systems, applications, identity
+ * providers, …) and is additive on purpose:
+ *
+ *  - a name the registry already knows is never duplicated (`INSERT IGNORE`),
+ *    so an installation that has been editing the list since 0026 keeps its
+ *    rows;
+ *  - `Mobile`, which 0026 offered for assets and this list no longer ships as
+ *    a default, is *not* deleted: items may point at it and the delete guard
+ *    would refuse anyway;
+ *  - the shipped names are then put in their canonical order. `sort_order` is
+ *    presentation only, and without this the new names would all land after
+ *    `Other` — the opposite of what the forms should offer first;
+ *  - `inventory_items` is not touched. The registry only decides which names a
+ *    form may submit, so existing items keep their category.
+ *
+ * `sql/schema.sql` seeds the same final list, because a fresh import records
+ * this version as applied and never runs the function.
+ */
+function migration_0027_inventory_category_defaults(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'inventory_categories')) {
+        migrate_note('skipped category defaults: inventory_categories missing');
+        return;
+    }
+
+    $defaults = [
+        'asset'  => ['Display', 'Peripheral', 'Printer', 'Network', 'Server', 'Storage', 'Furniture', 'Other'],
+        'system' => [
+            'Operating system', 'Application', 'Software', 'Service', 'Subscription',
+            'Platform', 'Identity provider', 'Database', 'Security', 'Development tool', 'Other',
+        ],
+    ];
+
+    $insert = $pdo->prepare(
+        'INSERT IGNORE INTO inventory_categories (kind, name, sort_order) VALUES (?, ?, ?)'
+    );
+    $reorder = $pdo->prepare(
+        'UPDATE inventory_categories SET sort_order = ? WHERE kind = ? AND name = ? AND sort_order <> ?'
+    );
+    $seeded = 0;
+    $moved = 0;
+    foreach ($defaults as $kind => $names) {
+        foreach ($names as $position => $name) {
+            $sortOrder = ($position + 1) * 10;
+            $insert->execute([$kind, $name, $sortOrder]);
+            $seeded += $insert->rowCount();
+            // Existing rows keep their id and created_by; only the order moves.
+            $reorder->execute([$sortOrder, $kind, $name, $sortOrder]);
+            $moved += $reorder->rowCount();
+        }
+    }
+    migrate_note("seeded {$seeded} default categor(ies), reordered {$moved} row(s)");
 }
 

@@ -373,7 +373,7 @@ function DeviceForm({ device, meta }: FormProps) {
           </Link>
           <Button type="submit" variant="primary" disabled={pending}>
             {pending ? <Spinner className="size-4" /> : null}
-            {mode === 'create' ? t('create_asset') : t('save_changes')}
+            {mode === 'create' ? t('ui_create_device') : t('save_changes')}
           </Button>
         </div>
       </div>

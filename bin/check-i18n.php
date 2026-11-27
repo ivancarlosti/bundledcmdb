@@ -33,15 +33,18 @@ require_once __DIR__ . '/../public/lang.php';
 /** Minimum share of en-US keys each locale must translate. */
 const I18N_MIN_COVERAGE = [
     'en-US' => 100,
-    'pt-BR' => 90,
-    'es-MX' => 75,
+    // Both catalogues are maintained in full: they are the two locales the
+    // product ships with and a fallback there is a visible regression.
+    'pt-BR' => 100,
+    'es-MX' => 100,
     // The four community locales ship the whole React panel (every `ui_*`,
-    // `col_*`, `status_*`, `theme_*` and `role_*` key) and fall back to en-US for
-    // the legacy `set_*`/`perm_*` screens of the PHP pages.
-    'fr-FR' => 45,
-    'zh-CN' => 45,
-    'hi-IN' => 45,
-    'ar-SA' => 45,
+    // `col_*`, `status_*`, `theme_*` and `role_*` key), the inventory screens and
+    // the audit log, permissions and category vocabulary, and fall back to en-US
+    // for the remaining settings screens.
+    'fr-FR' => 70,
+    'zh-CN' => 70,
+    'hi-IN' => 70,
+    'ar-SA' => 70,
 ];
 
 /**

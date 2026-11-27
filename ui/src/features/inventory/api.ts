@@ -138,6 +138,11 @@ export function inventoryNewKey(kind: InventoryKind): string {
   return kind === 'asset' ? 'ui_new_asset' : 'ui_new_system';
 }
 
+/** "Create …" submit label key. */
+export function inventoryCreateKey(kind: InventoryKind): string {
+  return kind === 'asset' ? 'ui_create_asset' : 'ui_create_system';
+}
+
 /** "Edit …" heading key. */
 export function inventoryEditKey(kind: InventoryKind): string {
   return kind === 'asset' ? 'ui_edit_asset' : 'ui_edit_system';

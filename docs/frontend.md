@@ -424,7 +424,11 @@ i18next resource bundle and sets `lang`/`dir` on `<html>`.
 1. Add the key to `public/lang/en-US.php`.
 2. Add the same key (translated, or empty to fall back to en-US) to the other
    `public/lang/*.php` catalogs; `php bin/check-i18n.php` reports the coverage
-   per locale and fails on unknown keys.
+   per locale and fails on unknown keys. `src/i18n/coverage.test.ts` is stricter
+   for the families that must not fall back — the panel (`ui_*`, `col_*`,
+   `status_*`, `theme_*`, `role_*`) and the inventory/access-control screens
+   (`asset_*`, `inventory_*`, `perm_*`, `logs_*`, `set_category_*`) — so a new key
+   in one of them fails the unit suite until all six catalogs have it.
 3. Use it from a component with `t('the_key')`.
 
 No build step and no generated JSON: the catalog is fetched at runtime, so a

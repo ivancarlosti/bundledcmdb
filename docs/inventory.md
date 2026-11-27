@@ -63,6 +63,22 @@ inventory_categories  id, kind ('asset'|'system'), name, sort_order, created_at/
                       UNIQUE (kind, name)
 ```
 
+The shipped vocabulary (migration `2026_11_27_0027_inventory_category_defaults`,
+the same rows in `sql/schema.sql`):
+
+| Kind | Defaults, in order |
+|---|---|
+| Assets | Display, Peripheral, Printer, Network, Server, Storage, Furniture, Other |
+| Systems | Operating system, Application, Software, Service, Subscription, Platform, Identity provider, Database, Security, Development tool, Other |
+
+`Other` is the receiver every in-use delete offers, which is why both kinds end
+with it. The migration is additive: a name the registry already knows is kept —
+an installation migrated with `0026` keeps `Mobile`, which this list no longer
+ships, because its items may point at it — and the shipped names are put back in
+this order (`sort_order` is presentation only, so `Other` stays last on an
+upgraded database too). Categories a superadmin added are never reordered or
+removed.
+
 The rules that follow from that table:
 
 * **The name is stored, not an id.** `inventory_items.category` keeps the text
@@ -96,7 +112,8 @@ silently replaced.
 ## Storage
 
 Both tabs live in one table pair (migration `0025_inventory_items`), plus the
-category registry added by migration `0026_inventory_categories`:
+category registry added by `0026_inventory_categories` and seeded by
+`0027_inventory_category_defaults`:
 
 ```
 inventory_items       id, kind ('asset'|'system'), name, brand, category, model,

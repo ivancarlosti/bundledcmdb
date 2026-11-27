@@ -399,21 +399,29 @@ CREATE TABLE IF NOT EXISTS inventory_categories (
     KEY idx_inventory_categories_kind (kind, sort_order)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- The same defaults migration 0026 seeds: a fresh import marks the migration as
+-- The same defaults migration 0027 seeds: a fresh import marks the migration as
 -- applied, so the rows have to exist here or the required category field would
--- have nothing to offer. `Other` is the fallback on both kinds.
+-- have nothing to offer. `Other` is the fallback on both kinds and stays last.
 INSERT IGNORE INTO inventory_categories (kind, name, sort_order) VALUES
     ('asset', 'Display', 10),
     ('asset', 'Peripheral', 20),
-    ('asset', 'Mobile', 30),
+    ('asset', 'Printer', 30),
     ('asset', 'Network', 40),
-    ('asset', 'Furniture', 50),
-    ('asset', 'Other', 60),
-    ('system', 'Software', 10),
-    ('system', 'Service', 20),
-    ('system', 'Subscription', 30),
-    ('system', 'Platform', 40),
-    ('system', 'Other', 50);
+    ('asset', 'Server', 50),
+    ('asset', 'Storage', 60),
+    ('asset', 'Furniture', 70),
+    ('asset', 'Other', 80),
+    ('system', 'Operating system', 10),
+    ('system', 'Application', 20),
+    ('system', 'Software', 30),
+    ('system', 'Service', 40),
+    ('system', 'Subscription', 50),
+    ('system', 'Platform', 60),
+    ('system', 'Identity provider', 70),
+    ('system', 'Database', 80),
+    ('system', 'Security', 90),
+    ('system', 'Development tool', 100),
+    ('system', 'Other', 110);
 
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
@@ -441,5 +449,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_26_0023_companies'),
     ('2026_11_26_0024_collector_tokens'),
     ('2026_11_26_0025_inventory_items'),
-    ('2026_11_26_0026_inventory_categories');
+    ('2026_11_26_0026_inventory_categories'),
+    ('2026_11_27_0027_inventory_category_defaults');
 
