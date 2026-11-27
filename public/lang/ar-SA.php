@@ -239,6 +239,8 @@ return [
     'ui_rows_per_page' => 'الصفوف في الصفحة',
     'ui_saved' => 'تم الحفظ.',
     'ui_select_all' => 'تحديد كل الصفوف في هذه الصفحة',
+    'ui_select_category' => 'اختر فئة…',
+    'ui_select_company' => 'اختر شركة…',
     'ui_select_row' => 'تحديد {{name}}',
     'ui_selected_count' => 'تم تحديد {{total}}',
     'ui_showing_range' => 'عرض {{from}}–{{to}} من {{total}}',

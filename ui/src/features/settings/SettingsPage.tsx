@@ -15,6 +15,7 @@ import { Alert } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
 
 import { ApiKeysTab } from './ApiKeysTab';
+import { CategoriesTab } from './CategoriesTab';
 import { ColumnsTab } from './ColumnsTab';
 import { CompaniesTab } from './CompaniesTab';
 import { FieldsTab } from './FieldsTab';
@@ -37,6 +38,7 @@ const TABS: Tab[] = [
   { id: 'storage', label_key: 'set_tab_storage', capability: 'settings.manage' },
   { id: 'sources', label_key: 'set_tab_sources', capability: 'settings.sources' },
   { id: 'companies', label_key: 'set_tab_companies', capability: 'settings.companies' },
+  { id: 'categories', label_key: 'set_tab_categories', capability: 'settings.categories' },
   { id: 'api', label_key: 'set_tab_api', capability: 'settings.api_keys' },
   { id: 'fields', label_key: 'set_tab_fields', capability: 'settings.fields' },
   { id: 'logs', label_key: 'set_tab_logs', capability: 'settings.manage' },
@@ -149,6 +151,7 @@ export function SettingsPage() {
         {tab === 'columns' ? <ColumnsTab labelledBy={headingId} /> : null}
         {tab === 'sources' ? <SourcesTab labelledBy={headingId} /> : null}
         {tab === 'companies' ? <CompaniesTab labelledBy={headingId} /> : null}
+        {tab === 'categories' ? <CategoriesTab labelledBy={headingId} /> : null}
         {tab === 'api' ? (
           <div className="flex flex-col gap-6">
             {session.capabilities.permissions['settings.manage'] ? (

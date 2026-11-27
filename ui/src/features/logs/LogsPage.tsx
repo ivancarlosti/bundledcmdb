@@ -30,6 +30,7 @@ const ENTITY_LABEL_KEYS: Record<string, string> = {
   field: 'logs_entity_field',
   api_key: 'logs_entity_api_key',
   company: 'logs_entity_company',
+  category: 'logs_entity_category',
   user: 'logs_entity_user',
   migration: 'logs_entity_migration',
   logs: 'logs_entity_logs',

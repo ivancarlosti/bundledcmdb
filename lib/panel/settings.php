@@ -30,6 +30,10 @@ declare(strict_types=1);
  *   GET    /settings/companies             tenant registry + usage       (superadmin)
  *   POST   /settings/companies             register a company            (superadmin)
  *   DELETE /settings/companies/{name}      refused while in use          (superadmin)
+ *   GET    /settings/categories            category vocabulary + usage   (superadmin)
+ *   POST   /settings/categories            add a category                (superadmin)
+ *   PATCH  /settings/categories/{id}       rename, cascades to items     (superadmin)
+ *   DELETE /settings/categories/{id}       reassign items, then delete   (superadmin)
  *   GET    /settings/maintenance           schema state + diagnostics    (superadmin)
  *   POST   /settings/maintenance/migrate   run (or dry-run) migrations   (superadmin)
  *
@@ -1426,6 +1430,240 @@ function panel_settings_companies_delete(array $params = []): array
         'data' => panel_settings_companies_payload($pdo),
         'meta' => ['deleted' => (string) ($result['name'] ?? $name)],
     ];
+}
+
+// --- Inventory categories -------------------------------------------------
+//
+// The vocabulary behind the (now required) `category` field of the Assets and
+// Systems tabs. `kind` is fixed per row: the form of one tab never offers the
+// other tab's names, and the items carrying a name are per kind, so "move it to
+// the other tab" is a delete + create, not a rename.
+//
+// Like the company registry, a row in use cannot simply vanish: the delete names
+// the category that receives the items (`reassign_to`), and the last category of
+// a kind is refused outright — with no vocabulary left the required field could
+// never be satisfied again.
+
+/** GET /settings/categories */
+function panel_settings_categories_index(array $params = []): array
+{
+    panel_settings_user('settings.categories');
+    return ['data' => panel_settings_categories_payload(db())];
+}
+
+/**
+ * POST /settings/categories — body `{ "kind": "asset", "name": "Printer" }`.
+ *
+ * `422` carries `errors` keyed like a device write (`kind` / `name`), which is
+ * what the tab renders next to its input.
+ */
+function panel_settings_categories_store(array $params = []): array
+{
+    $actor = panel_settings_writer('settings.categories');
+    $pdo = db();
+    $body = panel_settings_body();
+    $kind = trim((string) ($body['kind'] ?? ''));
+    $name = trim((string) ($body['name'] ?? ''));
+
+    $errors = panel_settings_category_errors($pdo, $kind, $name);
+    if ($errors !== []) {
+        throw new ApiError('validation_failed', 'The category could not be saved.', 422, $errors);
+    }
+
+    $email = (string) ($actor['email'] ?? 'system');
+    $id = inventory_category_create($pdo, $kind, $name, $email);
+    panel_settings_audit($pdo, $actor, 'create', 'category', (string) $id, $name, ['kind' => $kind]);
+
+    return [
+        'data'   => panel_settings_categories_payload($pdo),
+        'status' => 201,
+        'meta'   => ['id' => $id],
+    ];
+}
+
+/**
+ * PATCH /settings/categories/{id} — body `{ "name": "…" }`.
+ *
+ * The rename cascades to `inventory_items`, so the items keep pointing at a name
+ * the validator accepts. `meta.items` says how many moved.
+ */
+function panel_settings_categories_update(array $params = []): array
+{
+    $actor = panel_settings_writer('settings.categories');
+    $pdo = db();
+    $row = panel_settings_category_row($pdo, panel_settings_id($params));
+    $kind = (string) $row['kind'];
+    $previous = (string) $row['name'];
+    $name = trim((string) (panel_settings_body()['name'] ?? ''));
+
+    $errors = panel_settings_category_errors($pdo, $kind, $name, (int) $row['id']);
+    if ($errors !== []) {
+        throw new ApiError('validation_failed', 'The category could not be saved.', 422, $errors);
+    }
+
+    $email = (string) ($actor['email'] ?? 'system');
+    $moved = inventory_category_rename($pdo, $row, $name, $email);
+
+    if ($name !== $previous) {
+        panel_settings_audit($pdo, $actor, 'update', 'category', (string) $row['id'], $name, [
+            'kind'  => $kind,
+            'from'  => $previous,
+            'items' => $moved,
+        ]);
+    }
+
+    return [
+        'data' => panel_settings_categories_payload($pdo),
+        'meta' => ['items' => $moved],
+    ];
+}
+
+/**
+ * DELETE /settings/categories/{id}
+ *
+ * Body `{ "reassign_to": "Other" }`, or `?reassign_to=Other` for a plain DELETE.
+ *
+ *  409 `in_use`         items still point at it and no target was named
+ *  422 `invalid_target` the target is not another category of the same kind
+ *  409 `last_category`  it is the only category of that kind
+ */
+function panel_settings_categories_delete(array $params = []): array
+{
+    $actor = panel_settings_writer('settings.categories');
+    $pdo = db();
+    $row = panel_settings_category_row($pdo, panel_settings_id($params));
+    $kind = (string) $row['kind'];
+    $name = (string) $row['name'];
+
+    $body = panel_settings_body();
+    $target = trim((string) ($body['reassign_to'] ?? ($_GET['reassign_to'] ?? '')));
+
+    $usage = inventory_category_usage($pdo, $kind, $name);
+    $siblings = array_values(array_filter(
+        inventory_category_names($pdo, $kind),
+        static fn (string $candidate): bool => $candidate !== $name
+    ));
+
+    if ($siblings === []) {
+        throw new ApiError(
+            'last_category',
+            'The last category of this kind cannot be deleted.',
+            409,
+            ['name' => 'last_category']
+        );
+    }
+
+    if ($target !== '') {
+        if (!in_array($target, $siblings, true)) {
+            throw new ApiError(
+                'invalid_target',
+                'Reassign the items to another category of the same kind.',
+                422,
+                ['reassign_to' => 'invalid_option', 'categories' => $siblings]
+            );
+        }
+    } elseif ($usage > 0) {
+        throw new ApiError(
+            'in_use',
+            'The category still has items; name the category that receives them.',
+            409,
+            ['name' => 'in_use', 'usage' => $usage, 'categories' => $siblings]
+        );
+    }
+
+    $email = (string) ($actor['email'] ?? 'system');
+    $moved = inventory_category_delete($pdo, $row, $target !== '' ? $target : null, $email);
+
+    panel_settings_audit($pdo, $actor, 'delete', 'category', (string) $row['id'], $name, [
+        'kind'        => $kind,
+        'reassign_to' => $target !== '' ? $target : null,
+        'reassigned'  => $moved,
+    ]);
+
+    return [
+        'data' => panel_settings_categories_payload($pdo),
+        'meta' => ['deleted' => $name, 'reassigned' => $moved],
+    ];
+}
+
+/**
+ * Registry rows with their item counts, kind by kind in display order.
+ *
+ * The usage map is one grouped query instead of N counts: the tab renders every
+ * category of both kinds at once.
+ */
+function panel_settings_categories_payload(PDO $pdo): array
+{
+    $usage = [];
+    if (db_table_exists($pdo, 'inventory_items')) {
+        $rows = $pdo->query(
+            "SELECT kind, category, COUNT(*) AS total
+               FROM inventory_items
+              WHERE category IS NOT NULL AND category <> ''
+              GROUP BY kind, category"
+        )->fetchAll() ?: [];
+        foreach ($rows as $row) {
+            $usage[(string) $row['kind'] . "\x1f" . (string) $row['category']] = (int) $row['total'];
+        }
+    }
+
+    $categories = [];
+    foreach (inventory_kinds() as $kind) {
+        foreach (inventory_categories($pdo, $kind) as $row) {
+            $name = (string) $row['name'];
+            $categories[] = [
+                'id'    => (int) $row['id'],
+                'kind'  => $kind,
+                'name'  => $name,
+                'usage' => $usage[$kind . "\x1f" . $name] ?? 0,
+            ];
+        }
+    }
+
+    return ['categories' => $categories, 'kinds' => inventory_kinds()];
+}
+
+/**
+ * Validate a category name for a kind.
+ *
+ * Duplicates are compared case-insensitively: `utf8mb4_unicode_ci` already folds
+ * them in the unique index, and "Monitor"/"monitor" as two options would defeat
+ * the point of a controlled vocabulary.
+ *
+ * @return array<string, string> field => error code
+ */
+function panel_settings_category_errors(PDO $pdo, string $kind, string $name, ?int $ignoreId = null): array
+{
+    if (!inventory_kind_valid($kind)) {
+        return ['kind' => 'invalid_option'];
+    }
+    if ($name === '') {
+        return ['name' => 'required'];
+    }
+    if (mb_strlen($name) > 64) {
+        return ['name' => 'too_long'];
+    }
+    foreach (inventory_categories($pdo, $kind) as $existing) {
+        if ($existing['id'] === $ignoreId) {
+            continue;
+        }
+        if (mb_strtolower($existing['name']) === mb_strtolower($name)) {
+            return ['name' => 'duplicate'];
+        }
+    }
+
+    return [];
+}
+
+/** Registry row by path id; 404 when the table or the row is missing. */
+function panel_settings_category_row(PDO $pdo, int $id): array
+{
+    $row = inventory_category_get($pdo, $id);
+    if ($row === null) {
+        throw new ApiError('not_found', 'No category with id ' . $id . '.', 404);
+    }
+
+    return $row;
 }
 
 // --- Role permissions ----------------------------------------------------

@@ -14,13 +14,7 @@ import { Alert, Button, Field, Input, Select, Spinner } from '@/components/ui';
 import { useCurrentSession } from '@/features/auth/SessionContext';
 import { DataGrid } from '@/features/grid/DataGrid';
 
-import {
-  inventoryEmptyKey,
-  inventoryListKey,
-  inventoryNewKey,
-  inventoryRoute,
-  type InventoryKind,
-} from './api';
+import { inventoryEmptyKey, inventoryListKey, inventoryNewKey, inventoryRoute, type InventoryKind } from './api';
 import { buildInventoryColumns } from './columns';
 import {
   applyInventoryFilters,
@@ -86,6 +80,18 @@ export function InventoryGridPage({ kind }: { kind: InventoryKind }) {
 
   const statusOptions = metaQuery.data?.statuses ?? [];
 
+  /**
+   * Categories of this kind as the filter offers them. A value carried by the
+   * current URL but missing from the registry (a legacy row, a renamed category)
+   * is kept in the list so the select shows the filter it is actually applying.
+   */
+  const categoryOptions = Array.from(
+    new Set([
+      ...(metaQuery.data?.inventoryCategories ?? []).filter((entry) => entry.kind === kind).map((entry) => entry.name),
+      ...(state.category === '' ? [] : [state.category]),
+    ]),
+  );
+
   if (!canView) {
     return <Alert tone="danger" title={t('ui_err_forbidden')} />;
   }
@@ -143,6 +149,20 @@ export function InventoryGridPage({ kind }: { kind: InventoryKind }) {
           </Select>
         </Field>
 
+        <Field label={t('col_item_category')}>
+          <Select
+            value={state.category}
+            onChange={(event) => update((current) => applyInventoryFilters(current, { category: event.target.value }))}
+          >
+            <option value="">{t('all')}</option>
+            {categoryOptions.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
         <Field label={t('ui_common_usage')}>
           <Select
             value={state.commonUsage}
@@ -185,9 +205,7 @@ export function InventoryGridPage({ kind }: { kind: InventoryKind }) {
           <Field label={t('ui_rows_per_page')}>
             <Select
               value={String(state.perPage)}
-              onChange={(event) =>
-                update((current) => ({ ...current, perPage: Number(event.target.value), page: 1 }))
-              }
+              onChange={(event) => update((current) => ({ ...current, perPage: Number(event.target.value), page: 1 }))}
             >
               {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>
@@ -196,7 +214,10 @@ export function InventoryGridPage({ kind }: { kind: InventoryKind }) {
               ))}
             </Select>
           </Field>
-          <Button disabled={page <= 1} onClick={() => update((current) => ({ ...current, page: Math.max(1, page - 1) }))}>
+          <Button
+            disabled={page <= 1}
+            onClick={() => update((current) => ({ ...current, page: Math.max(1, page - 1) }))}
+          >
             {t('previous')}
           </Button>
           <span className="whitespace-nowrap text-[var(--color-muted)]">
@@ -223,4 +244,3 @@ export function AssetsPage() {
 export function SystemsPage() {
   return <InventoryGridPage kind="system" />;
 }
-

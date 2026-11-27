@@ -277,7 +277,19 @@ function panel_meta_show(array $params = []): array
         $companies = asset_companies($pdo);
     }
 
-    $requireSn = true;
+    // Category vocabulary offered by the Assets/Systems forms, per kind. A
+    // database without migration `2026_11_26_0026` answers with an empty list,
+    // which the SPA reads as "no registry" and falls back to a text input.
+    $inventoryCategories = [];
+    if ($pdo !== null) {
+        foreach (inventory_kinds() as $kind) {
+            foreach (inventory_category_names($pdo, $kind) as $name) {
+                $inventoryCategories[] = ['kind' => $kind, 'name' => $name];
+            }
+        }
+    }
+
+
     try {
         $requireSn = settings_bool('assets.require_sn');
     } catch (Throwable) {
@@ -295,6 +307,7 @@ function panel_meta_show(array $params = []): array
         'sources'       => $sources,
         'fields'        => panel_fields_payload($pdo, $user['role']),
         'companies'     => $companies,
+        'inventoryCategories' => $inventoryCategories,
         'locales'       => panel_locales_payload(),
         'themes'        => user_preferences_themes(),
         'pageSizes'     => user_preferences_page_sizes(),

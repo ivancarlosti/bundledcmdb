@@ -186,6 +186,13 @@ export type MetaPayload = {
   sources: MetaSource[];
   fields: MetaField[];
   companies: string[];
+  /**
+   * Category vocabulary of the Assets/Systems forms, one entry per (kind, name).
+   *
+   * The name is what is stored on the item (no id), so a rename rewrites the
+   * rows and this list must be refetched rather than patched.
+   */
+  inventoryCategories: { kind: 'asset' | 'system'; name: string }[];
   locales: { code: string; native: string; label: string; dir: 'ltr' | 'rtl' }[];
   themes: string[];
   pageSizes: number[];

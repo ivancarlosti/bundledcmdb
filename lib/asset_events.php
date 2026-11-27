@@ -46,6 +46,7 @@ const ASSET_EVENT_ENTITIES = [
     'setting',
     'source',
     'field',
+    'category',
     'api_key',
     'user',
     'company',

@@ -80,6 +80,7 @@ function permission_capability_defs(): array
         'settings.api_keys'    => ['group' => 'settings',  'label_key' => 'perm_cap_settings_api_keys',    'default_roles' => ['superadmin'], 'superadmin_only' => true],
         'settings.maintenance' => ['group' => 'settings',  'label_key' => 'perm_cap_settings_maintenance', 'default_roles' => ['superadmin'], 'superadmin_only' => true],
         'settings.companies'   => ['group' => 'settings',  'label_key' => 'perm_cap_settings_companies',   'default_roles' => ['superadmin'], 'superadmin_only' => true],
+        'settings.categories'  => ['group' => 'settings',  'label_key' => 'perm_cap_settings_categories',  'default_roles' => ['superadmin'], 'superadmin_only' => true],
         // Delegable on purpose: it opens Settings → Users and nothing else, and
         // the handlers scope an admin to their own company.
         'users.manage'         => ['group' => 'settings',  'label_key' => 'perm_cap_users_manage',         'default_roles' => ['admin', 'superadmin']],

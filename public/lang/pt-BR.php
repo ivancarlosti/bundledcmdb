@@ -400,6 +400,8 @@ return [
     'ui_bulk_actions' => 'Ações em lote',
     'ui_selected_count' => '{{total}} selecionado(s)',
     'ui_select_all' => 'Selecionar todas as linhas desta página',
+    'ui_select_category' => 'Selecione uma categoria…',
+    'ui_select_company' => 'Selecione uma empresa…',
     'ui_select_row' => 'Selecionar {{name}}',
     'ui_bulk_status' => 'Definir status',
     'ui_bulk_byod' => 'Definir BYOD',

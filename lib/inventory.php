@@ -70,7 +70,7 @@ function inventory_column_defs(): array
     return [
         'name'            => ['label' => 'Name',           'type' => 'text',   'max' => 191, 'kinds' => $both],
         'brand'           => ['label' => 'Brand',          'type' => 'text',   'max' => 191, 'kinds' => $both],
-        'category'        => ['label' => 'Category',       'type' => 'text',   'max' => 64,  'kinds' => $both],
+        'category'        => ['label' => 'Category',       'type' => 'category', 'max' => 64, 'kinds' => $both],
         'model'           => ['label' => 'Model',          'type' => 'text',   'max' => 191, 'kinds' => ['asset']],
         'version'         => ['label' => 'Version',        'type' => 'text',   'max' => 64,  'kinds' => ['system']],
         'serial'          => ['label' => 'Serial number',  'type' => 'text',   'max' => 191, 'kinds' => ['asset']],
@@ -105,6 +105,187 @@ function inventory_columns(string $kind): array
 function inventory_status_values(): array
 {
     return asset_status_values();
+}
+
+/**
+ * The category vocabulary of one kind.
+ *
+ * `inventory_items.category` stores the *name* (like `assets.source` stores a
+ * slug), so the registry only controls which names a form may submit and a
+ * rename has to cascade — see `inventory_category_rename()`. A database without
+ * migration `2026_11_26_0026` has no table: that means "cannot verify" and every
+ * category is accepted, so an unmigrated installation keeps working.
+ *
+ * @return list<array{id: int, kind: string, name: string, sort_order: int}>
+ */
+function inventory_categories(PDO $pdo, string $kind, bool $force = false): array
+{
+    static $cache = [];
+    if (isset($cache[$kind]) && !$force) {
+        return $cache[$kind];
+    }
+    if (!db_table_exists($pdo, 'inventory_categories')) {
+        return $cache[$kind] = [];
+    }
+    $stmt = $pdo->prepare(
+        'SELECT id, kind, name, sort_order FROM inventory_categories WHERE kind = ? ORDER BY sort_order, name'
+    );
+    $stmt->execute([$kind]);
+
+    $rows = [];
+    foreach ($stmt->fetchAll() ?: [] as $row) {
+        $rows[] = [
+            'id'         => (int) $row['id'],
+            'kind'       => (string) $row['kind'],
+            'name'       => (string) $row['name'],
+            'sort_order' => (int) $row['sort_order'],
+        ];
+    }
+
+    return $cache[$kind] = $rows;
+}
+
+/**
+ * Category names the form offers and the validator accepts.
+ *
+ * @return list<string>
+ */
+function inventory_category_names(PDO $pdo, string $kind, bool $force = false): array
+{
+    return array_map(static fn (array $row): string => $row['name'], inventory_categories($pdo, $kind, $force));
+}
+
+/** One registry row by id (null when the table or the row is missing). */
+function inventory_category_get(PDO $pdo, int $id): ?array
+{
+    if (!db_table_exists($pdo, 'inventory_categories')) {
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT id, kind, name, sort_order FROM inventory_categories WHERE id = ?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!is_array($row)) {
+        return null;
+    }
+
+    return [
+        'id'         => (int) $row['id'],
+        'kind'       => (string) $row['kind'],
+        'name'       => (string) $row['name'],
+        'sort_order' => (int) $row['sort_order'],
+    ];
+}
+
+/** Items of that kind still pointing at the name (the delete guard's number). */
+function inventory_category_usage(PDO $pdo, string $kind, string $name): int
+{
+    if (!db_table_exists($pdo, 'inventory_items')) {
+        return 0;
+    }
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM inventory_items WHERE kind = ? AND category = ?');
+    $stmt->execute([$kind, $name]);
+
+    return (int) $stmt->fetchColumn();
+}
+
+/** Append a category to the end of its kind's list. Returns the new id. */
+function inventory_category_create(PDO $pdo, string $kind, string $name, ?string $actor = null): int
+{
+    $last = $pdo->prepare('SELECT COALESCE(MAX(sort_order), 0) FROM inventory_categories WHERE kind = ?');
+    $last->execute([$kind]);
+    $sortOrder = (int) $last->fetchColumn() + 10;
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO inventory_categories (kind, name, sort_order, created_at, created_by) VALUES (?, ?, ?, ?, ?)'
+    );
+    $stmt->execute([$kind, $name, $sortOrder, gmdate('Y-m-d H:i:s'), $actor]);
+    $id = (int) $pdo->lastInsertId();
+    inventory_categories($pdo, $kind, true);
+
+    return $id;
+}
+
+/**
+ * Rename a registry row and carry every item with it.
+ *
+ * The registry names the category, so a registry-only rename would make every
+ * stored item invalid. Both writes share one transaction: a half-applied rename
+ * would leave a name no form accepts.
+ *
+ * @param array{id: int, kind: string, name: string} $row
+ * @return int items moved to the new name
+ */
+function inventory_category_rename(PDO $pdo, array $row, string $name, ?string $actor = null): int
+{
+    $kind = (string) $row['kind'];
+    $previous = (string) $row['name'];
+    if ($name === $previous) {
+        return 0;
+    }
+
+    $moved = 0;
+    $pdo->beginTransaction();
+    try {
+        if (db_table_exists($pdo, 'inventory_items')) {
+            // `updated_at` moves with the name: the item genuinely changed.
+            $update = $pdo->prepare(
+                'UPDATE inventory_items SET category = ?, updated_at = ?, updated_by = ?
+                  WHERE kind = ? AND category = ?'
+            );
+            $update->execute([$name, gmdate('Y-m-d H:i:s'), $actor, $kind, $previous]);
+            $moved = $update->rowCount();
+        }
+        $pdo->prepare('UPDATE inventory_categories SET name = ? WHERE id = ?')->execute([$name, (int) $row['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    inventory_categories($pdo, $kind, true);
+
+    return $moved;
+}
+
+/**
+ * Delete a registry row, optionally draining its items to another category.
+ *
+ * Callers check the two refusals (`in_use` without a target, `last_category`)
+ * before calling, because both are policy; the model only moves rows.
+ *
+ * @param array{id: int, kind: string, name: string} $row
+ * @return int items reassigned
+ */
+function inventory_category_delete(PDO $pdo, array $row, ?string $reassignTo = null, ?string $actor = null): int
+{
+    $kind = (string) $row['kind'];
+    $name = (string) $row['name'];
+
+    $moved = 0;
+    $pdo->beginTransaction();
+    try {
+        if ($reassignTo !== null && db_table_exists($pdo, 'inventory_items')) {
+            $update = $pdo->prepare(
+                'UPDATE inventory_items SET category = ?, updated_at = ?, updated_by = ?
+                  WHERE kind = ? AND category = ?'
+            );
+            $update->execute([$reassignTo, gmdate('Y-m-d H:i:s'), $actor, $kind, $name]);
+            $moved = $update->rowCount();
+        }
+        $pdo->prepare('DELETE FROM inventory_categories WHERE id = ?')->execute([(int) $row['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    inventory_categories($pdo, $kind, true);
+
+    return $moved;
 }
 
 /**
@@ -256,6 +437,27 @@ function inventory_validate(PDO $pdo, string $kind, array $data, array $options 
         if ($def === null || $key === 'company') {
             continue;
         }
+        if ($def['type'] === 'category') {
+            // A controlled list, so the two rules are absolute: the value always
+            // has to be named (required on create, never clearable on update) and
+            // it always has to exist in that kind's vocabulary. A database
+            // without the registry table cannot be verified, so anything passes.
+            if ($value === null) {
+                $errors[$key] = 'required';
+                continue;
+            }
+            if ($def['max'] !== null && mb_strlen((string) $value) > $def['max']) {
+                $errors[$key] = 'too_long';
+                continue;
+            }
+            if (
+                db_table_exists($pdo, 'inventory_categories')
+                && !in_array((string) $value, inventory_category_names($pdo, $kind), true)
+            ) {
+                $errors[$key] = 'invalid_option';
+            }
+            continue;
+        }
         if ($value === null) {
             // The name is the one field that can never be cleared: it is the label
             // every list, audit row and delete dialog shows.
@@ -279,6 +481,9 @@ function inventory_validate(PDO $pdo, string $kind, array $data, array $options 
 
     if (!$partial && !array_key_exists('name', $data)) {
         $errors['name'] = 'required';
+    }
+    if (!$partial && !array_key_exists('category', $data)) {
+        $errors['category'] = 'required';
     }
 
     if ($usersProvided) {
@@ -464,7 +669,7 @@ function inventory_where(string $kind, array $user, array $filters): array
             // Free text only: a date or a boolean cannot be "searched", and the
             // company column would let a superadmin find rows by tenant name.
             $def = inventory_column_defs()[$column];
-            if ($column === 'company' || !in_array($def['type'], ['text', 'status'], true)) {
+            if ($column === 'company' || !in_array($def['type'], ['text', 'status', 'category'], true)) {
                 continue;
             }
             $any[] = '`' . $column . '` LIKE ?';

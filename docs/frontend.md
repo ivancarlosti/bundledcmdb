@@ -99,7 +99,7 @@ the server-side guard.
 | `GET /panel-api/v1/session` | identity, CSRF token, locale/theme/page size, capabilities, grid state |
 | `PATCH /panel-api/v1/session/preferences` | theme, locale, page size, grid layout |
 | `POST /panel-api/v1/session/logout` | ends the session, returns the URL to navigate to |
-| `GET /panel-api/v1/meta` | columns (incl. `api_key`, sortable/editable, `in_grid` from the admin layout), `gridLayout` (locked + order), statuses, sources, custom fields, page sizes |
+| `GET /panel-api/v1/meta` | columns (incl. `api_key`, sortable/editable, `in_grid` from the admin layout), `gridLayout` (locked + order), statuses, sources, custom fields, page sizes, `inventoryCategories` (`{kind, name}` for the Assets/Systems dropdowns) |
 | `GET /panel-api/v1/i18n` | merged catalogue for the effective (or `?locale=`) locale |
 | `GET /panel-api/v1/views` | the signed-in user's saved grid presets (filters + sort + column layout) |
 | `POST /panel-api/v1/views` | save a view; the same name overwrites it (`201`, same id) |
@@ -134,6 +134,8 @@ the server-side guard.
 | `DELETE /panel-api/v1/settings/users/{email}` | revoke the row; `409 self_delete` / `409 last_superadmin` |
 | `GET/POST /panel-api/v1/settings/companies` | tenant registry + usage / create `{name}` (`422 duplicate`/`invalid_name`) |
 | `DELETE /panel-api/v1/settings/companies/{name}` | delete an unused tenant; `409 in_use` while users/devices/keys reference it |
+| `GET/POST /panel-api/v1/settings/categories` | category registry per kind (`usage` per name) / create `{kind, name}` (`422 duplicate`/`too_long`) |
+| `PATCH/DELETE /panel-api/v1/settings/categories/{id}` | rename (the items follow, `meta.items`) / delete with `?reassign_to=Other` (`409 in_use`, `409 last_category`, `422 invalid_target`) |
 | `GET /panel-api/v1/settings/maintenance` | migration status, PHP/DB/encryption diagnostics, cron hints |
 | `POST /panel-api/v1/settings/maintenance/migrate` | runs the migration runner; `{"dry_run": true}` is the default |
 | `GET /panel-api/v1/logs` | audit rows (admin+), filters `q`/`action`/`entity`/`actor`/`company`/`from`/`to`/`page`/`per_page`; `meta` carries the filter options, retention and last purge |
@@ -192,9 +194,10 @@ means "unchanged", and a deliberate wipe is `{"clear": ["s3.secret_key"]}`.
 
 ## Settings screens
 
-`/app/settings` is one screen with tabs, and the tab lives in the URL
-(`?tab=general|storage|sources|companies|api|fields|maintenance|users`) so it can
-be bookmarked and survives a reload. The tab strip filters on the capability map:
+`/app/settings` is one screen with tabs, and the tab lives in the URL so it can be
+bookmarked and survives a reload: `?tab=general`, `columns`, `storage`, `sources`,
+`companies`, `categories`, `api`, `fields`, `logs`, `collect`, `maintenance`,
+`permissions`, `users`. The tab strip filters on the capability map:
 a superadmin gets every tab, while an admin gets exactly one (`Users`, from the
 delegable `users.manage`) and a manager/user with no settings-area capability sees
 the forbidden state. The server enforces the same rule — `settings.*` and
@@ -202,7 +205,7 @@ the forbidden state. The server enforces the same rule — `settings.*` and
 admin to its own company (see [settings.md](settings.md)). A hidden tab is never a
 security boundary on its own.
 
-The five behaviours worth knowing when you touch this screen:
+The six behaviours worth knowing when you touch this screen:
 
 * **Cards are server-side groups.** `general`, `assets`, `api`, `storage` and
   `s3` are rendered as separate cards with their own `set_group_*` heading;
@@ -228,6 +231,16 @@ The five behaviours worth knowing when you touch this screen:
   option, and the summary line stays in sync through `aria-live`. A row outside
   the caller's rank is rendered as text, and an admin's create form is pinned to
   the session company.
+* **The category registry is edited in place, one kind at a time.**
+  `CategoriesTab` groups the rows by `kind` (create needs a kind chosen once, the
+  rename keeps it locked, so a row can never move tabs), deletes an unused row
+  after a confirm and opens the *reassign* panel for a used one — that panel is
+  what turns the server's `409 in_use` into a choice of receiver instead of an
+  error banner. The last row of a kind has its delete disabled, mirroring
+  `409 last_category`. The tab lives on `settings.categories`, so it is another
+  superadmin-only tab. Every mutation writes the refreshed list into the cache
+  *and* invalidates `/meta`, because the Assets/Systems dropdowns and the grid's
+  category filter read the vocabulary from there.
 
 ### Bulk actions
 

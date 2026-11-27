@@ -305,6 +305,40 @@ The registry is available only to a superadmin: `settings.companies` is
 `superadmin_only`. An admin's user form is pinned to their own company and reads
 that name from the session instead of the registry.
 
+### Inventory categories (superadmin)
+The controlled vocabulary behind the (required) `category` field of the Assets and
+Systems tabs, one list per kind (see [inventory.md](inventory.md#categories) for
+the model and the rules). `inventory_categories` stores the *name* and the tab
+groups the rows per kind, so the same word cannot mean two things in one tab.
+
+| Operation | Request | Answer |
+|---|---|---|
+| create | `POST /settings/categories` `{ "kind": "asset", "name": "Printer" }` | `201` + the refreshed list, `meta.id` |
+| rename | `PATCH /settings/categories/{id}` `{ "name": "Printers" }` | the items follow in the same transaction, `meta.items` |
+| delete | `DELETE /settings/categories/{id}?reassign_to=Other` | `meta.deleted` + `meta.reassigned` |
+
+Validation is keyed like a device write: `422 errors.kind = "invalid_option"`
+(only `asset`/`system`), `errors.name = "required" | "too_long" | "duplicate"`
+(the duplicate check is case-insensitive, and a rename ignores its own row).
+`kind` is immutable — a rename never moves a row to the other tab.
+
+Deleting is the interesting part, because the items point at the name:
+
+* it is refused while items still reference it and no target was named
+  (`409 in_use`, with `usage` and the sibling names);
+* a target that is not another category of the same kind is `422
+  invalid_target` — a cross-kind move would leave the items unfilterable;
+* the last category of a kind is refused outright (`409 last_category`), since
+  with an empty list the required field could never be filled again;
+* the target travels as `?reassign_to=` on a plain `DELETE` (a body is also
+  accepted), because proxies are free to drop a DELETE body.
+
+Both the create and the delete audit an `asset_events` row with
+`entity = category` and the previous name, so the Logs screen can show where the
+items went. `settings.categories` is `superadmin_only`; without migration
+`0026_inventory_categories` the table is missing, the list is empty and any
+category is accepted (an unmigrated installation keeps working).
+
 ### Users (tenant-scoped)
 `users.manage` opens the roster for admins and superadmins. The e-mail is the
 identity of the row, so it is the path parameter of the write. The search box and
@@ -336,8 +370,9 @@ both paths; `lib/companies.php` owns the registry.
 ## REST API (`/panel-api/v1/settings*`)
 
 The SPA renders the same tabs against these endpoints; the handlers are thin
-wrappers over `lib/settings.php`, so `/app/settings` and `bin/test-panel-api.php`
-cannot disagree about validation, defaults or protection rules.
+wrappers over `lib/settings.php` (and `lib/inventory.php` for the category
+registry), so `/app/settings` and `bin/test-panel-api.php` cannot disagree about
+validation, defaults or protection rules.
 
 Every endpoint below is **superadmin-only** except the four `/settings/users*`
 routes: the capability column names the area, `settings.*` and
@@ -373,6 +408,10 @@ hides the tabs it cannot open — see [frontend.md](frontend.md) for the gating)
 | `GET /settings/companies` | `settings.companies` | Registry rows + `users`/`assets`/`api_keys` usage |
 | `POST /settings/companies` | `settings.companies` | `{ "name": "Acme" }`; `422 duplicate` / `invalid_name` |
 | `DELETE /settings/companies/{name}` | `settings.companies` | `409 in_use` while users, devices or keys reference it |
+| `GET /settings/categories` | `settings.categories` | `categories` (`id`, `kind`, `name`, `usage`) grouped per kind + `kinds` |
+| `POST /settings/categories` | `settings.categories` | `{ "kind": "asset", "name": "Printer" }`; `422` on `kind`/`name` |
+| `PATCH /settings/categories/{id}` | `settings.categories` | `{ "name": "Printers" }`; the items follow, `meta.items` says how many |
+| `DELETE /settings/categories/{id}` | `settings.categories` | `?reassign_to=Other` (or a body); `409 in_use` / `409 last_category`, `422 invalid_target` |
 | `GET /settings/maintenance` | `settings.maintenance` | Migrations + diagnostics (no credentials) |
 | `POST /settings/maintenance/migrate` | `settings.maintenance` | `{ "dry_run": true }` is the default; `meta.log` carries the steps |
 | `GET /settings/columns` | `settings.manage` | Column catalogue (`id`, `label`, `label_key`, `group`, `enabled`, `default`) + the stored layout |
@@ -432,8 +471,8 @@ that nothing references any more:
 php bin/check-i18n.php
 ```
 
-Current coverage: en-US 100 %, pt-BR 98 %, es-MX 92 %, fr-FR/zh-CN/hi-IN/ar-SA
-48 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
+Current coverage: en-US 100 %, pt-BR 93 %, es-MX 89 %, fr-FR/zh-CN/hi-IN/ar-SA
+53 % (the whole React panel — every `ui_*`, `col_*`, `status_*`, `theme_*` and
 `role_*` string). The remaining `set_*` keys are the settings screens, which fall
 back to en-US in those four locales; `ui/src/i18n/coverage.test.ts` keeps the
-panel families complete so a new `col_*` key cannot ship untranslated.
+panel families complete so a new `col_*` or `ui_*` key cannot ship untranslated.

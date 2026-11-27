@@ -33,7 +33,7 @@ Turning it back off leaves the item unassigned until somebody is named.
 | --- | --- | --- | --- |
 | `name` | ✓ | ✓ | required, ≤191 |
 | `brand` | ✓ | ✓ | manufacturer ("Dell") or vendor ("Adobe") |
-| `category` | ✓ | ✓ | free text (`Monitor`, `Furniture`, `Software`, …) |
+| `category` | ✓ | ✓ | **required** on create, one of the names of this kind in the `inventory_categories` registry (see [Categories](#categories)) |
 | `model` | ✓ | — | ≤191 |
 | `version` | — | ✓ | ≤64 |
 | `serial` | ✓ | — | ≤191 |
@@ -50,9 +50,53 @@ Turning it back off leaves the item unassigned until somebody is named.
 A field of the other kind is rejected with `not_applicable`, never silently
 dropped: sending `version` for an asset is a client bug.
 
+## Categories
+
+`category` is a controlled vocabulary per kind, so the same word cannot mean two
+things in one tab and the list does not drift into `Monitor` / `monitor` /
+`Monitors`. The names live in `inventory_categories` (migration
+`2026_11_26_0026`, `sql/schema.sql` seeds the same rows) and a superadmin edits
+them in **Settings → Categories** — an admin never sees the tab.
+
+```
+inventory_categories  id, kind ('asset'|'system'), name, sort_order, created_at/by
+                      UNIQUE (kind, name)
+```
+
+The rules that follow from that table:
+
+* **The name is stored, not an id.** `inventory_items.category` keeps the text
+  (the same choice as `assets.source`), so a list row or an audit entry is
+  readable without a join. The registry therefore only decides which names a form
+  may submit, and a rename has to cascade.
+* **`kind` is fixed per row.** The Systems form never offers an asset name and
+  vice versa (`422 errors.category = "invalid_option"`), so "move it to the other
+  tab" is a delete + create, not an edit.
+* **Required on create** (`422 errors.category = "required"`) and never clearable
+  on update: an uncategorised item would drop out of every filter.
+* **A rename cascades** — the registry row and the items move in one transaction
+  (`meta.items` says how many), so no item is left pointing at a name no form
+  accepts any more.
+* **A delete needs a home for the items.** Deleting a category that still has
+  items answers `409 in_use` with the count; the caller names the receiver
+  (`{ "reassign_to": "Other" }`, or `?reassign_to=Other` on a plain `DELETE`,
+  because a proxy is free to drop a DELETE body). A target from the other kind is
+  `422 invalid_target`. The last category of a kind is refused outright
+  (`409 last_category`): with no vocabulary left the required field could never be
+  satisfied again.
+* **An unmigrated database still works.** Without the table the vocabulary cannot
+  be verified, so every name is accepted and Settings shows an empty list.
+
+The forms read the vocabulary from `GET /panel-api/v1/meta`
+(`inventoryCategories: [{kind, name}]`), the grid's category `<select>` builds
+its options from the same array, and a stored value that is not in it (legacy
+data, a name deleted by hand) is kept as the current choice instead of being
+silently replaced.
+
 ## Storage
 
-Both tabs live in one table pair (migration `0025_inventory_items`):
+Both tabs live in one table pair (migration `0025_inventory_items`), plus the
+category registry added by migration `0026_inventory_categories`:
 
 ```
 inventory_items       id, kind ('asset'|'system'), name, brand, category, model,
@@ -60,6 +104,7 @@ inventory_items       id, kind ('asset'|'system'), name, brand, category, model,
                       warranty_end, license_expiry, common_usage, notes, company,
                       created_at/by, updated_at/by
 inventory_item_users  item_id, email, assigned_at, assigned_by   (PK item_id+email)
+inventory_categories  id, kind, name, sort_order, created_at/by  (UNIQUE kind+name)
 ```
 
 `kind` is what makes the two lists disjoint, and it is part of every query, so an
@@ -82,6 +127,12 @@ The tabs appear in the navigation only when the matching `view` capability is
 granted; a hidden tab still answers `403` if reached directly. The assignment
 picker reads `GET /panel-api/v1/users`, which any of `devices.update`,
 `assets.update` or `systems.update` opens.
+
+The category vocabulary behind the required `category` field is its own
+superadmin area (`settings.categories`, see
+[settings.md](settings.md#inventory-categories-superadmin) and
+[Categories](#categories)); managers write items but never the list of allowed
+names.
 
 ## Audit
 

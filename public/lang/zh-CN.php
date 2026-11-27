@@ -239,6 +239,8 @@ return [
     'ui_rows_per_page' => '每页行数',
     'ui_saved' => '已保存。',
     'ui_select_all' => '选择本页所有行',
+    'ui_select_category' => '选择类别…',
+    'ui_select_company' => '选择公司…',
     'ui_select_row' => '选择 {{name}}',
     'ui_selected_count' => '已选择 {{total}} 项',
     'ui_showing_range' => '显示第 {{from}}–{{to}} 条，共 {{total}} 条',

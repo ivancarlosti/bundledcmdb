@@ -200,10 +200,10 @@ test.describe('settings', () => {
     await page.getByRole('link', { name: 'Settings' }).click();
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
-    // General, Columns, Storage, Sources, Companies, API, Fields, Logs,
-    // Collect data, Maintenance, Permissions, Users: the whole surface belongs
-    // to the recovery role.
-    await expect(page.getByRole('tab')).toHaveCount(12);
+    // General, Columns, Storage, Sources, Categories, Companies, API, Fields,
+    // Logs, Collect data, Maintenance, Permissions, Users: the whole surface
+    // belongs to the recovery role.
+    await expect(page.getByRole('tab')).toHaveCount(13);
     await expect(page.getByRole('tab', { name: 'Companies' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Permissions' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Users' })).toBeVisible();
@@ -212,6 +212,104 @@ test.describe('settings', () => {
     await page.getByRole('tab', { name: 'Sources' }).click();
     await expect(page.getByRole('cell', { name: /Manual/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Delete' }).first()).toBeDisabled();
+  });
+
+  /**
+   * The category tab is the only settings screen whose rows are grouped instead
+   * of listed flat, and the only one where a row can be undeletable: one item is
+   * always required to carry a category, so the last row of a tab has to stay.
+   */
+  test('groups the category registry per tab and keeps the rename kind fixed', async ({ page }) => {
+    const patches: { url: string; body: unknown }[] = [];
+    await mockPanel(page, { session: SUPERADMIN });
+    await mockSettings(page);
+
+    // A single System row proves the delete guard without needing an item.
+    const categories = [
+      { id: 1, kind: 'asset', name: 'Laptop', usage: 2 },
+      { id: 2, kind: 'asset', name: 'Monitor', usage: 0 },
+      { id: 3, kind: 'system', name: 'Licence', usage: 0 },
+    ];
+    await page.route('**/panel-api/v1/settings/categories**', (route) => {
+      if (route.request().method() === 'PATCH') {
+        patches.push({ url: route.request().url(), body: route.request().postDataJSON() });
+      }
+      return route.fulfill({ json: { ok: true, data: { categories, kinds: ['asset', 'system'] } } });
+    });
+
+    await page.goto('/app/settings?tab=categories');
+
+    await expect(page.getByRole('tab', { name: 'Categories' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('heading', { name: 'Assets' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
+
+    const laptop = page.getByRole('row', { name: /^Laptop/ });
+    await expect(laptop.getByText('2 item(s)')).toBeVisible();
+    await expect(laptop.getByRole('button', { name: 'Delete' })).toBeEnabled();
+
+    // The only System category cannot be deleted, and the title says why.
+    const licence = page.getByRole('row', { name: /^Licence/ });
+    await expect(licence.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    await expect(licence.getByRole('button', { name: 'Delete' })).toHaveAttribute(
+      'title',
+      'The last category of this tab cannot be deleted: every item needs one.',
+    );
+
+    // Rename: the kind is part of `UNIQUE(kind, name)` and owns the items, so it
+    // is shown but locked; only the name is editable.
+    await laptop.getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByLabel('Applies to')).toBeDisabled();
+    await expect(page.getByLabel('Applies to')).toHaveValue('asset');
+
+    const name = page.getByLabel('Category name');
+    await expect(name).toHaveValue('Laptop');
+    await name.fill('Laptop EU');
+    await page.getByRole('button', { name: 'Save Changes' }).click();
+
+    await expect.poll(() => patches.length).toBe(1);
+    expect(patches[0]?.url).toMatch(/\/settings\/categories\/1$/);
+    expect(patches[0]?.body).toMatchObject({ name: 'Laptop EU' });
+  });
+
+  test('asks for the receiving category before deleting a used one', async ({ page }) => {
+    const deletes: string[] = [];
+    await mockPanel(page, { session: SUPERADMIN });
+    await mockSettings(page);
+
+    const categories = [
+      { id: 1, kind: 'asset', name: 'Laptop', usage: 2 },
+      { id: 2, kind: 'asset', name: 'Monitor', usage: 0 },
+      { id: 3, kind: 'system', name: 'Licence', usage: 1 },
+    ];
+    await page.route('**/panel-api/v1/settings/categories**', (route) => {
+      if (route.request().method() === 'DELETE') {
+        deletes.push(route.request().url());
+      }
+      return route.fulfill({ json: { ok: true, data: { categories, kinds: ['asset', 'system'] } } });
+    });
+
+    await page.goto('/app/settings?tab=categories');
+    await page
+      .getByRole('row', { name: /^Laptop/ })
+      .getByRole('button', { name: 'Delete' })
+      .click();
+
+    // A used row opens the reassign panel instead of a confirm that the server
+    // would answer with `409 in_use`.
+    await expect(page.getByRole('heading', { name: 'Delete "Laptop" and move its items' })).toBeVisible();
+
+    // Only siblings of the same kind are offered, and the first one is
+    // preselected so the panel is never submitted empty.
+    const target = page.getByLabel('Move its items to');
+    await expect(target).toHaveValue('Monitor');
+    await expect(target.getByRole('option')).toHaveCount(1);
+
+    const panel = page.locator('form').filter({ has: page.getByRole('heading', { name: /move its items/ }) });
+    await panel.getByRole('button', { name: 'Delete' }).click();
+
+    await expect.poll(() => deletes.length).toBe(1);
+    expect(deletes[0]).toContain('/settings/categories/1?reassign_to=Monitor');
+    await expect(panel).toHaveCount(0);
   });
 
   test('opens the user roster for a superadmin and disables the own row', async ({ page }) => {

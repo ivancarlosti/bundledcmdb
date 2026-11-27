@@ -112,10 +112,7 @@ export async function fetchInventoryItem(kind: InventoryKind, id: number): Promi
   return apiRequest<InventoryRow>(`${inventoryPath(kind)}/${id}`);
 }
 
-export async function createInventoryItem(
-  kind: InventoryKind,
-  body: InventoryWriteBody,
-): Promise<InventoryRow> {
+export async function createInventoryItem(kind: InventoryKind, body: InventoryWriteBody): Promise<InventoryRow> {
   return apiRequest<InventoryRow>(inventoryPath(kind), { method: 'POST', body });
 }
 

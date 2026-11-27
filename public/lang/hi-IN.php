@@ -239,6 +239,8 @@ return [
     'ui_rows_per_page' => 'प्रति पृष्ठ पंक्तियाँ',
     'ui_saved' => 'सहेजा गया।',
     'ui_select_all' => 'इस पृष्ठ की सभी पंक्तियाँ चुनें',
+    'ui_select_category' => 'श्रेणी चुनें…',
+    'ui_select_company' => 'कंपनी चुनें…',
     'ui_select_row' => '{{name}} चुनें',
     'ui_selected_count' => '{{total}} चयनित',
     'ui_showing_range' => '{{total}} में से {{from}}–{{to}} दिखाया जा रहा है',

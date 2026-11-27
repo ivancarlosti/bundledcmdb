@@ -96,8 +96,9 @@ the file); change them before exposing the stack. The panel is published on
 * **Assets and Systems** — two tabs after Devices inventory what is not a
   computer: physical assets (a TV, a monitor, a desk) and systems (software and
   services). An item is assigned to any number of people, or marked **common
-  usage** (shared by the whole company) and then assigned to nobody. See
-  [docs/inventory.md](docs/inventory.md).
+  usage** (shared by the whole company) and then assigned to nobody. Every item
+  carries a category from a per-tab vocabulary a superadmin maintains under
+  Settings → Categories. See [docs/inventory.md](docs/inventory.md).
 * **Device history** — every write lands in `asset_events` (`create`, `update`,
   `delete`, `restore`, `purge`, `file_add`, `file_remove`) and is shown as a
   timeline on the detail page.
@@ -110,13 +111,13 @@ the file); change them before exposing the stack. The panel is published on
 * **Per-user preferences** — locale, theme and page size live in
   `user_preferences`, so they follow the user across browsers.
 * **Settings tabs** (`/app/settings`) — general, storage (secret encrypted with
-  `APP_ENCRYPTION_KEY`), sources, API keys, custom fields, log retention, schema
-  maintenance and the company (tenant) registry. Values are stored in the
-  database with `DB → ENV → default` precedence; see
-  [docs/settings.md](docs/settings.md). The screen is superadmin-only except for
-  **Users** (`users.manage`): an admin gets that one tab and manages only its own
-  company, with a role ceiling of `user`/`manager`; a superadmin manages every
-  company and the registry itself.
+  `APP_ENCRYPTION_KEY`), sources, the company (tenant) registry, the per-tab
+  inventory categories, API keys, custom fields, log retention and schema
+  maintenance. Values are stored in the database with `DB → ENV → default`
+  precedence; see [docs/settings.md](docs/settings.md). The screen is
+  superadmin-only except for **Users** (`users.manage`): an admin gets that one
+  tab and manages only its own company, with a role ceiling of
+  `user`/`manager`; a superadmin manages every company and the registry itself.
 * **REST API for devices** — `POST/PATCH/DELETE /api/v1/devices`, upsert, bulk
   and delete-by-`uuid`/`sn`, per-key company/source scopes, IP allowlists, token
   rotation. See [docs/api.md](docs/api.md).

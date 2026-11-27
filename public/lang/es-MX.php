@@ -373,6 +373,8 @@ return [
     'ui_bulk_actions' => 'Acciones masivas',
     'ui_selected_count' => '{{total}} seleccionado(s)',
     'ui_select_all' => 'Seleccionar todas las filas de esta página',
+    'ui_select_category' => 'Seleccione una categoría…',
+    'ui_select_company' => 'Seleccione una empresa…',
     'ui_select_row' => 'Seleccionar {{name}}',
     'ui_bulk_status' => 'Definir estado',
     'ui_bulk_byod' => 'Definir BYOD',

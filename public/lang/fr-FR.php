@@ -239,6 +239,8 @@ return [
     'ui_rows_per_page' => 'Lignes par page',
     'ui_saved' => 'Enregistré.',
     'ui_select_all' => 'Sélectionner toutes les lignes de cette page',
+    'ui_select_category' => 'Sélectionner une catégorie…',
+    'ui_select_company' => 'Sélectionner une société…',
     'ui_select_row' => 'Sélectionner {{name}}',
     'ui_selected_count' => '{{total}} sélectionné(s)',
     'ui_showing_range' => 'Affichage de {{from}}–{{to}} sur {{total}}',

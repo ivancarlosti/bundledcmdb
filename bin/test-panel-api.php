@@ -104,6 +104,10 @@ foreach ([
     ['GET',   '/settings/companies',                'panel_settings_companies_index'],
     ['POST',  '/settings/companies',                'panel_settings_companies_store'],
     ['DELETE', '/settings/companies/Test%20Co',     'panel_settings_companies_delete'],
+    ['GET',   '/settings/categories',               'panel_settings_categories_index'],
+    ['POST',  '/settings/categories',               'panel_settings_categories_store'],
+    ['PATCH', '/settings/categories/12',            'panel_settings_categories_update'],
+    ['DELETE', '/settings/categories/12',           'panel_settings_categories_delete'],
     ['GET',   '/settings/maintenance',              'panel_settings_maintenance_show'],
     ['POST',  '/settings/maintenance/migrate',      'panel_settings_maintenance_migrate'],
     ['GET',   '/logs',                              'panel_logs_index'],
@@ -812,6 +816,9 @@ $keyId = 0;
 $restoreSetting = null;
 // Registry rows created by the tenant tests (removed in `finally`).
 $testCompanies = [];
+// Inventory category rows created by the registry tests (ids, removed in
+// `finally` in case an assertion throws before the test deletes them).
+$testCategories = [];
 // Inventory rows created by the Assets/Systems tests (removed in `finally`, in
 // case an assertion throws before the test deletes them itself).
 $inventoryIds = ['asset' => [], 'system' => []];
@@ -2805,6 +2812,18 @@ try {
     );
     check($asset['data']['company'] === $writeCompany, 'inventory: company scoped to the caller');
 
+    // `category` is a controlled list: it is required on create (an item without
+    // one cannot be filtered or reported) and it has to be a name the registry of
+    // *this* kind owns.
+    body(['name' => 'No category']);
+    check_error('inventory: a missing category → 422', fn () => panel_assets_create(), 'validation_failed', 422, [
+        'category' => 'required',
+    ]);
+    body(['name' => 'Bad category', 'category' => 'Not A Category']);
+    check_error('inventory: an unregistered category → 422', fn () => panel_assets_create(), 'validation_failed', 422, [
+        'category' => 'invalid_option',
+    ]);
+
     body(['name' => 'x', 'version' => '1.0']);
     check_error('inventory: system field on an asset → 422', fn () => panel_assets_create(), 'validation_failed', 422, [
         'version' => 'not_applicable',
@@ -2827,7 +2846,12 @@ try {
     check(inventory_user_emails($pdo, $assetId) === [], 'inventory: join rows deleted');
 
     unset($_GET);
-    body(['name' => 'INV Acrobat', 'version' => '2024', 'license_expiry' => '2027-01-31']);
+    body([
+        'name'           => 'INV Acrobat',
+        'category'       => 'Software',
+        'version'        => '2024',
+        'license_expiry' => '2027-01-31',
+    ]);
     $system = panel_systems_create();
     $systemId = (int) $system['data']['id'];
     $inventoryIds['system'][] = $systemId;
@@ -2837,6 +2861,23 @@ try {
     check(in_array($assetId, $assetRows, true), 'inventory: asset list has the asset');
     check(in_array($systemId, $systemRows, true), 'inventory: system list has the system');
     check(!in_array($systemId, $assetRows, true), 'inventory: kinds never mix');
+
+    // The grid's category filter is an exact match on the stored name (trimmed
+    // by the filter parser), so an unknown value yields nothing instead of a 400.
+    $assetCategory = (string) ($asset['data']['category'] ?? '');
+    $_GET = ['category' => $assetCategory];
+    $filteredRows = panel_assets_index([])['data']['rows'];
+    check(
+        $filteredRows !== []
+        && array_reduce(
+            $filteredRows,
+            static fn (bool $ok, array $row): bool => $ok && (string) $row['category'] === $assetCategory,
+            true
+        ),
+        'inventory: the category filter narrows the list'
+    );
+    $_GET = ['category' => $assetCategory . ' (nope)'];
+    check(panel_assets_index([])['data']['total'] === 0, 'inventory: an unknown category filter matches nothing');
 
     $_GET = ['sort' => 'not_a_column'];
     check_error('inventory: unknown sort → 400', fn () => panel_assets_index([]), 'invalid_sort', 400, [
@@ -2873,6 +2914,194 @@ try {
     check(panel_assets_delete(['id' => (string) $assetId])['data']['deleted'] === true, 'inventory: delete removes the item');
     check(inventory_get($pdo, $assetId, 'asset', $writeCompany) === null, 'inventory: deleted row is gone');
     $inventoryIds['asset'] = array_values(array_diff($inventoryIds['asset'], [$assetId]));
+
+    // --- settings: inventory categories (registry) -------------------------
+    // `inventory_items.category` stores a *name* the registry owns (no FK), so the
+    // registry is the only writer: create/rename/delete here and the Assets and
+    // Systems forms, the grid filter and `/meta` all follow. `kind` is fixed per
+    // row, so "move it to the other tab" is a delete + create, never a rename.
+    as_role('superadmin', '');
+    $categoryName = 'QA Cat ' . strtoupper(bin2hex(random_bytes(3)));
+    body(['kind' => 'asset', 'name' => $categoryName]);
+    $createdCategory = panel_settings_categories_store();
+    check(($createdCategory['status'] ?? 0) === 201, 'categories: create returns 201');
+    $categoryId = (int) ($createdCategory['meta']['id'] ?? 0);
+    check($categoryId > 0, 'categories: create reports the id');
+    $testCategories[] = $categoryId;
+    check(
+        in_array($categoryName, inventory_category_names($pdo, 'asset'), true),
+        'categories: the name is registered for its kind'
+    );
+    check(
+        !in_array($categoryName, inventory_category_names($pdo, 'system'), true),
+        'categories: the name is not offered to the other kind'
+    );
+    $categoryPayload = panel_settings_categories_index()['data'] ?? [];
+    check(
+        in_array(
+            $categoryName,
+            array_map(static fn (array $row): string => (string) $row['name'], $categoryPayload['categories'] ?? []),
+            true
+        ),
+        'categories: the list carries the new name'
+    );
+    check(($categoryPayload['kinds'] ?? []) === inventory_kinds(), 'categories: the list names both kinds');
+
+    body(['kind' => 'asset', 'name' => strtolower($categoryName)]);
+    check_error('categories: a duplicate (case-insensitive) → 422', fn () => panel_settings_categories_store(), 'validation_failed', 422, [
+        'name' => 'duplicate',
+    ]);
+    body(['kind' => 'nope', 'name' => 'Whatever']);
+    check_error('categories: an unknown kind → 422', fn () => panel_settings_categories_store(), 'validation_failed', 422, [
+        'kind' => 'invalid_option',
+    ]);
+    body(['kind' => 'asset', 'name' => '']);
+    check_error('categories: a blank name → 422', fn () => panel_settings_categories_store(), 'validation_failed', 422, [
+        'name' => 'required',
+    ]);
+    body(['kind' => 'asset', 'name' => str_repeat('x', 65)]);
+    check_error('categories: a name over 64 chars → 422', fn () => panel_settings_categories_store(), 'validation_failed', 422, [
+        'name' => 'too_long',
+    ]);
+
+    // Superadmin-only, like the rest of the vocabulary screens.
+    foreach (['admin', 'manager', 'user'] as $deniedRole) {
+        as_role($deniedRole, $companyA);
+        check_error(
+            "categories: {$deniedRole} cannot list → 403",
+            fn () => panel_settings_categories_index(),
+            'forbidden',
+            403
+        );
+        body(['kind' => 'asset', 'name' => 'Nope ' . $deniedRole]);
+        check_error(
+            "categories: {$deniedRole} cannot create → 403",
+            fn () => panel_settings_categories_store(),
+            'forbidden',
+            403
+        );
+    }
+    as_role('superadmin', '');
+    // One item carries the new category: the delete guards need a real count.
+    as_inventory_role('manager', $writeCompany, 'inv-manager@example.com');
+    unset($_GET);
+    body(['name' => 'Cat item', 'category' => $categoryName]);
+    $categoryItem = panel_assets_create();
+    $categoryItemId = (int) ($categoryItem['data']['id'] ?? 0);
+    $inventoryIds['asset'][] = $categoryItemId;
+    check(($categoryItem['status'] ?? 0) === 201, 'categories: an item may use the new category');
+
+    as_role('superadmin', '');
+    $categoryUsage = 0;
+    foreach (panel_settings_categories_index()['data']['categories'] ?? [] as $usageRow) {
+        if ((int) $usageRow['id'] === $categoryId) {
+            $categoryUsage = (int) $usageRow['usage'];
+        }
+    }
+    check($categoryUsage === 1, 'categories: the list counts the items in use', (string) $categoryUsage);
+
+    // An in-use row cannot simply vanish: the caller has to name the category
+    // that receives the items, so nothing ends up pointing at a gone name.
+    body([]);
+    check_error('categories: an in-use category without a target → 409', function () use ($categoryId): void {
+        panel_settings_categories_delete(['id' => (string) $categoryId]);
+    }, 'in_use', 409, ['name' => 'in_use']);
+
+    // A target from the other kind (or an unknown name) would leave the items
+    // unfilterable in their own tab, so it is a 422 rather than a silent move.
+    $systemOnly = (string) ((inventory_category_names($pdo, 'system'))[0] ?? '');
+    if ($systemOnly !== '' && !in_array($systemOnly, inventory_category_names($pdo, 'asset'), true)) {
+        body(['reassign_to' => $systemOnly]);
+        check_error('categories: a cross-kind target → 422', function () use ($categoryId): void {
+            panel_settings_categories_delete(['id' => (string) $categoryId]);
+        }, 'invalid_target', 422, ['reassign_to' => 'invalid_option']);
+    }
+
+    // A rename cascades to the items, so they keep pointing at an accepted name.
+    $renamedCategory = $categoryName . ' Renamed';
+    body(['name' => $renamedCategory]);
+    $renamed = panel_settings_categories_update(['id' => (string) $categoryId]);
+    check(
+        ($renamed['meta']['items'] ?? -1) === 1,
+        'categories: the rename reports the items it moved',
+        json_encode($renamed['meta'] ?? [])
+    );
+    check(
+        (inventory_category_get($pdo, $categoryId)['name'] ?? '') === $renamedCategory,
+        'categories: the row carries the new name'
+    );
+    check(
+        (inventory_get($pdo, $categoryItemId, 'asset', $writeCompany)['category'] ?? '') === $renamedCategory,
+        'categories: the items follow the rename'
+    );
+    check(!in_array($categoryName, inventory_category_names($pdo, 'asset'), true), 'categories: the old name is gone');
+    check(
+        in_array(
+            ['kind' => 'asset', 'name' => $renamedCategory],
+            panel_meta_show()['data']['inventoryCategories'] ?? [],
+            true
+        ),
+        'categories: /meta publishes the vocabulary'
+    );
+
+    $siblingCategory = '';
+    foreach (inventory_category_names($pdo, 'asset') as $candidate) {
+        if ($candidate !== $renamedCategory) {
+            $siblingCategory = $candidate;
+            break;
+        }
+    }
+    if ($siblingCategory !== '') {
+        // The target travels as a query param (`?reassign_to=`), because proxies
+        // are free to drop a DELETE body.
+        $_GET = ['reassign_to' => $siblingCategory];
+        body([]);
+        $deletedCategory = panel_settings_categories_delete(['id' => (string) $categoryId]);
+        unset($_GET);
+        check(
+            ($deletedCategory['meta']['deleted'] ?? '') === $renamedCategory,
+            'categories: the delete reports the name'
+        );
+        check(($deletedCategory['meta']['reassigned'] ?? 0) === 1, 'categories: the delete moved the item');
+        check(
+            (inventory_get($pdo, $categoryItemId, 'asset', $writeCompany)['category'] ?? '') === $siblingCategory,
+            'categories: ?reassign_to= drained the items'
+        );
+        check(inventory_category_get($pdo, $categoryId) === null, 'categories: the row is gone');
+        $testCategories = array_values(array_diff($testCategories, [$categoryId]));
+        check_error('categories: deleting twice → 404', function () use ($categoryId): void {
+            panel_settings_categories_delete(['id' => (string) $categoryId]);
+        }, 'not_found', 404);
+    }
+
+    // `last_category` needs a kind down to a single row, and the seeded vocabulary
+    // is shared with the dev stack. The strip therefore runs inside a transaction
+    // that is always rolled back: the guard throws before it could write.
+    $lastCategoryId = 0;
+    $pdo->beginTransaction();
+    try {
+        foreach (inventory_categories($pdo, 'system', true) as $systemRow) {
+            if ($lastCategoryId === 0) {
+                $lastCategoryId = (int) $systemRow['id'];
+                continue;
+            }
+            $pdo->prepare('DELETE FROM inventory_categories WHERE id = ?')->execute([(int) $systemRow['id']]);
+        }
+        inventory_categories($pdo, 'system', true);
+        if ($lastCategoryId > 0) {
+            body([]);
+            check_error('categories: the last category of a kind → 409', function () use ($lastCategoryId): void {
+                panel_settings_categories_delete(['id' => (string) $lastCategoryId]);
+            }, 'last_category', 409, ['name' => 'last_category']);
+        }
+    } finally {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        inventory_categories($pdo, 'system', true);
+        clear_body();
+        $_GET = [];
+    }
 
     as_role('superadmin', '');
 } catch (Throwable $e) {
@@ -2953,6 +3182,17 @@ try {
         } catch (Throwable $e) {
             fwrite(STDERR, "company cleanup failed ({$testCompany}): " . $e->getMessage() . "\n");
         }
+    }
+    if ($testCategories !== [] && db_table_exists($pdo, 'inventory_categories')) {
+        foreach (array_unique($testCategories) as $testCategoryId) {
+            try {
+                $pdo->prepare('DELETE FROM inventory_categories WHERE id = ?')->execute([(int) $testCategoryId]);
+            } catch (Throwable $e) {
+                fwrite(STDERR, "category cleanup failed (#{$testCategoryId}): " . $e->getMessage() . "\n");
+            }
+        }
+        inventory_categories($pdo, 'asset', true);
+        inventory_categories($pdo, 'system', true);
     }
     foreach (array_unique((array) ($GLOBALS['test_roster_emails'] ?? [])) as $testEmail) {
         try {

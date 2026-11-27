@@ -384,6 +384,37 @@ CREATE TABLE IF NOT EXISTS inventory_item_users (
     KEY idx_inventory_item_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 0026 adds the category vocabulary. `inventory_items.category` still stores the
+-- name (no foreign key, like `assets.source`); the table only controls which
+-- names the forms offer, per `kind`, and `usage` counting is done by the API.
+CREATE TABLE IF NOT EXISTS inventory_categories (
+    id INT NOT NULL AUTO_INCREMENT,
+    kind VARCHAR(16) NOT NULL,
+    name VARCHAR(64) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(191) NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_inventory_category (kind, name),
+    KEY idx_inventory_categories_kind (kind, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The same defaults migration 0026 seeds: a fresh import marks the migration as
+-- applied, so the rows have to exist here or the required category field would
+-- have nothing to offer. `Other` is the fallback on both kinds.
+INSERT IGNORE INTO inventory_categories (kind, name, sort_order) VALUES
+    ('asset', 'Display', 10),
+    ('asset', 'Peripheral', 20),
+    ('asset', 'Mobile', 30),
+    ('asset', 'Network', 40),
+    ('asset', 'Furniture', 50),
+    ('asset', 'Other', 60),
+    ('system', 'Software', 10),
+    ('system', 'Service', 20),
+    ('system', 'Subscription', 30),
+    ('system', 'Platform', 40),
+    ('system', 'Other', 50);
+
 INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_02_0001_settings'),
     ('2026_11_02_0002_sources'),
@@ -409,5 +440,6 @@ INSERT IGNORE INTO schema_migrations (version) VALUES
     ('2026_11_26_0022_settings_superadmin_only'),
     ('2026_11_26_0023_companies'),
     ('2026_11_26_0024_collector_tokens'),
-    ('2026_11_26_0025_inventory_items');
+    ('2026_11_26_0025_inventory_items'),
+    ('2026_11_26_0026_inventory_categories');
 

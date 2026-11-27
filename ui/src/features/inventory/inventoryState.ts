@@ -105,11 +105,7 @@ export function applyInventoryFilters(state: InventoryState, patch: Partial<Inve
 
 export function hasInventoryFilters(state: InventoryState): boolean {
   return (
-    state.q !== '' ||
-    state.status !== '' ||
-    state.category !== '' ||
-    state.commonUsage !== '' ||
-    state.sort !== ''
+    state.q !== '' || state.status !== '' || state.category !== '' || state.commonUsage !== '' || state.sort !== ''
   );
 }
 

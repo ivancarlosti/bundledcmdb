@@ -265,6 +265,10 @@ function migrations(): array
             'description' => 'Create inventory_items + inventory_item_users (Assets and Systems tabs)',
             'run' => 'migration_0025_inventory_items',
         ],
+        '2026_11_26_0026_inventory_categories' => [
+            'description' => 'Create inventory_categories (per-kind vocabulary), seed defaults, backfill stored categories',
+            'run' => 'migration_0026_inventory_categories',
+        ],
     ];
 }
 
@@ -1298,5 +1302,77 @@ function migration_0024_collector_tokens(PDO $pdo): void
     } else {
         migrate_note('skipped collector source seed: asset_sources missing');
     }
+}
+
+/**
+ * Migration 0026 — the category vocabulary of the Assets and Systems tabs.
+ *
+ * `inventory_items.category` keeps storing the *name*, exactly like
+ * `assets.source` stores a slug: the registry only controls which names are
+ * offered. It is per `kind` because an asset is a `Monitor` and a system is a
+ * `Subscription`; a shared list would put nonsense options on both forms.
+ *
+ * The backfill has two halves and the order matters:
+ *
+ *  1. names already stored are adopted into the registry, so a catalogue built
+ *     before this migration keeps its vocabulary instead of collapsing to
+ *     `Other`;
+ *  2. only then are the empty values rewritten to `Other` — which both seeds
+ *     contain, so the new required-create rule can always be satisfied.
+ */
+function migration_0026_inventory_categories(PDO $pdo): void
+{
+    if (!db_table_exists($pdo, 'inventory_categories')) {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS inventory_categories (
+                id INT NOT NULL AUTO_INCREMENT,
+                kind VARCHAR(16) NOT NULL,
+                name VARCHAR(64) NOT NULL,
+                sort_order INT NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(191) NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_inventory_category (kind, name),
+                KEY idx_inventory_categories_kind (kind, sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        migrate_note('CREATE TABLE inventory_categories');
+    }
+
+    $defaults = [
+        'asset'  => ['Display', 'Peripheral', 'Mobile', 'Network', 'Furniture', 'Other'],
+        'system' => ['Software', 'Service', 'Subscription', 'Platform', 'Other'],
+    ];
+    $seed = $pdo->prepare(
+        'INSERT IGNORE INTO inventory_categories (kind, name, sort_order) VALUES (?, ?, ?)'
+    );
+    $seeded = 0;
+    foreach ($defaults as $kind => $names) {
+        foreach ($names as $position => $name) {
+            $seed->execute([$kind, $name, ($position + 1) * 10]);
+            $seeded += $seed->rowCount();
+        }
+    }
+    migrate_note("seeded {$seeded} inventory_categories row(s)");
+
+    if (!db_table_exists($pdo, 'inventory_items')) {
+        migrate_note('skipped category backfill: inventory_items missing');
+        return;
+    }
+
+    // `sort_order` 1000 keeps the adopted names behind the seeded vocabulary,
+    // which is the order an admin would want when cleaning up legacy spellings.
+    $adopted = $pdo->exec(
+        "INSERT IGNORE INTO inventory_categories (kind, name, sort_order)
+         SELECT DISTINCT kind, category, 1000
+           FROM inventory_items
+          WHERE category IS NOT NULL AND category <> ''"
+    );
+    migrate_note('adopted ' . $adopted . ' category name(s) from inventory_items');
+
+    $rewritten = $pdo->exec(
+        "UPDATE inventory_items SET category = 'Other' WHERE category IS NULL OR category = ''"
+    );
+    migrate_note('set ' . $rewritten . ' empty category value(s) to Other');
 }
 

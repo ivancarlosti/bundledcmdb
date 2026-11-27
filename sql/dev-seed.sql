@@ -43,6 +43,15 @@ SET @acme_desktop_2 = (SELECT MIN(Id) FROM assets WHERE SN = 'SN-0002');
 -- `inventory_items`, told apart by `kind`. The TV and the identity provider are
 -- `common_usage` rows on purpose: they demonstrate that a shared item has no
 -- assignment rows, while the monitor and Acrobat Pro show the multi-user list.
+--
+-- The form only accepts a category the registry knows about (migration 0026), so
+-- the one-off names the demo rows use are registered here first; the defaults
+-- (`Display`, `Furniture`, `Software`, …) already come from the migration and
+-- `INSERT IGNORE` keeps this block harmless on a database that has them.
+INSERT IGNORE INTO inventory_categories (kind, name, sort_order) VALUES
+    ('asset', 'Monitor', 15),
+    ('system', 'Identity provider', 25),
+    ('system', 'Developer tool', 35);
 INSERT INTO inventory_items (kind, name, brand, category, model, version, serial, location, status, purchase_date, warranty_end, license_expiry, common_usage, notes, company, created_at, created_by, updated_at, updated_by) VALUES
     ('asset', 'Meeting room TV', 'Samsung', 'Display', 'QE55', NULL, 'INV-TV-001', 'Room 2', 'In Use', '2025-04-01', '2027-04-01', NULL, 1, 'Wall mounted above the table', 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com'),
     ('asset', 'Second monitor', 'Dell', 'Monitor', 'P2419H', NULL, 'INV-MON-014', 'Desk 14', 'In Use', '2024-02-10', '2027-02-10', NULL, 0, NULL, 'Acme', NOW(), 'admin@example.com', NOW(), 'admin@example.com'),

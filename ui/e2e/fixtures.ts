@@ -181,6 +181,28 @@ export const MESSAGES: Record<string, string> = {
   set_company_name_hint: 'Exact spelling used on users and devices.',
   set_company_usage: '{{users}} users · {{assets}} devices · {{keys}} API keys',
   set_company_usage_header: 'Usage',
+  // Categories tab: per-kind vocabulary behind the inventory `category` field.
+  set_tab_categories: 'Categories',
+  set_categories_intro: 'The categories the Assets and Systems forms offer, per tab.',
+  set_category_add: 'Add category',
+  set_category_create: 'Create category',
+  set_category_edit: 'Rename category',
+  set_category_kind: 'Applies to',
+  set_category_name: 'Category name',
+  set_category_name_hint: 'Exact spelling shown in the form and stored on the item.',
+  set_category_empty: 'No categories yet.',
+  set_category_usage: '{{count}} item(s)',
+  set_category_delete_confirm: 'Delete the category "{{name}}"?',
+  set_category_reassign: 'Move its items to',
+  set_category_reassign_title: 'Delete "{{name}}" and move its items',
+  set_category_reassign_intro: 'The category is still used. Pick the category of the same tab that receives its items.',
+  set_category_last: 'The last category of this tab cannot be deleted: every item needs one.',
+  set_category_in_use: 'Still used by items; pick the category that receives them.',
+  set_actions: 'Actions',
+  set_edit: 'Edit',
+  set_delete: 'Delete',
+  ui_assets: 'Assets',
+  ui_systems: 'Systems',
   set_group_general: 'General',
   set_group_assets: 'Assets',
   set_group_api: 'API',
@@ -319,6 +341,7 @@ export const ROLE_PERMISSIONS: Record<'user' | 'manager' | 'admin' | 'superadmin
     'settings.api_keys': true,
     'settings.maintenance': true,
     'settings.companies': true,
+    'settings.categories': true,
     'users.manage': true,
     'permissions.manage': true,
   },
@@ -584,6 +607,13 @@ export const META = {
   sources: [],
   fields: [],
   companies: [],
+  // Vocabulary of the inventory forms, per kind (the name is the stored value).
+  inventoryCategories: [
+    { kind: 'asset', name: 'Laptop' },
+    { kind: 'asset', name: 'Monitor' },
+    { kind: 'system', name: 'Licence' },
+    { kind: 'system', name: 'SaaS' },
+  ],
   locales: SESSION.locales,
   themes: SESSION.themes,
   pageSizes: SESSION.pageSizes,
@@ -1168,6 +1198,14 @@ export const SETTINGS_COMPANIES = [
   { name: 'Globex', users: 0, assets: 0, api_keys: 0, total: 0 },
 ];
 
+/** Category registry rows; `usage` is what forces a reassign before a delete. */
+export const SETTINGS_CATEGORIES = [
+  { id: 1, kind: 'asset', name: 'Laptop', usage: 2 },
+  { id: 2, kind: 'asset', name: 'Monitor', usage: 0 },
+  { id: 3, kind: 'system', name: 'Licence', usage: 1 },
+  { id: 4, kind: 'system', name: 'SaaS', usage: 0 },
+];
+
 export type SettingsUsersPayload = {
   users: { email: string; company: string; role: string; is_self: boolean; manageable: boolean }[];
   roles: string[];
@@ -1259,6 +1297,11 @@ export async function mockSettings(page: Page, options: SettingsMockOptions = {}
   );
   await page.route('**/panel-api/v1/settings/companies**', (route) =>
     route.fulfill({ json: { ok: true, data: { companies: SETTINGS_COMPANIES } } }),
+  );
+  await page.route('**/panel-api/v1/settings/categories**', (route) =>
+    route.fulfill({
+      json: { ok: true, data: { categories: SETTINGS_CATEGORIES, kinds: ['asset', 'system'] } },
+    }),
   );
   await page.route('**/panel-api/v1/settings/maintenance', (route) =>
     route.fulfill({

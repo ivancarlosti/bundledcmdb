@@ -13,7 +13,10 @@ import {
 
 describe('inventory grid state', () => {
   it('parses the address bar', () => {
-    const state = parseInventorySearch('?q=tv&status=In%20Use&category=Display&common_usage=true&sort=name&dir=asc&page=3&per_page=50', 25);
+    const state = parseInventorySearch(
+      '?q=tv&status=In%20Use&category=Display&common_usage=true&sort=name&dir=asc&page=3&per_page=50',
+      25,
+    );
     expect(state).toEqual({
       q: 'tv',
       status: 'In Use',

@@ -424,6 +424,45 @@ export function deleteCompany(name: string): Promise<CompaniesPayload> {
   return apiRequest<CompaniesPayload>(`/settings/companies/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
 
+// --- Inventory categories (controlled vocabulary, superadmin) ----------------
+
+/** Tab a category belongs to; a row never moves between kinds. */
+export type CategoryKind = 'asset' | 'system';
+
+export type CategoryRow = {
+  id: number;
+  kind: CategoryKind;
+  name: string;
+  /** Items of this kind carrying the name; a non-zero value forces a reassign. */
+  usage: number;
+};
+
+export type CategoriesPayload = { categories: CategoryRow[]; kinds: CategoryKind[] };
+
+export function fetchCategories(): Promise<CategoriesPayload> {
+  return apiRequest<CategoriesPayload>('/settings/categories');
+}
+
+export function createCategory(kind: CategoryKind, name: string): Promise<CategoriesPayload> {
+  return apiRequest<CategoriesPayload>('/settings/categories', { method: 'POST', body: { kind, name } });
+}
+
+/** Renames the registry row and moves every item of that kind with it. */
+export function renameCategory(id: number, name: string): Promise<CategoriesPayload> {
+  return apiRequest<CategoriesPayload>(`/settings/categories/${id}`, { method: 'PATCH', body: { name } });
+}
+
+/**
+ * Deletes a category, optionally moving its items to `reassignTo`.
+ *
+ * The target travels as a query parameter because some proxies drop a DELETE
+ * body; the server accepts both forms.
+ */
+export function deleteCategory(id: number, reassignTo: string | null = null): Promise<CategoriesPayload> {
+  const query = reassignTo === null ? '' : `?reassign_to=${encodeURIComponent(reassignTo)}`;
+  return apiRequest<CategoriesPayload>(`/settings/categories/${id}${query}`, { method: 'DELETE' });
+}
+
 // --- Grid columns (installation-wide layout) --------------------------------
 
 /**

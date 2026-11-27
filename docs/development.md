@@ -134,7 +134,10 @@ for a laptop: Settings → Storage → Driver → *Local disk*).
 4. `php bin/check-i18n.php` → passed (floors in the table at the top of the file).
 5. `php bin/test-panel-api.php` → 0 failed (requires a non-production database;
    the suite also covers the role matrix, source move, `source_slug` alias, the
-   `physical_disks` contract and the `grid.columns` layout round trip).
+   `physical_disks` contract, the `grid.columns` layout round trip and the
+   inventory category registry — duplicate/`invalid_option`, the rename cascade,
+   `in_use` + `?reassign_to=`, `last_category` inside a rolled-back transaction,
+   and its own cleanup).
 6. `php bin/test-api-users.php` → 0 failed (user roster CRUD/upsert, the
    `can_users` scope, company binding and session revocation; it creates and
    removes its own rows and keys).

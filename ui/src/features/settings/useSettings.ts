@@ -17,16 +17,19 @@ import { metaQueryKey } from '@/features/devices/useDevices';
 
 import {
   createApiKey,
+  createCategory,
   createCompany,
   createField,
   createSource,
   createUser,
   deleteApiKey,
+  deleteCategory,
   deleteCompany,
   deleteField,
   deleteSource,
   deleteUser,
   fetchApiKeys,
+  fetchCategories,
   fetchColumns,
   fetchCompanies,
   fetchFields,
@@ -36,6 +39,7 @@ import {
   fetchSources,
   fetchUsers,
   moveSource,
+  renameCategory,
   reorderFields,
   resetColumns,
   rotateApiKey,
@@ -49,6 +53,8 @@ import {
   updateUser,
   type ApiKeyCreated,
   type ApiKeyInput,
+  type CategoriesPayload,
+  type CategoryKind,
   type ColumnsInput,
   type ColumnsPayload,
   type CompaniesPayload,
@@ -74,6 +80,7 @@ export const settingsFieldsQueryKey = ['settings', 'fields'] as const;
 export const settingsKeysQueryKey = ['settings', 'api-keys'] as const;
 export const settingsUsersQueryKey = ['settings', 'users'] as const;
 export const settingsCompaniesQueryKey = ['settings', 'companies'] as const;
+export const settingsCategoriesQueryKey = ['settings', 'categories'] as const;
 export const settingsMaintenanceQueryKey = ['settings', 'maintenance'] as const;
 export const settingsPermissionsQueryKey = ['settings', 'permissions'] as const;
 export const settingsColumnsQueryKey = ['settings', 'columns'] as const;
@@ -524,6 +531,75 @@ export function useCompanyMutations() {
   });
 
   return { create, remove };
+}
+
+/**
+ * Inventory category registry (superadmin).
+ *
+ * `enabled` lets the tab defer the request until it is actually opened, the way
+ * the companies tab does.
+ */
+export function useCategories(enabled: boolean) {
+  return useQuery({
+    queryKey: settingsCategoriesQueryKey,
+    queryFn: fetchCategories,
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Category registry writes.
+ *
+ * A create/rename/delete changes the options of the Assets and Systems forms, so
+ * `/meta` is invalidated (it carries `inventoryCategories`) together with the
+ * inventory lists — a rename or a reassign rewrites the rows they show.
+ */
+export function useCategoryMutations() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const seed = (payload: CategoriesPayload) => {
+    queryClient.setQueryData(settingsCategoriesQueryKey, payload);
+    void queryClient.invalidateQueries({ queryKey: metaQueryKey });
+    void queryClient.invalidateQueries({ queryKey: ['inventory'] });
+  };
+
+  const onError = (error: unknown) => {
+    if (isFieldLevel(error)) {
+      return;
+    }
+    toast.error(t('save_failed'), { description: messageOf(error, '') });
+  };
+
+  const create = useMutation({
+    mutationFn: (input: { kind: CategoryKind; name: string }) => createCategory(input.kind, input.name),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_saved'));
+    },
+    onError,
+  });
+
+  const update = useMutation({
+    mutationFn: (input: { id: number; name: string }) => renameCategory(input.id, input.name),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_saved'));
+    },
+    onError,
+  });
+
+  const remove = useMutation({
+    mutationFn: (input: { id: number; reassignTo: string | null }) => deleteCategory(input.id, input.reassignTo),
+    onSuccess: (payload) => {
+      seed(payload);
+      toast.success(t('set_delete'));
+    },
+    onError,
+  });
+
+  return { create, update, remove };
 }
 
 /** `POST /settings/maintenance/migrate`; the dry run is the default action. */

@@ -99,6 +99,61 @@ function TextField({
   );
 }
 
+/**
+ * A short choice list with a text fallback.
+ *
+ * `/meta` publishes the vocabulary (categories) and the tenant list
+ * (companies), but a list can be empty — the category table may not exist yet,
+ * the installation may have no company row — and a value already stored on the
+ * item may be missing from it. Rendering a `<select>` with no matching option
+ * would silently rewrite that value on the next save, so the control falls back
+ * to a plain input whenever the current value is not offerable.
+ */
+function ChoiceField({
+  id,
+  label,
+  value,
+  options,
+  placeholder,
+  error,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  error?: string;
+  onChange: (value: string) => void;
+}) {
+  const listed = value === '' || options.includes(value);
+  const useSelect = options.length > 0 && listed;
+
+  return (
+    <Field label={label} htmlFor={id}>
+      {useSelect ? (
+        <Select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">{placeholder}</option>
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </Select>
+      ) : (
+        <Input
+          id={id}
+          value={value}
+          aria-invalid={error === undefined ? undefined : true}
+          className={error === undefined ? undefined : 'border-[var(--color-danger)]'}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+      {error === undefined ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{error}</p>}
+    </Field>
+  );
+}
+
 export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -122,6 +177,14 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
 
   const statuses = metaQuery.data?.statuses ?? [];
   const defaultStatus = statuses[0]?.value ?? 'In Use';
+
+  /**
+   * Category vocabulary of this kind. The list is per kind on the server side
+   * (`inventory_categories.kind`), so a system never offers an asset category.
+   */
+  const categoryOptions = (metaQuery.data?.inventoryCategories ?? [])
+    .filter((entry) => entry.kind === kind)
+    .map((entry) => entry.name);
 
   // Seed the form once the row arrives, and a new item on the first configured
   // status instead of leaving the select empty.
@@ -259,13 +322,10 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
     );
   }
 
-
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-col gap-3">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="m-0 text-xl font-semibold">
-          {t(isEdit ? inventoryEditKey(kind) : inventoryNewKey(kind))}
-        </h1>
+        <h1 className="m-0 text-xl font-semibold">{t(isEdit ? inventoryEditKey(kind) : inventoryNewKey(kind))}</h1>
         <Link to={listPath} className="text-sm text-[var(--color-accent)]">
           {t('back_to_list')}
         </Link>
@@ -293,10 +353,12 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
           error={errors.brand}
           onChange={(value) => patch({ brand: value })}
         />
-        <TextField
+        <ChoiceField
           id="inventory-category"
           label={t('col_item_category')}
           value={form.category}
+          options={categoryOptions}
+          placeholder={t('ui_select_category')}
           error={errors.category}
           onChange={(value) => patch({ category: value })}
         />
@@ -336,11 +398,7 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
         )}
 
         <Field label={t('col_status')} htmlFor="inventory-status">
-          <Select
-            id="inventory-status"
-            value={form.status}
-            onChange={(event) => patch({ status: event.target.value })}
-          >
+          <Select id="inventory-status" value={form.status} onChange={(event) => patch({ status: event.target.value })}>
             {statuses.map((status) => (
               <option key={status.value} value={status.value}>
                 {t(status.label_key)}
@@ -382,10 +440,12 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
         )}
 
         {session.user.company === '' ? (
-          <TextField
+          <ChoiceField
             id="inventory-company"
             label={t('col_company')}
             value={form.company}
+            options={metaQuery.data?.companies ?? []}
+            placeholder={t('ui_select_company')}
             error={errors.company}
             onChange={(value) => patch({ company: value })}
           />
@@ -399,7 +459,6 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
           />
         </Field>
       </div>
-
 
       <div className="card flex flex-col gap-3 p-4">
         <div className="flex flex-col gap-1">
@@ -419,9 +478,7 @@ export function InventoryFormPage({ kind }: { kind: InventoryKind }) {
             onChange={setUsers}
           />
           <p className="m-0 text-xs text-[var(--color-muted)]">{t('ui_assigned_users_hint')}</p>
-          {errors.users === undefined ? null : (
-            <p className="m-0 text-xs text-[var(--color-danger)]">{errors.users}</p>
-          )}
+          {errors.users === undefined ? null : <p className="m-0 text-xs text-[var(--color-danger)]">{errors.users}</p>}
         </Field>
       </div>
 
@@ -452,4 +509,3 @@ export function AssetFormPage() {
 export function SystemFormPage() {
   return <InventoryFormPage kind="system" />;
 }
-
